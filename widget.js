@@ -371,8 +371,6 @@ function buildMedium(d) {
   habHdr.font = Font.boldSystemFont(8);
   habHdr.textColor = C.muted;
 
-  const today = todayISO();
-  const habitLogs = (d.habits.length > 0) ? {} : {};
   for (const h of d.habits.slice(0, 6)) {
     const row = habCol.addStack();
     row.layoutHorizontally();

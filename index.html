@@ -937,12 +937,13 @@ const PLAN_PRESETS=[
   {name:"Custom",        desc:"Set your own params", startMins:25,sessionsPerWeek:3,totalWeeks:8},
 ];
 
-// Session type labels cycling per week day
-const SESSION_TYPES_3=[["Easy","Easy","Long"],["Easy","Tempo","Long"],["Easy","Tempo","Long"]];
-const SESSION_TYPES_4=[["Easy","Tempo","Easy","Long"],["Easy","Tempo","Easy","Long"]];
-// Day offsets from Monday for each session count
-const SESSION_DAYS_3=[0,2,4]; // Mon, Wed, Fri
-const SESSION_DAYS_4=[0,1,3,5]; // Mon, Tue, Thu, Sat
+// Session type labels and day offsets per session count
+const SESSION_CONFIG={
+  2:{days:[0,4],types:[["Easy","Long"],["Tempo","Long"]]},
+  3:{days:[0,2,4],types:[["Easy","Easy","Long"],["Easy","Tempo","Long"]]},
+  4:{days:[0,1,3,5],types:[["Easy","Tempo","Easy","Long"],["Easy","Tempo","Easy","Long"]]},
+  5:{days:[0,1,3,4,6],types:[["Easy","Tempo","Easy","Easy","Long"],["Easy","Tempo","Easy","Tempo","Long"]]},
+};
 
 const SESSION_NOTES={
   Easy:"Zone 2 — conversational pace, comfortable effort.",
@@ -952,8 +953,9 @@ const SESSION_NOTES={
 
 function generatePlanTasks(plan){
   const tasks=[];
-  const days=plan.sessionsPerWeek===4?SESSION_DAYS_4:SESSION_DAYS_3;
-  const typeMatrix=plan.sessionsPerWeek===4?SESSION_TYPES_4:SESSION_TYPES_3;
+  const cfg=SESSION_CONFIG[plan.sessionsPerWeek]||SESSION_CONFIG[3];
+  const days=cfg.days;
+  const typeMatrix=cfg.types;
   const start=parseDate(plan.startDate);
   // Align start to Monday of that week
   const startDow=(start.getDay()+6)%7;
@@ -1230,7 +1232,7 @@ function App(){
   const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,h]};}),[mut]);
   const deleteHabit=useCallback(id=>mut(s=>({habits:s.habits.filter(h=>h.id!==id)})),[mut]);
   const upsertHealthLog=useCallback((date,patch)=>mut(s=>({healthLogs:{...s.healthLogs,[date]:{...s.healthLogs[date],...patch}}})),[mut]);
-  const upsertPlan=useCallback(plan=>mut(s=>({trainingPlans:[...(s.trainingPlans||[]).filter(p=>p.id!==plan.id),plan],tasks:[...s.tasks,...(plan._newTasks||[])]})),[mut]);
+  const upsertPlan=useCallback((plan,newTasks)=>mut(s=>({trainingPlans:[...(s.trainingPlans||[]).filter(p=>p.id!==plan.id),plan],tasks:[...s.tasks,...(newTasks||[])]})),[mut]);
   const deletePlan=useCallback(planId=>mut(s=>({trainingPlans:(s.trainingPlans||[]).filter(p=>p.id!==planId),tasks:s.tasks.filter(t=>!(t.planKey||"").startsWith(`plan_${planId}`))})),[mut]);
   const applyActions=useCallback(actions=>mut(s=>{
     let tasks=[...s.tasks];
@@ -1297,7 +1299,7 @@ function App(){
         onUpsertPlan=${upsertPlan} onDeletePlan=${deletePlan}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
         onExport=${()=>{const b=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`sk-backup-${todayISO()}.json`;a.click();}}
-        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});}}/>`:""}
+        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});}}/>`:""}
 
       <!-- Bottom nav -->
       <nav style=${{position:"fixed",left:10,right:10,bottom:0,zIndex:25,display:"flex",gap:2,
