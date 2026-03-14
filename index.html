@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>ScheduleKeeper</title>
+<meta name="theme-color" content="#07080f"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="SK"/>
+<link rel="manifest" href="/manifest.json"/>
+<link rel="apple-touch-icon" href="/icons/icon-192.png"/>
+<script type="importmap">
+{"imports":{
+  "preact":"https://esm.sh/preact@10.23.2",
+  "preact/hooks":"https://esm.sh/preact@10.23.2/hooks",
+  "htm/preact":"https://esm.sh/htm@3.1.1/preact"
+}}
+</script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:#07080f;color:#eeeeff;font-family:ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif}
+input,textarea,select,button{font-family:inherit}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:99px}
+::-webkit-scrollbar-track{background:transparent}
+input[type=date]::-webkit-calendar-picker-indicator,
+input[type=time]::-webkit-calendar-picker-indicator{filter:invert(0.5)}
+textarea::placeholder,input::placeholder{color:#55586a}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+import { h, render, Fragment } from 'preact';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
+import { html } from 'htm/preact';
+
+// ── Design tokens ────────────────────────────────────────────
+const T = {
+  bg:"#07080f",surface:"rgba(255,255,255,0.045)",
+  border:"rgba(255,255,255,0.08)",borderActive:"rgba(255,255,255,0.20)",
+  text:"#eeeeff",muted:"#888aaa",
+  accent:"#ffd16b",accentGlow:"rgba(255,209,107,0.12)",accentBorder:"rgba(255,209,107,0.25)",
+  blue:"#8fb8ff",blueGlow:"rgba(143,184,255,0.10)",blueBorder:"rgba(143,184,255,0.22)",
+  green:"#6ee7b7",greenGlow:"rgba(110,231,183,0.10)",greenBorder:"rgba(110,231,183,0.22)",
+  red:"#ff6a7a",redGlow:"rgba(255,106,122,0.10)",redBorder:"rgba(255,106,122,0.22)",
+  purple:"#c4b5fd",
+};
+const CATS = {
+  run:     {emoji:"🏃",color:T.blue,  glow:T.blueGlow,  border:T.blueBorder,  label:"Run"},
+  football:{emoji:"⚽",color:T.accent,glow:T.accentGlow,border:T.accentBorder,label:"Football"},
+  game:    {emoji:"🏟️",color:"#f472b6",glow:"rgba(244,114,182,0.10)",border:"rgba(244,114,182,0.22)",label:"Game"},
+  bike:    {emoji:"🚴",color:"#7dd3fc",glow:"rgba(125,211,252,0.10)",border:"rgba(125,211,252,0.22)",label:"Bike"},
+  pilates: {emoji:"🧘",color:T.purple,glow:"rgba(196,181,253,0.10)",border:"rgba(196,181,253,0.22)",label:"Pilates"},
+  recovery:{emoji:"♻️",color:T.green, glow:T.greenGlow, border:T.greenBorder, label:"Recovery"},
+  sauna:   {emoji:"♨️",color:"#fca5a5",glow:"rgba(252,165,165,0.10)",border:"rgba(252,165,165,0.22)",label:"Sauna"},
+  work:    {emoji:"💼",color:T.muted, glow:"rgba(148,163,184,0.06)",border:"rgba(148,163,184,0.15)",label:"Work"},
+  other:   {emoji:"📌",color:T.muted, glow:"rgba(255,255,255,0.04)",border:T.border,label:"Other"},
+};
+
+// ── Utils ──────────────────────────────────────────────────
+const pad2 = n => String(n).padStart(2,"0");
+const uid = () => crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)+Date.now().toString(36);
+const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; };
+const isoDate = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const parseDate = s => { const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); };
+const addDays = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
+const startOfDay = d => new Date(d.getFullYear(),d.getMonth(),d.getDate());
+const fmtTime = t => { if(!t)return""; const [h,m]=t.split(":").map(Number); return `${h%12||12}:${pad2(m)}${h>=12?"pm":"am"}`; };
+const fmtDayShort = s => parseDate(s).toLocaleDateString("en-GB",{weekday:"short"});
+const fmtDayLong = s => parseDate(s).toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
+const fmtDateNum = s => parseDate(s).getDate();
+
+function getWeekDates(from=new Date()){
+  const d=startOfDay(from); const dow=(d.getDay()+6)%7; const mon=addDays(d,-dow);
+  return Array.from({length:7},(_,i)=>isoDate(addDays(mon,i)));
+}
+function detectCat(title=""){
+  const t=title.toLowerCase();
+  if(/\bgame\b|\bmatch\b|\bvs\b/.test(t))return"game";
+  if(/\brun\b|\bjog\b|\bsprint\b|\bstride/.test(t))return"run";
+  if(/football|soccer/.test(t))return"football";
+  if(/\bbike\b|\bcycle|\bspin\b/.test(t))return"bike";
+  if(/pilates/.test(t))return"pilates";
+  if(/recovery|\brest\b|\bwalk\b|\bmobil/.test(t))return"recovery";
+  if(/sauna|pool|steam/.test(t))return"sauna";
+  if(/\bwork\b|office|meeting/.test(t))return"work";
+  return"other";
+}
+
+// ── Sync ────────────────────────────────────────────────────
+const SK_KEY="sk2";
+const SYNC_URL="/.netlify/functions/sync";
+
+async function loadState(){
+  try{ const r=await window.storage?.get(SK_KEY); if(r?.value)return JSON.parse(r.value); }catch{}
+  try{ const r=localStorage.getItem(SK_KEY); if(r)return JSON.parse(r); }catch{}
+  return null;
+}
+const _saveBuf={timer:null};
+function saveState(state){
+  const j=JSON.stringify(state);
+  try{ window.storage?.set(SK_KEY,j); }catch{}
+  try{ localStorage.setItem(SK_KEY,j); }catch{}
+  // Debounced sync to Netlify (for widget)
+  clearTimeout(_saveBuf.timer);
+  _saveBuf.timer=setTimeout(()=>{
+    fetch(SYNC_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:j}).catch(()=>{});
+  },1500);
+}
+
+// ── Seed data ────────────────────────────────────────────────
+function seedTasks(){
+  const tasks=[],week=getWeekDates();
+  const push=(date,time,title,category,notes="",planKey="")=>
+    tasks.push({id:uid(),date,time,title,category,notes,completed:false,planKey,createdAt:Date.now()});
+  week.forEach((date,dow)=>{
+    if(dow<5){
+      const we=["17:00","16:00","17:00","16:00","14:00"][dow];
+      push(date,"08:00","Work","work","",`work_${dow}`);
+      push(date,we,"Work ends","work","Free window",`wend_${dow}`);
+      const runs=[
+        ["06:00","Run 30min + 3 sprints (10–12s)","run","Easy pace. Full walk between.","run_mon"],
+        ["06:00","Run 30min easy","run","Conversational pace.","run_tue"],
+        ["06:00","Bike 35min Zone 2 + 6×10s spin-ups","bike","Fast legs, low resistance.","bike_wed"],
+        ["06:00","Run 35min + 3 sprints (10–12s)","run","Crisp sprints.","run_thu"],
+        ["06:00","Run 30min easy + 4 strides","run","Relaxed, perfect form.","run_fri"],
+      ];
+      push(date,...runs[dow]);
+      if(dow===1) push(date,"06:40","Pilates 20min","pilates","Core + control.","pil_tue");
+      push(date,["18:00","18:00","18:00","18:00","15:30"][dow],"Football session","football","","foot_"+dow);
+    }else if(dow===5){
+      push(date,"06:10","Active recovery: walk + mobility 45min","recovery","","rec_sat");
+      push(date,"06:25","Pilates 30min","pilates","Treat as recovery.","pil_sat");
+      push(date,"06:55","Bike easy Zone 1–2 (25min)","bike","Easy spin.","bike_sat");
+    }else{
+      push(date,"06:10","Active recovery: walk + mobility 45min","recovery","","rec_sun");
+      push(date,"06:55","Bike easy Zone 1–2 (25min)","bike","Easy spin.","bike_sun");
+    }
+  });
+  return tasks;
+}
+function seedHabits(){ return [
+  {id:uid(),title:"Wake at 5am",emoji:"⏰",days:[0,1,2,3,4,5,6]},
+  {id:uid(),title:"Prayer + Bible",emoji:"✝️",days:[0,1,2,3,4,5,6]},
+  {id:uid(),title:"Mobility 10min",emoji:"🤸",days:[0,1,2,3,4,5,6]},
+  {id:uid(),title:"Sauna + pool",emoji:"♨️",days:[0,1,2,3,4,5,6]},
+  {id:uid(),title:"Eat clean",emoji:"🥗",days:[0,1,2,3,4,5,6]},
+  {id:uid(),title:"Bed by 9pm",emoji:"🌙",days:[0,1,2,3,4,5,6]},
+];}
+const DEF_SETTINGS={weekTargets:{run:5,football:5,bike:3,pilates:2,recovery:2,sauna:5},constraints:{wake:"05:00",bed:"21:00"}};
+
+// ── Coach (Claude) ────────────────────────────────────────────
+const SYSTEM=`You are Coach — a sharp, adaptive performance coach for a dedicated football player.
+
+PROFILE: Trains 5–7am + evenings. Work Mon/Wed 8–5, Tue/Thu 8–4, Fri 8–2. Wake 5am, bed 9pm.
+Weekly targets: 5×runs, 5×football, 3×bike, 2×pilates, 2×recovery, 5×sauna.
+
+CONTEXT: You receive today's date/time, upcoming tasks (with IDs), week stats, constraints, habits.
+
+KEY SCENARIOS:
+① "MATCH CANCELLED"/"game cancelled"/"game is off":
+  a) Find game task → deleteTask it
+  b) Find taper/prep tasks (reduced sessions, wind-downs) → deleteTask or restore
+  c) Replace with quality training: morning → addTask "Run 40min + 4 sprint strides [match cancelled]" cat:run
+     evening → addTask "Football technique + fitness 50min [match cancelled]" cat:football + addTask "Pilates 20min" cat:pilates
+  Reply: "Got it — match cancelled. Replaced with quality training. Nothing wasted."
+
+② "GAME [day/time]":
+  a) addTask match cat:game on correct date
+  b) Day before: updateTask to reduce intensity (remove sprint refs)
+  c) Day before: addTask "Early wind-down 9pm" at 20:30 cat:other
+  d) Game day: addTask "Fuel + hydration check" at 12:00 cat:other
+  e) Day after: addTask "Active recovery: walk + mobility 30min" at 06:10 cat:recovery
+
+③ "TIRED/SORE/HEAVY LEGS":
+  a) Replace today's hard sessions with "Easy walk + mobility 30min" cat:recovery
+  b) Reduce tomorrow if high load
+
+④ General: honour work hours, prefer 5–7am, no hard sessions back-to-back.
+
+OUTPUT STRICT JSON ONLY:
+{"reply":"1–3 sentence warm reply","actions":[...]}
+
+ACTIONS:
+{"type":"addTask","task":{"title":"...","date":"YYYY-MM-DD","time":"HH:MM","category":"...","notes":"..."}}
+{"type":"updateTask","taskId":"...","changes":{"title":"...","time":"...","category":"...","notes":"..."}}
+{"type":"deleteTask","taskId":"..."}
+{"type":"completeTask","taskId":"..."}`;
+
+async function callCoach(msg,ctx){
+  const res=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:SYSTEM,
+      messages:[{role:"user",content:JSON.stringify({message:msg,context:ctx})}]})
+  });
+  const data=await res.json();
+  const raw=data.content?.[0]?.text||"";
+  try{ return JSON.parse(raw.replace(/```json|```/g,"").trim()); }
+  catch{ return {reply:raw||"Something went wrong.",actions:[]}; }
+}
+
+// ── Base components ───────────────────────────────────────────
+function Ring({pct=0,size=48,stroke=3.2,color=T.accent}){
+  const r=(size-stroke*2)/2,circ=2*Math.PI*r,dash=(Math.min(100,pct)/100)*circ;
+  return html`<svg width=${size} height=${size} style="transform:rotate(-90deg);flex-shrink:0">
+    <circle cx=${size/2} cy=${size/2} r=${r} stroke="rgba(255,255,255,0.08)" stroke-width=${stroke} fill="none"/>
+    <circle cx=${size/2} cy=${size/2} r=${r} stroke=${color} stroke-width=${stroke} fill="none"
+      stroke-dasharray="${dash} ${circ}" stroke-linecap="round" style="transition:stroke-dasharray 0.4s"/>
+  </svg>`;
+}
+
+const S={
+  card:{background:T.surface,border:`1px solid ${T.border}`,borderRadius:18,padding:14},
+  input:{width:"100%",padding:"10px 12px",borderRadius:13,border:`1px solid ${T.border}`,
+    background:"rgba(255,255,255,0.05)",color:T.text,fontSize:14,outline:"none",boxSizing:"border-box"},
+};
+
+function Btn({onClick,children,variant="default",style={},disabled=false}){
+  const V={
+    default:{background:T.surface,border:`1px solid ${T.border}`,color:T.text},
+    primary:{background:T.blueGlow,border:`1px solid ${T.blueBorder}`,color:T.blue},
+    accent:{background:T.accentGlow,border:`1px solid ${T.accentBorder}`,color:T.accent},
+    danger:{background:T.redGlow,border:`1px solid ${T.redBorder}`,color:T.red},
+    ghost:{background:"transparent",border:`1px solid ${T.border}`,color:T.muted},
+  };
+  return html`<button onClick=${onClick} disabled=${disabled} style=${{
+    display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,
+    padding:"9px 14px",borderRadius:13,fontFamily:"inherit",fontWeight:800,fontSize:13,
+    cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.45:1,
+    transition:"all 0.15s",userSelect:"none",...V[variant],...style
+  }}>${children}</button>`;
+}
+
+function Chip({children,active=false,onClick}){
+  return html`<button onClick=${onClick} style=${{
+    display:"inline-flex",alignItems:"center",gap:4,padding:"6px 10px",
+    borderRadius:999,border:`1px solid ${active?T.accentBorder:T.border}`,
+    background:active?T.accentGlow:T.surface,color:active?T.accent:T.muted,
+    fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",
+    fontFamily:"inherit",transition:"all 0.15s",
+  }}>${children}</button>`;
+}
+
+function IconBtn({onClick,children,style={}}){
+  return html`<button onClick=${onClick} style=${{
+    width:38,height:38,borderRadius:12,border:`1px solid ${T.border}`,
+    background:T.surface,color:T.text,fontSize:15,cursor:"pointer",
+    display:"grid",placeItems:"center",flexShrink:0,...style
+  }}>${children}</button>`;
+}
+
+function Label({children}){
+  return html`<div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:0.8,marginBottom:6}}>${children}</div>`;
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+const _toast={fn:null};
+function showToast(msg){ _toast.fn?.(msg); }
+function Toast({onReady}){
+  const [msg,setMsg]=useState(""); const [vis,setVis]=useState(false); const t=useRef();
+  useEffect(()=>{ onReady(m=>{setMsg(m);setVis(true);clearTimeout(t.current);t.current=setTimeout(()=>setVis(false),2600);}); },[]);
+  if(!vis) return null;
+  return html`<div style=${{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",
+    background:"rgba(10,12,22,0.96)",border:`1px solid ${T.borderActive}`,
+    borderRadius:14,padding:"10px 18px",zIndex:200,color:T.text,fontSize:13,
+    fontWeight:700,maxWidth:320,textAlign:"center",backdropFilter:"blur(14px)"}}>${msg}</div>`;
+}
+
+// ── Task Item ─────────────────────────────────────────────────
+function TaskItem({task,onToggle,onEdit,highlight=false}){
+  const cat=CATS[task.category]||CATS.other;
+  return html`<div onClick=${()=>onEdit(task)} style=${{
+    display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",
+    borderRadius:14,border:`1px solid ${highlight?T.blueBorder:T.border}`,
+    background:task.completed?"rgba(255,255,255,0.01)":(highlight?T.blueGlow:T.surface),
+    cursor:"pointer",transition:"all 0.15s",opacity:task.completed?0.4:1,
+  }}>
+    <button onClick=${e=>{e.stopPropagation();onToggle(task.id);}} style=${{
+      width:24,height:24,borderRadius:8,
+      border:`1.5px solid ${task.completed?cat.color:T.border}`,
+      background:task.completed?cat.glow:"transparent",
+      color:task.completed?cat.color:"transparent",
+      flexShrink:0,marginTop:2,cursor:"pointer",display:"grid",placeItems:"center",
+      fontSize:11,fontWeight:900,transition:"all 0.15s",
+    }}>${task.completed?"✓":""}</button>
+    <div style=${{flex:1,minWidth:0}}>
+      <div style=${{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+        <span style=${{fontSize:14}}>${cat.emoji}</span>
+        <span style=${{fontSize:14,fontWeight:800,color:T.text,textDecoration:task.completed?"line-through":"none"}}>
+          ${task.title}
+        </span>
+        ${highlight?html`<span style=${{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:999,background:T.blueGlow,border:`1px solid ${T.blueBorder}44`,color:T.blue}}>NEXT</span>`:""}
+      </div>
+      ${(task.time||task.notes)&&task.category!=="work"?html`
+        <div style=${{marginTop:4,display:"flex",gap:10,color:T.muted,fontSize:12,fontWeight:600}}>
+          ${task.time?html`<span>${fmtTime(task.time)}</span>`:""}
+          ${task.notes?html`<span style=${{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>${task.notes}</span>`:""}
+        </div>`:""}
+    </div>
+  </div>`;
+}
+
+// ── Today View ────────────────────────────────────────────────
+function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenCoach}){
+  const todayStr=todayISO(),now=new Date(),curTime=`${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  const todayTasks=useMemo(()=>tasks.filter(t=>t.date===todayStr&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")),[tasks,todayStr]);
+  const nextTask=todayTasks.find(t=>!t.completed&&t.time&&t.time>curTime);
+  const done=todayTasks.filter(t=>t.completed).length,total=todayTasks.length,pct=total>0?Math.round((done/total)*100):0;
+  const weekDates=getWeekDates();
+  const weekCats=useMemo(()=>{
+    const s={};
+    tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").forEach(t=>{
+      if(!s[t.category])s[t.category]={done:0,total:0};
+      s[t.category].total++;if(t.completed)s[t.category].done++;
+    });
+    return s;
+  },[tasks]);
+  const todayHabits=habits.filter(h=>h.days.includes(now.getDay()));
+
+  return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
+    <div style=${{background:"linear-gradient(135deg,rgba(143,184,255,0.07),rgba(255,209,107,0.05))",border:`1px solid ${T.border}`,borderRadius:20,padding:16,marginBottom:14}}>
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+        <div style=${{flex:1}}>
+          <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:4}}>TODAY</div>
+          <div style=${{fontSize:18,fontWeight:900,color:T.text,lineHeight:1.2}}>${fmtDayLong(todayStr)}</div>
+          <div style=${{marginTop:10,display:"flex",gap:6,flexWrap:"wrap"}}>
+            ${Object.entries(weekCats).filter(([k])=>!["other","work"].includes(k)&&weekCats[k].total>0).map(([k,s])=>
+              html`<${Chip} key=${k} active=${s.done>0}>${CATS[k]?.emoji} ${s.done}/${s.total}<//>`)
+            }
+          </div>
+        </div>
+        <div style=${{textAlign:"center",flexShrink:0}}>
+          <div style=${{position:"relative",width:52,height:52}}>
+            <${Ring} pct=${pct} size=${52} color=${pct>=80?T.green:pct>=50?T.accent:T.blue}/>
+            <div style=${{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:11,fontWeight:900,color:T.text}}>${pct}%</div>
+          </div>
+          <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:2}}>${done}/${total}</div>
+        </div>
+      </div>
+    </div>
+
+    ${total===0?html`
+      <div style=${{border:`1px dashed ${T.border}`,borderRadius:16,padding:24,textAlign:"center",marginBottom:14,background:T.surface,cursor:"pointer"}} onClick=${onOpenCoach}>
+        <div style=${{fontSize:24,marginBottom:6}}>🤖</div>
+        <div style=${{fontWeight:700,fontSize:14,color:T.text}}>Nothing scheduled yet</div>
+        <div style=${{fontSize:12,color:T.muted,marginTop:3}}>Ask Coach to plan your day</div>
+      </div>`:""}
+
+    ${total>0?html`
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1}}>TODAY'S PLAN</div>
+        <div style=${{fontSize:12,color:T.muted,fontWeight:700}}>${done} of ${total} done</div>
+      </div>
+      <div style=${{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+        ${todayTasks.map(t=>html`<${TaskItem} key=${t.id} task=${t} onToggle=${onToggleTask} onEdit=${onEditTask} highlight=${t.id===nextTask?.id}/>`)}
+      </div>`:""}
+
+    ${todayHabits.length>0?html`
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:10}}>HABITS</div>
+      <div style=${{display:"flex",flexDirection:"column",gap:7}}>
+        ${todayHabits.map(h=>{
+          const done2=!!habitLogs[`${h.id}_${todayStr}`];
+          return html`<div key=${h.id} onClick=${()=>onToggleHabit(h.id,todayStr)} style=${{
+            display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:14,
+            border:`1px solid ${done2?T.greenBorder:T.border}`,
+            background:done2?T.greenGlow:T.surface,cursor:"pointer",transition:"all 0.15s",
+          }}>
+            <div style=${{width:24,height:24,borderRadius:8,border:`1.5px solid ${done2?T.green:T.border}`,
+              background:done2?"rgba(110,231,183,0.15)":"transparent",
+              display:"grid",placeItems:"center",fontSize:11,color:T.green,fontWeight:900,flexShrink:0}}>${done2?"✓":""}</div>
+            <span style=${{fontSize:17}}>${h.emoji}</span>
+            <span style=${{fontWeight:700,fontSize:13,color:T.text}}>${h.title}</span>
+            ${done2?html`<span style=${{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:999,background:T.greenGlow,border:`1px solid ${T.greenBorder}44`,color:T.green,marginLeft:"auto"}}>done</span>`:""}
+          </div>`;
+        })}
+      </div>`:""}
+  </div>`;
+}
+
+// ── Week View ─────────────────────────────────────────────────
+function WeekView({tasks,onToggleTask,onEditTask,onAddForDate}){
+  const weekDates=getWeekDates(),todayStr=todayISO();
+  return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
+    <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:14}}>THIS WEEK</div>
+    ${weekDates.map(date=>{
+      const dt=tasks.filter(t=>t.date===date&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+      const isToday=date===todayStr,isPast=date<todayStr,done=dt.filter(t=>t.completed).length;
+      return html`<div key=${date} style=${{marginBottom:14}}>
+        <div style=${{display:"flex",alignItems:"center",gap:10,marginBottom:7}}>
+          <div style=${{fontSize:12,fontWeight:900,letterSpacing:0.5,
+            color:isToday?T.accent:(isPast?T.muted:T.text),
+            background:isToday?T.accentGlow:"transparent",
+            border:isToday?`1px solid ${T.accentBorder}`:"1px solid transparent",
+            padding:isToday?"3px 9px":"3px 4px",borderRadius:8}}>
+            ${fmtDayShort(date).toUpperCase()} ${fmtDateNum(date)}
+          </div>
+          ${dt.length>0?html`<span style=${{fontSize:11,color:T.muted,fontWeight:700}}>${done}/${dt.length}</span>`:""}
+          <div style=${{flex:1,height:1,background:T.border}}/>
+          <button onClick=${()=>onAddForDate(date)} style=${{width:26,height:26,borderRadius:9,
+            border:`1px solid ${T.border}`,background:T.surface,color:T.muted,
+            fontSize:14,cursor:"pointer",display:"grid",placeItems:"center",fontWeight:900}}>+</button>
+        </div>
+        ${dt.length===0
+          ?html`<div style=${{color:T.muted,fontSize:12,fontWeight:700,paddingLeft:4,opacity:0.5}}>Rest day</div>`
+          :html`<div style=${{display:"flex",flexDirection:"column",gap:6}}>
+            ${dt.map(t=>html`<${TaskItem} key=${t.id} task=${t} onToggle=${onToggleTask} onEdit=${onEditTask}/>`)}
+          </div>`}
+      </div>`;
+    })}
+  </div>`;
+}
+
+// ── Habits View ───────────────────────────────────────────────
+function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit}){
+  const weekDates=getWeekDates(),todayStr=todayISO();
+  const DAY_LABELS=["M","T","W","T","F","S","S"];
+  return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <div style=${{fontSize:22,fontWeight:900,color:T.text}}>Habits</div>
+      <${Btn} onClick=${onAddHabit} variant="primary">+ Add<//>
+    </div>
+    ${habits.length===0?html`
+      <div style=${{...S.card,textAlign:"center",padding:32,color:T.muted}}>
+        <div style=${{fontSize:28,marginBottom:8}}>✓</div>
+        <div style=${{fontWeight:700}}>No habits yet</div>
+      </div>`
+    :habits.map(h=>{
+      const weekDone=weekDates.filter(d=>!!habitLogs[`${h.id}_${d}`]).length;
+      let streak=0;const ti=weekDates.indexOf(todayStr);
+      for(let i=ti>=0?ti:weekDates.length-1;i>=0;i--){if(habitLogs[`${h.id}_${weekDates[i]}`])streak++;else break;}
+      return html`<div key=${h.id} style=${{...S.card,marginBottom:10}}>
+        <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style=${{display:"flex",alignItems:"center",gap:10}}>
+            <span style=${{fontSize:22}}>${h.emoji}</span>
+            <div>
+              <div style=${{fontWeight:800,fontSize:14,color:T.text}}>${h.title}</div>
+              <div style=${{fontSize:11,color:T.muted,marginTop:2}}>${weekDone}/7 this week · ${streak}d streak</div>
+            </div>
+          </div>
+          <${IconBtn} onClick=${()=>onEditHabit(h)}>✎<//>
+        </div>
+        <div style=${{display:"flex",gap:5,marginTop:12}}>
+          ${weekDates.map((date,i)=>{
+            const done=!!habitLogs[`${h.id}_${date}`],isToday=date===todayStr;
+            return html`<button key=${date} onClick=${()=>onToggleHabit(h.id,date)} style=${{
+              flex:1,paddingTop:"100%",position:"relative",borderRadius:10,
+              border:`1px solid ${done?T.greenBorder:isToday?T.borderActive:T.border}`,
+              background:done?T.greenGlow:isToday?"rgba(255,255,255,0.03)":T.surface,
+              cursor:"pointer",overflow:"hidden",
+            }}>
+              <div style=${{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
+                <span style=${{fontSize:9,fontWeight:800,color:done?T.green:isToday?T.text:T.muted}}>${DAY_LABELS[i]}</span>
+                ${done?html`<span style=${{fontSize:10,color:T.green}}>✓</span>`:""}
+              </div>
+            </button>`;
+          })}
+        </div>
+      </div>`;
+    })}
+  </div>`;
+}
+
+// ── Settings View ─────────────────────────────────────────────
+function SettingsView({settings,onUpdate,onExport,onReset,syncStatus}){
+  const [wt,setWt]=useState({...settings.weekTargets});
+  return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
+    <div style=${{fontSize:22,fontWeight:900,color:T.text,marginBottom:16}}>Settings</div>
+
+    <div style=${{...S.card,marginBottom:10}}>
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:4}}>LOCK SCREEN WIDGET SYNC</div>
+      <div style=${{fontSize:12,color:T.muted,marginBottom:10,lineHeight:1.55}}>
+        Your schedule syncs automatically to the Scriptable lock screen widget whenever you make a change.
+        ${syncStatus?html`<br/><span style=${{color:syncStatus==="ok"?T.green:T.red}}>${syncStatus==="ok"?"✓ Synced":"⚠ Sync unavailable (local mode)"}</span>`:""}
+      </div>
+      <${Btn} onClick=${()=>{fetch(SYNC_URL).then(r=>r.json()).then(()=>showToast("Widget sync working ✅")).catch(()=>showToast("Not syncing — deploy to Netlify first"));}} variant="ghost" style=${{fontSize:12}}>
+        Test widget sync
+      <//>
+    </div>
+
+    <div style=${{...S.card,marginBottom:10}}>
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:12}}>WEEKLY TARGETS</div>
+      ${Object.entries(wt).map(([k,v])=>html`
+        <div key=${k} style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+          <span style=${{fontSize:13,fontWeight:700,color:T.text}}>${CATS[k]?.emoji} ${CATS[k]?.label||k}</span>
+          <div style=${{display:"flex",alignItems:"center",gap:8}}>
+            <button onClick=${()=>{const nv=Math.max(0,v-1);const nwt={...wt,[k]:nv};setWt(nwt);onUpdate({weekTargets:nwt});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>-</button>
+            <span style=${{fontWeight:900,fontSize:15,color:T.text,minWidth:20,textAlign:"center"}}>${v}</span>
+            <button onClick=${()=>{const nv=v+1;const nwt={...wt,[k]:nv};setWt(nwt);onUpdate({weekTargets:nwt});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>+</button>
+          </div>
+        </div>`)}
+    </div>
+
+    <div style=${{display:"flex",gap:10,flexWrap:"wrap"}}>
+      <${Btn} onClick=${onExport}>Export backup<//>
+      <${Btn} onClick=${onReset} variant="danger">Reset all data<//>
+    </div>
+    <div style=${{marginTop:24,fontSize:12,color:T.muted,fontWeight:700,textAlign:"center"}}>
+      ScheduleKeeper v2 · Powered by Claude AI
+    </div>
+  </div>`;
+}
+
+// ── Modals ────────────────────────────────────────────────────
+function BottomSheet({children,title,onClose}){
+  return html`<div style=${{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick=${onClose}>
+    <div style=${{background:"#0b0d1c",borderRadius:"22px 22px 0 0",border:`1px solid ${T.border}`,
+      padding:"16px 16px calc(16px + env(safe-area-inset-bottom))",
+      width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto",
+      boxShadow:"0 -20px 60px rgba(0,0,0,0.6)"}} onClick=${e=>e.stopPropagation()}>
+      <div style=${{width:40,height:4,background:T.border,borderRadius:99,margin:"0 auto 14px"}}/>
+      <div style=${{fontWeight:900,fontSize:18,color:T.text,marginBottom:16}}>${title}</div>
+      ${children}
+    </div>
+  </div>`;
+}
+
+function TaskModal({task,initialDate,onSave,onDelete,onClose}){
+  const [title,setTitle]=useState(task?.title||"");
+  const [date,setDate]=useState(task?.date||initialDate||todayISO());
+  const [time,setTime]=useState(task?.time||"");
+  const [cat,setCat]=useState(task?.category||"other");
+  const [notes,setNotes]=useState(task?.notes||"");
+  const [done,setDone]=useState(task?.completed||false);
+  useEffect(()=>{ if(title&&!task){ const d=detectCat(title); if(d!=="other")setCat(d); } },[title]);
+  const save=()=>{ if(!title.trim())return; onSave({id:task?.id||uid(),title:title.trim(),date,time,category:cat,notes,completed:done,planKey:task?.planKey||"",createdAt:task?.createdAt||Date.now()}); };
+  return html`<${BottomSheet} onClose=${onClose} title=${task?"Edit task":"Add task"}>
+    <div style=${{marginBottom:12}}><${Label}>Title<//>
+      <input style=${S.input} value=${title} onInput=${e=>setTitle(e.target.value)} placeholder="e.g. Run 30min easy" autoFocus/>
+    </div>
+    <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+      <div><${Label}>Date<//>  <input type="date" style=${S.input} value=${date} onInput=${e=>setDate(e.target.value)}/></div>
+      <div><${Label}>Time<//>  <input type="time" style=${S.input} value=${time} onInput=${e=>setTime(e.target.value)}/></div>
+    </div>
+    <div style=${{marginBottom:12}}><${Label}>Category<//>
+      <div style=${{display:"flex",gap:6,flexWrap:"wrap"}}>
+        ${Object.entries(CATS).map(([k,c])=>html`<${Chip} key=${k} active=${cat===k} onClick=${()=>setCat(k)}>${c.emoji} ${c.label}<//>`) }
+      </div>
+    </div>
+    <div style=${{marginBottom:14}}><${Label}>Notes<//>
+      <textarea style=${{...S.input,minHeight:60,resize:"none"}} value=${notes} onInput=${e=>setNotes(e.target.value)} placeholder="Optional..."/>
+    </div>
+    ${task?html`<label style=${{display:"flex",gap:8,alignItems:"center",marginBottom:14,cursor:"pointer"}}>
+      <input type="checkbox" checked=${done} onChange=${e=>setDone(e.target.checked)}/>
+      <span style=${{fontSize:13,fontWeight:700,color:T.muted}}>Mark complete</span>
+    </label>`:""}
+    <div style=${{display:"flex",gap:10}}>
+      ${task?html`<${Btn} onClick=${()=>onDelete(task.id)} variant="danger">Delete<//>` :""}
+      <div style=${{flex:1}}/>
+      <${Btn} onClick=${onClose} variant="ghost">Cancel<//>
+      <${Btn} onClick=${save} variant="primary">Save<//>
+    </div>
+  <//>`;
+}
+
+function HabitModal({habit,onSave,onDelete,onClose}){
+  const [title,setTitle]=useState(habit?.title||"");
+  const [emoji,setEmoji]=useState(habit?.emoji||"✓");
+  const [days,setDays]=useState(habit?.days||[0,1,2,3,4,5,6]);
+  const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const toggle=d=>setDays(p=>p.includes(d)?p.filter(x=>x!==d):[...p,d].sort((a,b)=>a-b));
+  return html`<${BottomSheet} onClose=${onClose} title=${habit?"Edit habit":"New habit"}>
+    <div style=${{display:"grid",gridTemplateColumns:"60px 1fr",gap:10,marginBottom:12}}>
+      <div><${Label}>Emoji<//>  <input style=${{...S.input,textAlign:"center",fontSize:20}} value=${emoji} onInput=${e=>setEmoji(e.target.value)} maxLength=${2}/></div>
+      <div><${Label}>Name<//>   <input style=${S.input} value=${title} onInput=${e=>setTitle(e.target.value)} placeholder="Habit name" autoFocus/></div>
+    </div>
+    <div style=${{marginBottom:14}}><${Label}>Days<//>
+      <div style=${{display:"flex",gap:5}}>
+        ${DAYS.map((d,i)=>html`<button key=${i} onClick=${()=>toggle(i)} style=${{
+          flex:1,padding:"8px 2px",borderRadius:10,fontSize:11,fontWeight:800,fontFamily:"inherit",
+          border:`1px solid ${days.includes(i)?T.blueBorder:T.border}`,
+          background:days.includes(i)?T.blueGlow:T.surface,
+          color:days.includes(i)?T.blue:T.muted,cursor:"pointer",
+        }}>${d[0]}</button>`)}
+      </div>
+    </div>
+    <div style=${{display:"flex",gap:10}}>
+      ${habit?html`<${Btn} onClick=${()=>onDelete(habit.id)} variant="danger">Delete<//>` :""}
+      <div style=${{flex:1}}/>
+      <${Btn} onClick=${onClose} variant="ghost">Cancel<//>
+      <${Btn} onClick=${()=>{ if(title.trim()) onSave({id:habit?.id||uid(),title:title.trim(),emoji,days}); }} variant="primary">Save<//>
+    </div>
+  <//>`;
+}
+
+// ── Coach Panel ───────────────────────────────────────────────
+function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActions}){
+  const [msgs,setMsgs]=useState([{role:"assistant",content:"Hey! I'm Coach 🤖\n\nTell me what's changed:\n• \"Match cancelled\" — I'll swap it for quality training\n• \"I have a game tomorrow at 7pm\"\n• \"I feel tired today\"\n• \"What should I do next?\""}]);
+  const [input,setInput]=useState(""); const [busy,setBusy]=useState(false);
+  const bodyRef=useRef(null); const inputRef=useRef(null);
+  useEffect(()=>{ if(isOpen) setTimeout(()=>inputRef.current?.focus(),100); },[isOpen]);
+  useEffect(()=>{ if(bodyRef.current) bodyRef.current.scrollTop=bodyRef.current.scrollHeight; },[msgs,busy]);
+
+  const buildCtx=useCallback(()=>{
+    const now=new Date(),todayStr=todayISO(),weekDates=getWeekDates();
+    const upcoming=tasks.filter(t=>t.date>=todayStr).sort((a,b)=>(`${a.date}${a.time||""}`).localeCompare(`${b.date}${b.time||""}`)).slice(0,60).map(t=>({id:t.id,title:t.title,date:t.date,time:t.time||null,category:t.category,completed:t.completed,planKey:t.planKey||null,notes:t.notes||""}));
+    const weekStats={};tasks.filter(t=>weekDates.includes(t.date)).forEach(t=>{if(!weekStats[t.category])weekStats[t.category]={done:0,total:0};weekStats[t.category].total++;if(t.completed)weekStats[t.category].done++;});
+    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habits.filter(h=>h.days.includes(now.getDay())).map(h=>({id:h.id,title:h.title,done:!!habitLogs[`${h.id}_${todayStr}`]}))};
+  },[tasks,habits,habitLogs,settings]);
+
+  const QUICK=[
+    {l:"Match cancelled ❌",p:"Match cancelled"},
+    {l:"Game tomorrow 🏟️",p:"I have a game tomorrow evening"},
+    {l:"Tired today 😴",p:"I feel tired and heavy legged today"},
+    {l:"What's next? ⚡",p:"What should I do next?"},
+    {l:"Week check 📊",p:"How is my week going so far?"},
+    {l:"Rest day 🌙",p:"Make today a rest day"},
+    {l:"Add sprints 💨",p:"Add a sprint session today at 6am"},
+  ];
+  const send=async(text)=>{
+    const t=text.trim(); if(!t||busy) return;
+    setMsgs(p=>[...p,{role:"user",content:t}]); setInput(""); setBusy(true);
+    try{
+      const r=await callCoach(t,buildCtx());
+      setMsgs(p=>[...p,{role:"assistant",content:r.reply}]);
+      if(r.actions?.length){ onApplyActions(r.actions); showToast(`✅ ${r.actions.length} update${r.actions.length>1?"s":""} applied`); }
+    }catch{setMsgs(p=>[...p,{role:"assistant",content:"⚠️ Can't reach Coach right now."}]);}
+    finally{setBusy(false);}
+  };
+
+  if(!isOpen) return null;
+  return html`<div style=${{position:"fixed",inset:0,zIndex:80,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick=${onClose}>
+    <div style=${{background:"#08091a",borderRadius:"22px 22px 0 0",border:`1px solid ${T.border}`,display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.7)"}} onClick=${e=>e.stopPropagation()}>
+      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 14px 10px",borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
+        <div style=${{display:"flex",alignItems:"center",gap:10}}>
+          <div style=${{width:38,height:38,borderRadius:13,background:"linear-gradient(135deg,rgba(143,184,255,0.15),rgba(255,209,107,0.10))",border:`1px solid ${T.blueBorder}`,display:"grid",placeItems:"center",fontSize:19}}>🤖</div>
+          <div>
+            <div style=${{fontWeight:900,fontSize:15,color:T.text}}>Coach</div>
+            <div style=${{fontSize:11,fontWeight:700,color:busy?T.accent:T.green}}>${busy?"thinking…":"● ready"}</div>
+          </div>
+        </div>
+        <${IconBtn} onClick=${onClose}>✕<//>
+      </div>
+      <div ref=${bodyRef} style=${{flex:1,overflowY:"auto",padding:"12px 14px",display:"flex",flexDirection:"column",gap:10,minHeight:180}}>
+        ${msgs.map((m,i)=>html`<div key=${i} style=${{
+          alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",padding:"10px 13px",
+          borderRadius:m.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",
+          background:m.role==="user"?T.accentGlow:T.surface,
+          border:`1px solid ${m.role==="user"?T.accentBorder:T.border}`,
+          color:T.text,fontSize:14,lineHeight:1.55,whiteSpace:"pre-wrap",
+        }}>
+          ${m.role==="assistant"?html`<div style=${{fontSize:10,fontWeight:800,color:T.blue,marginBottom:5,letterSpacing:0.8}}>COACH</div>`:""}
+          ${m.content}
+        </div>`)}
+        ${busy?html`<div style=${{alignSelf:"flex-start",padding:"12px 16px",borderRadius:"16px 16px 16px 4px",background:T.surface,border:`1px solid ${T.border}`,color:T.muted,fontSize:18,letterSpacing:4}}>···</div>`:""}
+      </div>
+      <div style=${{display:"flex",gap:7,padding:"8px 14px",overflowX:"auto",flexShrink:0,borderTop:`1px solid ${T.border}`,scrollbarWidth:"none"}}>
+        ${QUICK.map(c=>html`<${Chip} key=${c.l} onClick=${()=>send(c.p)}>${c.l}<//>` )}
+      </div>
+      <div style=${{display:"flex",gap:8,padding:"10px 14px 12px",flexShrink:0}}>
+        <textarea ref=${inputRef} value=${input}
+          onInput=${e=>setInput(e.target.value)}
+          onKeyDown=${e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);} }}
+          placeholder="Ask Coach anything… (Enter to send)" rows=${1}
+          style=${{flex:1,padding:"10px 12px",borderRadius:14,border:`1px solid ${T.border}`,
+            background:"rgba(255,255,255,0.05)",color:T.text,fontSize:15,fontFamily:"inherit",
+            outline:"none",resize:"none",minHeight:46,lineHeight:1.4,maxHeight:120}}/>
+        <${Btn} onClick=${()=>send(input)} variant="accent" disabled=${!input.trim()||busy} style=${{height:46,padding:"0 16px",flexShrink:0}}>Send<//>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── App ───────────────────────────────────────────────────────
+function App(){
+  const [state,setState]=useState(null); const [ready,setReady]=useState(false);
+  const [view,setView]=useState("today"); const [coachOpen,setCoachOpen]=useState(false);
+  const [taskModal,setTaskModal]=useState(null); const [habitModal,setHabitModal]=useState(null);
+  const [syncStatus,setSyncStatus]=useState(null);
+  const toastReady=useCallback(fn=>{ _toast.fn=fn; },[]);
+
+  useEffect(()=>{
+    loadState().then(saved=>{
+      if(saved) setState({tasks:[],habits:[],habitLogs:{},goals:[],settings:DEF_SETTINGS,...saved,settings:{...DEF_SETTINGS,...saved?.settings}});
+      else setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});
+      setReady(true);
+      // Check sync
+      fetch(SYNC_URL).then(()=>setSyncStatus("ok")).catch(()=>setSyncStatus("offline"));
+    });
+  },[]);
+
+  useEffect(()=>{ if(ready&&state) saveState(state); },[state,ready]);
+
+  const mut=useCallback(fn=>setState(p=>({...p,...fn(p)})),[]);
+  const toggleTask=useCallback(id=>mut(s=>({tasks:s.tasks.map(t=>t.id===id?{...t,completed:!t.completed,completedAt:!t.completed?Date.now():null}:t)})),[mut]);
+  const upsertTask=useCallback(task=>mut(s=>{const i=s.tasks.findIndex(t=>t.id===task.id);if(i>=0){const tasks=[...s.tasks];tasks[i]={...tasks[i],...task};return{tasks};}return{tasks:[...s.tasks,task]};}),[mut]);
+  const deleteTask=useCallback(id=>mut(s=>({tasks:s.tasks.filter(t=>t.id!==id)})),[mut]);
+  const toggleHabit=useCallback((hid,date)=>mut(s=>({habitLogs:{...s.habitLogs,[`${hid}_${date}`]:!s.habitLogs[`${hid}_${date}`]}})),[mut]);
+  const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,h]};}),[mut]);
+  const deleteHabit=useCallback(id=>mut(s=>({habits:s.habits.filter(h=>h.id!==id)})),[mut]);
+  const applyActions=useCallback(actions=>mut(s=>{
+    let tasks=[...s.tasks];
+    for(const a of actions){
+      if(a.type==="addTask"&&a.task) tasks.push({id:uid(),completed:false,planKey:"",createdAt:Date.now(),...a.task,category:a.task.category||detectCat(a.task.title||"")});
+      else if(a.type==="updateTask"&&a.taskId) tasks=tasks.map(t=>t.id===a.taskId?{...t,...a.changes}:t);
+      else if(a.type==="deleteTask"&&a.taskId) tasks=tasks.filter(t=>t.id!==a.taskId);
+      else if(a.type==="completeTask"&&a.taskId) tasks=tasks.map(t=>t.id===a.taskId?{...t,completed:true,completedAt:Date.now()}:t);
+    }
+    return{tasks};
+  }),[mut]);
+
+  if(!ready||!state) return html`<div style=${{height:"100vh",display:"grid",placeItems:"center",background:T.bg,color:T.muted}}>
+    <div style=${{textAlign:"center"}}><div style=${{fontSize:32,marginBottom:8}}>⚡</div><div style=${{fontWeight:700}}>Loading…</div></div>
+  </div>`;
+
+  const NAV=[{id:"today",icon:"☀",label:"Today"},{id:"week",icon:"▦",label:"Week"},{id:"habits",icon:"✓",label:"Habits"},{id:"settings",icon:"⚙",label:"Settings"}];
+  const weekDates=getWeekDates();
+  const wTotal=state.tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").length;
+  const wDone=state.tasks.filter(t=>weekDates.includes(t.date)&&t.completed&&t.category!=="work").length;
+
+  return html`<div style=${{background:T.bg,minHeight:"100vh",color:T.text,fontFamily:"ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif"}}>
+    <!-- Ambient -->
+    <div style=${{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+      <div style=${{position:"absolute",top:"-5%",left:"5%",width:700,height:600,borderRadius:"50%",background:"radial-gradient(rgba(143,184,255,0.06),transparent 70%)"}}/>
+      <div style=${{position:"absolute",top:"5%",right:0,width:500,height:450,borderRadius:"50%",background:"radial-gradient(rgba(255,209,107,0.05),transparent 65%)"}}/>
+    </div>
+
+    <div style=${{position:"relative",zIndex:1}}>
+      <!-- Header -->
+      <header style=${{position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"space-between",
+        padding:"calc(12px + env(safe-area-inset-top)) 14px 12px",
+        background:"rgba(7,8,15,0.88)",backdropFilter:"blur(16px)",borderBottom:`1px solid ${T.border}`}}>
+        <div style=${{display:"flex",alignItems:"center",gap:10}}>
+          <div style=${{width:36,height:36,borderRadius:12,background:T.blueGlow,border:`1px solid ${T.blueBorder}`,display:"grid",placeItems:"center",fontWeight:900,fontSize:12,color:T.blue}}>SK</div>
+          <div>
+            <div style=${{fontWeight:900,fontSize:15,color:T.text}}>ScheduleKeeper</div>
+            <div style=${{fontSize:11,color:T.muted,fontWeight:700,marginTop:1}}>${wDone}/${wTotal} this week</div>
+          </div>
+        </div>
+        <div style=${{display:"flex",gap:8}}>
+          <${IconBtn} onClick=${()=>setTaskModal({task:null,date:todayISO()})} style=${{background:T.blueGlow,borderColor:T.blueBorder,color:T.blue,fontSize:17,fontWeight:900}}>＋<//>
+          <${IconBtn} onClick=${()=>setCoachOpen(true)} style=${{background:T.accentGlow,borderColor:T.accentBorder,fontSize:18}}>🤖<//>
+        </div>
+      </header>
+
+      ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)}/>`:""}
+      ${view==="week"?html`<${WeekView} tasks=${state.tasks} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
+      ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
+      ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
+        onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
+        onExport=${()=>{const b=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`sk-backup-${todayISO()}.json`;a.click();}}
+        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});}}/>`:""}
+
+      <!-- Bottom nav -->
+      <nav style=${{position:"fixed",left:0,right:0,bottom:0,zIndex:25,display:"flex",gap:4,
+        padding:"8px 8px calc(8px + env(safe-area-inset-bottom))",
+        background:"rgba(7,8,15,0.94)",backdropFilter:"blur(16px)",borderTop:`1px solid ${T.border}`}}>
+        ${NAV.map(v=>html`<button key=${v.id} onClick=${()=>setView(v.id)} style=${{
+          flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,
+          padding:"7px 4px",borderRadius:13,cursor:"pointer",fontFamily:"inherit",
+          border:`1px solid ${view===v.id?T.borderActive:"transparent"}`,
+          background:view===v.id?T.surface:"transparent",
+          color:view===v.id?T.text:T.muted,transition:"all 0.15s",
+        }}><span style=${{fontSize:17}}>${v.icon}</span><span style=${{fontSize:10,fontWeight:800}}>${v.label}</span></button>`)}
+        <button onClick=${()=>setCoachOpen(true)} style=${{
+          flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,
+          padding:"7px 4px",borderRadius:13,cursor:"pointer",fontFamily:"inherit",
+          border:`1px solid ${T.accentBorder}`,background:T.accentGlow,color:T.accent,
+        }}><span style=${{fontSize:17}}>🤖</span><span style=${{fontSize:10,fontWeight:800}}>Coach</span></button>
+      </nav>
+    </div>
+
+    ${taskModal?html`<${TaskModal} task=${taskModal.task} initialDate=${taskModal.date}
+      onSave=${t=>{upsertTask(t);setTaskModal(null);showToast(taskModal.task?"Updated ✅":"Added ✅");}}
+      onDelete=${id=>{deleteTask(id);setTaskModal(null);showToast("Deleted");}}
+      onClose=${()=>setTaskModal(null)}/>`:""}
+    ${habitModal?html`<${HabitModal} habit=${habitModal.isNew?null:habitModal}
+      onSave=${h=>{upsertHabit(h);setHabitModal(null);showToast(habitModal.isNew?"Habit added ✅":"Updated ✅");}}
+      onDelete=${id=>{deleteHabit(id);setHabitModal(null);showToast("Deleted");}}
+      onClose=${()=>setHabitModal(null)}/>`:""}
+
+    <${CoachPanel} isOpen=${coachOpen} onClose=${()=>setCoachOpen(false)}
+      tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs}
+      settings=${state.settings} onApplyActions=${applyActions}/>
+
+    <${Toast} onReady=${toastReady}/>
+  </div>`;
+}
+
+// ── Boot ──────────────────────────────────────────────────────
+render(html`<${App}/>`, document.getElementById("app"));
+
+// Service worker
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("/sw.js").catch(()=>{});
+}
+</script>
+</body>
+</html>
