@@ -507,10 +507,12 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit}){
 }
 
 // ── Settings View ─────────────────────────────────────────────
-function SettingsView({settings,onUpdate,onExport,onReset,syncStatus}){
+function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
   const [wt,setWt]=useState({...settings.weekTargets});
   return html`<div style=${{padding:"14px 14px 100px",maxWidth:820,margin:"0 auto"}}>
     <div style=${{fontSize:22,fontWeight:900,color:T.text,marginBottom:16}}>Settings</div>
+
+    <${PlansSection} trainingPlans=${trainingPlans||[]} tasks=${tasks||[]} onUpsertPlan=${onUpsertPlan} onDeletePlan=${onDeletePlan}/>
 
     <div style=${{...S.card,marginBottom:10}}>
       <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:4}}>LOCK SCREEN WIDGET SYNC</div>
@@ -926,6 +928,254 @@ function HealthView({tasks,healthLogs,onUpsertLog}){
   </div>`;
 }
 
+// ── Training Plans ──────────────────────────────────────────
+const PLAN_PRESETS=[
+  {name:"5K Starter",    desc:"Build your base",    startMins:20,sessionsPerWeek:3,totalWeeks:6},
+  {name:"5K Builder",    desc:"Push to 5K",          startMins:25,sessionsPerWeek:3,totalWeeks:8},
+  {name:"10K Prep",      desc:"Double the distance", startMins:30,sessionsPerWeek:4,totalWeeks:10},
+  {name:"Half Marathon", desc:"Long game",            startMins:35,sessionsPerWeek:4,totalWeeks:12},
+  {name:"Custom",        desc:"Set your own params", startMins:25,sessionsPerWeek:3,totalWeeks:8},
+];
+
+// Session type labels cycling per week day
+const SESSION_TYPES_3=[["Easy","Easy","Long"],["Easy","Tempo","Long"],["Easy","Tempo","Long"]];
+const SESSION_TYPES_4=[["Easy","Tempo","Easy","Long"],["Easy","Tempo","Easy","Long"]];
+// Day offsets from Monday for each session count
+const SESSION_DAYS_3=[0,2,4]; // Mon, Wed, Fri
+const SESSION_DAYS_4=[0,1,3,5]; // Mon, Tue, Thu, Sat
+
+const SESSION_NOTES={
+  Easy:"Zone 2 — conversational pace, comfortable effort.",
+  Tempo:"Comfortably hard — sustain for the full run.",
+  Long:"Slow and steady — 60-90s/km slower than easy pace.",
+};
+
+function generatePlanTasks(plan){
+  const tasks=[];
+  const days=plan.sessionsPerWeek===4?SESSION_DAYS_4:SESSION_DAYS_3;
+  const typeMatrix=plan.sessionsPerWeek===4?SESSION_TYPES_4:SESSION_TYPES_3;
+  const start=parseDate(plan.startDate);
+  // Align start to Monday of that week
+  const startDow=(start.getDay()+6)%7;
+  const monday=addDays(start,-startDow);
+
+  for(let w=0;w<plan.totalWeeks;w++){
+    const weekMins=plan.startMins+(w*plan.incrementMins);
+    const types=typeMatrix[w%typeMatrix.length];
+    days.forEach((dayOffset,si)=>{
+      const date=isoDate(addDays(monday,w*7+dayOffset));
+      const type=types[si];
+      tasks.push({
+        id:uid(),
+        date,
+        time:"06:00",
+        title:`Run ${weekMins}min — ${type}`,
+        category:"run",
+        notes:SESSION_NOTES[type],
+        completed:false,
+        planKey:`plan_${plan.id}_w${w}_s${si}`,
+        createdAt:Date.now(),
+      });
+    });
+  }
+  return tasks;
+}
+
+function getPlanCurrentWeek(plan){
+  const start=parseDate(plan.startDate);
+  const now=new Date();
+  const diff=Math.floor((startOfDay(now)-startOfDay(start))/(1000*60*60*24*7));
+  return Math.max(0,Math.min(diff,plan.totalWeeks-1));
+}
+
+function PlanWizardModal({onSave,onClose}){
+  const[step,setStep]=useState(0);
+  const[preset,setPreset]=useState(PLAN_PRESETS[0]);
+  const[startDate,setStartDate]=useState(todayISO());
+  const[startMins,setStartMins]=useState(PLAN_PRESETS[0].startMins);
+  const[incrementMins,setIncrementMins]=useState(5);
+  const[sessionsPerWeek,setSessionsPerWeek]=useState(PLAN_PRESETS[0].sessionsPerWeek);
+  const[totalWeeks,setTotalWeeks]=useState(PLAN_PRESETS[0].totalWeeks);
+
+  function selectPreset(p){
+    setPreset(p);
+    setStartMins(p.startMins);
+    setSessionsPerWeek(p.sessionsPerWeek);
+    setTotalWeeks(p.totalWeeks);
+  }
+
+  function confirm(){
+    const plan={id:uid(),name:preset.name,startDate,startMins,incrementMins,sessionsPerWeek,totalWeeks,active:true,createdAt:Date.now()};
+    onSave(plan);
+    onClose();
+  }
+
+  const previewWeeks=Array.from({length:Math.min(totalWeeks,4)},(_,i)=>({
+    week:i+1,mins:startMins+i*incrementMins,
+  }));
+  const finalMins=startMins+(totalWeeks-1)*incrementMins;
+
+  return html`<${BottomSheet} title="▶ New Running Plan" onClose=${onClose}>
+    ${step===0?html`
+      <div style=${{display:"flex",flexDirection:"column",gap:12}}>
+        <div style=${{fontSize:12,color:T.muted,fontWeight:700,marginBottom:4}}>Choose a plan</div>
+        ${PLAN_PRESETS.map(p=>html`<button key=${p.name} onClick=${()=>{selectPreset(p);}} style=${{
+          display:"flex",justifyContent:"space-between",alignItems:"center",
+          padding:"13px 16px",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
+          border:`1px solid ${preset.name===p.name?T.blueBorder:T.border}`,
+          background:preset.name===p.name?T.blueGlow:T.surface,
+          transition:"all 0.15s",textAlign:"left",
+        }}>
+          <div>
+            <div style=${{fontWeight:800,fontSize:14,color:T.text}}>${p.name}</div>
+            <div style=${{fontSize:12,color:T.muted,marginTop:2}}>${p.desc}</div>
+          </div>
+          <div style=${{fontSize:12,color:T.muted,textAlign:"right",flexShrink:0}}>
+            <div style=${{color:T.blue,fontWeight:800}}>${p.startMins}→${p.startMins+(p.totalWeeks-1)*5}min</div>
+            <div>${p.sessionsPerWeek}×/wk · ${p.totalWeeks} wks</div>
+          </div>
+        </button>`)}
+        <${Btn} onClick=${()=>setStep(1)} variant="primary" style=${{width:"100%",marginTop:4}}>Customise →<//>
+      </div>
+    `:""}
+    ${step===1?html`
+      <div style=${{display:"flex",flexDirection:"column",gap:16}}>
+        <div>
+          <${Label}>Start date<//>
+          <input type="date" value=${startDate} onInput=${e=>setStartDate(e.target.value)} style=${S.input}/>
+        </div>
+        <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div>
+            <${Label}>Start duration (min)<//>
+            <div style=${{display:"flex",alignItems:"center",gap:8}}>
+              <button onClick=${()=>setStartMins(m=>Math.max(10,m-5))} style=${{width:34,height:34,borderRadius:10,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>−</button>
+              <span style=${{fontWeight:900,fontSize:18,color:T.blue,minWidth:32,textAlign:"center"}}>${startMins}</span>
+              <button onClick=${()=>setStartMins(m=>m+5)} style=${{width:34,height:34,borderRadius:10,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>+</button>
+            </div>
+          </div>
+          <div>
+            <${Label}>Weekly increase (min)<//>
+            <div style=${{display:"flex",alignItems:"center",gap:8}}>
+              <button onClick=${()=>setIncrementMins(m=>Math.max(1,m-1))} style=${{width:34,height:34,borderRadius:10,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>−</button>
+              <span style=${{fontWeight:900,fontSize:18,color:T.green,minWidth:32,textAlign:"center"}}>+${incrementMins}</span>
+              <button onClick=${()=>setIncrementMins(m=>m+1)} style=${{width:34,height:34,borderRadius:10,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>+</button>
+            </div>
+          </div>
+          <div>
+            <${Label}>Sessions / week<//>
+            <div style=${{display:"flex",gap:6}}>
+              ${[2,3,4,5].map(n=>html`<button key=${n} onClick=${()=>setSessionsPerWeek(n)} style=${{flex:1,padding:"8px 4px",borderRadius:10,border:`1px solid ${sessionsPerWeek===n?T.blueBorder:T.border}`,background:sessionsPerWeek===n?T.blueGlow:T.surface,color:sessionsPerWeek===n?T.blue:T.muted,cursor:"pointer",fontFamily:"inherit",fontWeight:800,fontSize:13}}>${n}</button>`)}
+            </div>
+          </div>
+          <div>
+            <${Label}>Total weeks<//>
+            <div style=${{display:"flex",alignItems:"center",gap:8}}>
+              <button onClick=${()=>setTotalWeeks(w=>Math.max(2,w-1))} style=${{width:34,height:34,borderRadius:10,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>−</button>
+              <span style=${{fontWeight:900,fontSize:18,color:T.text,minWidth:32,textAlign:"center"}}>${totalWeeks}</span>
+              <button onClick=${()=>setTotalWeeks(w=>w+1)} style=${{width:34,height:34,borderRadius:10,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>+</button>
+            </div>
+          </div>
+        </div>
+        <!-- Preview -->
+        <div style=${{background:`${T.blue}10`,border:`1px solid ${T.blueBorder}`,borderRadius:14,padding:14}}>
+          <div style=${{fontSize:11,fontWeight:800,color:T.blue,letterSpacing:1,marginBottom:8}}>PLAN PREVIEW</div>
+          <div style=${{display:"flex",gap:6,flexWrap:"wrap"}}>
+            ${previewWeeks.map(r=>html`<div key=${r.week} style=${{background:T.blueGlow,border:`1px solid ${T.blueBorder}`,borderRadius:8,padding:"4px 10px",fontSize:12}}>
+              <span style=${{color:T.muted,fontWeight:700}}>Wk ${r.week}</span> <span style=${{color:T.blue,fontWeight:900}}>${r.mins}min</span>
+            </div>`)}
+            ${totalWeeks>4?html`<div style=${{borderRadius:8,padding:"4px 10px",fontSize:12,color:T.muted}}>… → Wk ${totalWeeks}: <span style=${{color:T.blue,fontWeight:900}}>${finalMins}min</span></div>`:""}
+          </div>
+          <div style=${{marginTop:8,fontSize:12,color:T.muted}}>${sessionsPerWeek} runs/week · ${totalWeeks} weeks · finishes at ${finalMins}min</div>
+        </div>
+        <div style=${{display:"flex",gap:10}}>
+          <${Btn} onClick=${()=>setStep(0)} variant="ghost">← Back<//>
+          <${Btn} onClick=${confirm} variant="primary" style=${{flex:1}}>Start Plan ▶<//>
+        </div>
+      </div>
+    `:""}
+  <//>`;
+}
+
+function PlansSection({trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
+  const[wizardOpen,setWizardOpen]=useState(false);
+  const[expandedId,setExpandedId]=useState(null);
+  const today=todayISO();
+
+  return html`<div>
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <div style=${{fontSize:11,fontWeight:900,color:T.muted,letterSpacing:1.4}}>RUNNING PLANS</div>
+      <${Btn} onClick=${()=>setWizardOpen(true)} variant="primary" style=${{fontSize:12,padding:"6px 14px"}}>+ New Plan<//>
+    </div>
+
+    ${(trainingPlans||[]).length===0?html`
+      <div className="sk-card" style=${{...S.card,textAlign:"center",padding:24,marginBottom:12,background:`${T.blue}09`,border:`1px dashed ${T.blueBorder}`}}>
+        <div style=${{fontSize:28,marginBottom:8}}>🏃</div>
+        <div style=${{fontWeight:800,fontSize:14,color:T.text}}>No active plan</div>
+        <div style=${{fontSize:12,color:T.muted,marginTop:4}}>Start a progressive running plan — each week adds ${5}min</div>
+      </div>
+    `:""}
+
+    ${(trainingPlans||[]).map(plan=>{
+      const curWeek=getPlanCurrentWeek(plan);
+      const pct=Math.round((curWeek+1)/plan.totalWeeks*100);
+      const weekMins=plan.startMins+curWeek*plan.incrementMins;
+      const isExpanded=expandedId===plan.id;
+      const planTasks=tasks.filter(t=>(t.planKey||"").startsWith(`plan_${plan.id}`));
+      const completedTasks=planTasks.filter(t=>t.completed).length;
+
+      return html`<div key=${plan.id} className="sk-card" style=${{...S.card,marginBottom:12,border:`1px solid ${T.blueBorder}44`}}>
+        <div style=${{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+          <div style=${{flex:1}}>
+            <div style=${{fontWeight:900,fontSize:15,color:T.text,letterSpacing:-0.2}}>${plan.name}</div>
+            <div style=${{fontSize:12,color:T.muted,marginTop:2}}>Week ${curWeek+1} of ${plan.totalWeeks} · ${weekMins}min runs this week</div>
+            <!-- Progress bar -->
+            <div style=${{marginTop:10,height:4,borderRadius:99,background:`${T.blue}20`}}>
+              <div style=${{height:"100%",borderRadius:99,background:`linear-gradient(90deg,${T.blue},#22d3ee)`,width:`${pct}%`,transition:"width 0.5s ease",boxShadow:`0 0 8px ${T.blue}55`}}></div>
+            </div>
+            <div style=${{marginTop:4,fontSize:11,color:T.muted,display:"flex",justifyContent:"space-between"}}>
+              <span>${completedTasks} sessions done</span><span>${pct}% complete</span>
+            </div>
+          </div>
+          <div style=${{flexShrink:0}}>
+            <${Ring} pct=${pct} size=${44} stroke=${3.5} color=${T.blue} glow=${true}/>
+          </div>
+        </div>
+
+        <div style=${{display:"flex",gap:8,marginTop:14}}>
+          <button onClick=${()=>setExpandedId(isExpanded?null:plan.id)} style=${{flex:1,padding:"7px 12px",borderRadius:10,border:`1px solid ${T.border}`,background:T.surface,color:T.muted,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:12}}>
+            ${isExpanded?"▲ Hide weeks":"▼ View all weeks"}
+          </button>
+          <${Btn} onClick=${()=>{if(confirm(`End "${plan.name}"? This will remove all future plan sessions.`))onDeletePlan(plan.id);}} variant="danger" style=${{fontSize:12,padding:"7px 14px"}}>End plan<//>
+        </div>
+
+        ${isExpanded?html`
+          <div style=${{marginTop:12,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:6}}>
+            ${Array.from({length:plan.totalWeeks},(_,w)=>{
+              const wMins=plan.startMins+w*plan.incrementMins;
+              const isCur=w===curWeek;
+              const isPast=w<curWeek;
+              return html`<div key=${w} style=${{padding:"8px 10px",borderRadius:11,border:`1px solid ${isCur?T.blueBorder:T.border}`,background:isCur?T.blueGlow:isPast?"rgba(255,255,255,0.02)":T.surface}}>
+                <div style=${{fontSize:10,fontWeight:800,color:isCur?T.blue:T.muted,letterSpacing:0.5}}>WK ${w+1}${isCur?" ●":isPast?" ✓":""}</div>
+                <div style=${{fontSize:14,fontWeight:900,color:isCur?T.blue:isPast?T.muted:T.text,marginTop:2}}>${wMins}min</div>
+                <div style=${{fontSize:10,color:T.muted,marginTop:1}}>${plan.sessionsPerWeek}× runs</div>
+              </div>`;
+            })}
+          </div>
+        `:""}
+      </div>`;
+    })}
+
+    ${wizardOpen?html`<${PlanWizardModal}
+      onSave=${plan=>{
+        const newTasks=generatePlanTasks(plan);
+        onUpsertPlan(plan,newTasks);
+        showToast(`▶ ${plan.name} started! ${newTasks.length} sessions added.`);
+      }}
+      onClose=${()=>setWizardOpen(false)}
+    />`:""}
+  </div>`;
+}
+
 // ── App ───────────────────────────────────────────────────────
 function App(){
   const [state,setState]=useState(null); const [ready,setReady]=useState(false);
@@ -936,8 +1186,34 @@ function App(){
 
   useEffect(()=>{
     loadState().then(saved=>{
-      if(saved) setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},goals:[],settings:DEF_SETTINGS,...saved,settings:{...DEF_SETTINGS,...saved?.settings}});
-      else setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},goals:[],settings:{...DEF_SETTINGS}});
+      if(saved){
+        // Handle URL action params (for widget tap actions)
+        const sp=new URLSearchParams(window.location.search);
+        const action=sp.get("action");
+        const taskId=sp.get("taskId");
+        const habitId=sp.get("habitId");
+        if(action==="completeNext"){
+          const today=todayISO(); let marked=false;
+          saved.tasks=(saved.tasks||[]).map(t=>{
+            if(marked||t.date!==today||t.completed||t.category==="work")return t;
+            marked=true; return{...t,completed:true,completedAt:Date.now()};
+          });
+          if(marked) setTimeout(()=>showToast("Task completed ✓"),400);
+        }
+        if(action==="complete"&&taskId){
+          saved.tasks=(saved.tasks||[]).map(t=>t.id===taskId?{...t,completed:true,completedAt:Date.now()}:t);
+          setTimeout(()=>showToast("Task completed ✓"),400);
+        }
+        if(action==="toggleHabit"&&habitId){
+          const key=`${habitId}_${todayISO()}`;
+          saved.habitLogs={...saved.habitLogs,[key]:!saved.habitLogs?.[key]};
+          setTimeout(()=>showToast("Habit updated ✓"),400);
+        }
+        if(action) window.history.replaceState({},"",window.location.pathname);
+        setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},goals:[],trainingPlans:[],settings:DEF_SETTINGS,...saved,settings:{...DEF_SETTINGS,...saved?.settings}});
+      } else {
+        setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});
+      }
       setReady(true);
       // Check sync
       fetch(SYNC_URL).then(()=>setSyncStatus("ok")).catch(()=>setSyncStatus("offline"));
@@ -954,6 +1230,8 @@ function App(){
   const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,h]};}),[mut]);
   const deleteHabit=useCallback(id=>mut(s=>({habits:s.habits.filter(h=>h.id!==id)})),[mut]);
   const upsertHealthLog=useCallback((date,patch)=>mut(s=>({healthLogs:{...s.healthLogs,[date]:{...s.healthLogs[date],...patch}}})),[mut]);
+  const upsertPlan=useCallback(plan=>mut(s=>({trainingPlans:[...(s.trainingPlans||[]).filter(p=>p.id!==plan.id),plan],tasks:[...s.tasks,...(plan._newTasks||[])]})),[mut]);
+  const deletePlan=useCallback(planId=>mut(s=>({trainingPlans:(s.trainingPlans||[]).filter(p=>p.id!==planId),tasks:s.tasks.filter(t=>!(t.planKey||"").startsWith(`plan_${planId}`))})),[mut]);
   const applyActions=useCallback(actions=>mut(s=>{
     let tasks=[...s.tasks];
     for(const a of actions){
@@ -1015,9 +1293,11 @@ function App(){
       ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
       ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog}/>`:""}
       ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
+        trainingPlans=${state.trainingPlans||[]} tasks=${state.tasks}
+        onUpsertPlan=${upsertPlan} onDeletePlan=${deletePlan}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
         onExport=${()=>{const b=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`sk-backup-${todayISO()}.json`;a.click();}}
-        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});}}/>`:""}
+        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});}}/>`:""}
 
       <!-- Bottom nav -->
       <nav style=${{position:"fixed",left:10,right:10,bottom:0,zIndex:25,display:"flex",gap:2,
