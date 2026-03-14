@@ -192,16 +192,11 @@ ACTIONS:
 {"type":"completeTask","taskId":"..."}`;
 
 async function callCoach(msg,ctx){
-  const res=await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:SYSTEM,
-      messages:[{role:"user",content:JSON.stringify({message:msg,context:ctx})}]})
-  });
+  const res=await fetch("/.netlify/functions/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
   const data=await res.json();
-  const raw=data.content?.[0]?.text||"";
-  try{ return JSON.parse(raw.replace(/```json|```/g,"").trim()); }
-  catch{ return {reply:raw||"Something went wrong.",actions:[]}; }
+  if(typeof data.reply==="string") return data;
+  return {reply:"Try again.",actions:[]};
+
 }
 
 // ── Base components ───────────────────────────────────────────
