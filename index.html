@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <title>Feliz Dias</title>
-<meta name="theme-color" content="#07080f"/>
+<meta name="theme-color" content="#070b14"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="FD"/>
@@ -19,20 +19,28 @@
 </script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;margin:0;background:#07080f;color:#eeeeff;font-family:ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif}
+html,body{height:100%;margin:0;background:#070b14;color:#eef2ff;font-family:ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif}
 input,textarea,select,button{font-family:inherit}
-::-webkit-scrollbar{width:4px;height:4px}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:99px}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-thumb{background:rgba(129,140,248,0.25);border-radius:99px}
 ::-webkit-scrollbar-track{background:transparent}
 input[type=date]::-webkit-calendar-picker-indicator,
 input[type=time]::-webkit-calendar-picker-indicator{filter:invert(0.5)}
-textarea::placeholder,input::placeholder{color:#55586a}
-@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-@keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+textarea::placeholder,input::placeholder{color:#3e4261}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px) scale(0.98)}to{opacity:1;transform:none}}
+@keyframes slideUp{from{opacity:0;transform:translateY(32px)}to{opacity:1;transform:none}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
-button:active{transform:scale(0.95)}
-input:focus,textarea:focus{outline:none;border-color:rgba(143,184,255,0.4)!important;box-shadow:0 0 0 3px rgba(143,184,255,0.08)}
+@keyframes popIn{0%{transform:scale(0)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
+@keyframes pulseGlow{0%,100%{opacity:0.6}50%{opacity:1}}
+button{transition:transform 0.13s cubic-bezier(0.34,1.56,0.64,1),opacity 0.12s,box-shadow 0.15s,background 0.15s,border-color 0.15s}
+button:active{transform:scale(0.93)!important}
+button:hover{opacity:0.88}
+.sk-card{transition:transform 0.18s cubic-bezier(0.34,1.2,0.64,1),box-shadow 0.18s}
+.sk-card:hover{transform:translateY(-2px);box-shadow:0 16px 48px rgba(0,0,0,0.5),0 0 0 1px rgba(129,140,248,0.10)}
+.sk-task:hover{background:rgba(129,140,248,0.07)!important}
+.sk-habit:hover{filter:brightness(1.08)}
+input:focus,textarea:focus{outline:none;border-color:rgba(129,140,248,0.55)!important;box-shadow:0 0 0 3px rgba(129,140,248,0.12)}
 </style>
 </head>
 <body>
@@ -44,26 +52,30 @@ import { html } from 'htm/preact';
 
 // ── Design tokens ────────────────────────────────────────────
 const T = {
-  bg:"#07080f",surface:"rgba(255,255,255,0.055)",surfaceHover:"rgba(255,255,255,0.08)",surfaceElevated:"rgba(255,255,255,0.07)",
-  border:"rgba(255,255,255,0.10)",borderActive:"rgba(255,255,255,0.22)",
-  text:"#eeeeff",muted:"#888aaa",
-  accent:"#ffd16b",accentGlow:"rgba(255,209,107,0.12)",accentBorder:"rgba(255,209,107,0.28)",
-  blue:"#8fb8ff",blueGlow:"rgba(143,184,255,0.11)",blueBorder:"rgba(143,184,255,0.25)",
-  green:"#6ee7b7",greenGlow:"rgba(110,231,183,0.11)",greenBorder:"rgba(110,231,183,0.25)",
-  red:"#ff6a7a",redGlow:"rgba(255,106,122,0.11)",redBorder:"rgba(255,106,122,0.25)",
-  purple:"#c4b5fd",
-  shadow:"0 1px 3px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.25)",
+  bg:"#070b14",surface:"rgba(255,255,255,0.058)",surfaceHover:"rgba(255,255,255,0.095)",surfaceElevated:"rgba(255,255,255,0.085)",
+  border:"rgba(255,255,255,0.085)",borderActive:"rgba(255,255,255,0.28)",
+  text:"#eef2ff",muted:"#5c6490",
+  // amber – coach / special highlights
+  accent:"#fbbf24",accentGlow:"rgba(251,191,36,0.13)",accentBorder:"rgba(251,191,36,0.35)",
+  // indigo – primary actions
+  blue:"#818cf8",blueGlow:"rgba(129,140,248,0.14)",blueBorder:"rgba(129,140,248,0.34)",
+  // emerald – success / recovery
+  green:"#34d399",greenGlow:"rgba(52,211,153,0.13)",greenBorder:"rgba(52,211,153,0.32)",
+  // rose – danger / strain
+  red:"#fb7185",redGlow:"rgba(251,113,133,0.13)",redBorder:"rgba(251,113,133,0.32)",
+  purple:"#c084fc",
+  shadow:"0 2px 4px rgba(0,0,0,0.55),0 12px 40px rgba(0,0,0,0.38)",
 };
 const CATS = {
-  run:     {emoji:"🏃",color:T.blue,  glow:T.blueGlow,  border:T.blueBorder,  label:"Run"},
-  football:{emoji:"⚽",color:T.accent,glow:T.accentGlow,border:T.accentBorder,label:"Football"},
-  game:    {emoji:"🏟️",color:"#f472b6",glow:"rgba(244,114,182,0.10)",border:"rgba(244,114,182,0.22)",label:"Game"},
-  bike:    {emoji:"🚴",color:"#7dd3fc",glow:"rgba(125,211,252,0.10)",border:"rgba(125,211,252,0.22)",label:"Bike"},
-  pilates: {emoji:"🧘",color:T.purple,glow:"rgba(196,181,253,0.10)",border:"rgba(196,181,253,0.22)",label:"Pilates"},
-  recovery:{emoji:"♻️",color:T.green, glow:T.greenGlow, border:T.greenBorder, label:"Recovery"},
-  sauna:   {emoji:"♨️",color:"#fca5a5",glow:"rgba(252,165,165,0.10)",border:"rgba(252,165,165,0.22)",label:"Sauna"},
-  work:    {emoji:"💼",color:T.muted, glow:"rgba(148,163,184,0.06)",border:"rgba(148,163,184,0.15)",label:"Work"},
-  other:   {emoji:"📌",color:T.muted, glow:"rgba(255,255,255,0.04)",border:T.border,label:"Other"},
+  run:     {emoji:"🏃",color:"#818cf8",glow:"rgba(129,140,248,0.14)",border:"rgba(129,140,248,0.32)",label:"Run"},
+  football:{emoji:"⚽",color:"#fb923c",glow:"rgba(251,146,60,0.14)",border:"rgba(251,146,60,0.32)",label:"Football"},
+  game:    {emoji:"🏟",color:"#f472b6",glow:"rgba(244,114,182,0.14)",border:"rgba(244,114,182,0.30)",label:"Game"},
+  bike:    {emoji:"🚴",color:"#22d3ee",glow:"rgba(34,211,238,0.14)",border:"rgba(34,211,238,0.30)",label:"Bike"},
+  pilates: {emoji:"🧘",color:"#c084fc",glow:"rgba(192,132,252,0.14)",border:"rgba(192,132,252,0.30)",label:"Pilates"},
+  recovery:{emoji:"🌿",color:"#34d399",glow:"rgba(52,211,153,0.13)",border:"rgba(52,211,153,0.30)",label:"Recovery"},
+  sauna:   {emoji:"🌡",color:"#fb7185",glow:"rgba(251,113,133,0.13)",border:"rgba(251,113,133,0.30)",label:"Sauna"},
+  work:    {emoji:"💼",color:"#94a3b8",glow:"rgba(148,163,184,0.07)",border:"rgba(148,163,184,0.18)",label:"Work"},
+  other:   {emoji:"◈",color:"#64748b", glow:"rgba(255,255,255,0.04)",border:"rgba(255,255,255,0.10)",label:"Other"},
 };
 
 // ── Utils ──────────────────────────────────────────────────
@@ -205,54 +217,57 @@ async function callCoach(msg,ctx){
 }
 
 // ── Base components ───────────────────────────────────────────
-function Ring({pct=0,size=48,stroke=3.2,color=T.accent}){
+function Ring({pct=0,size=48,stroke=3.2,color=T.accent,glow=false}){
   const r=(size-stroke*2)/2,circ=2*Math.PI*r,dash=(Math.min(100,pct)/100)*circ;
-  return html`<svg width=${size} height=${size} style="transform:rotate(-90deg);flex-shrink:0">
-    <circle cx=${size/2} cy=${size/2} r=${r} stroke="rgba(255,255,255,0.08)" stroke-width=${stroke} fill="none"/>
+  const id=`rg${size}${stroke}`.replace(".","");
+  return html`<svg width=${size} height=${size} style=${{transform:"rotate(-90deg)",flexShrink:0,filter:glow&&pct>20?`drop-shadow(0 0 ${Math.round(stroke*2)}px ${color}99)`:undefined}}>
+    <circle cx=${size/2} cy=${size/2} r=${r} stroke="rgba(255,255,255,0.07)" stroke-width=${stroke} fill="none"/>
     <circle cx=${size/2} cy=${size/2} r=${r} stroke=${color} stroke-width=${stroke} fill="none"
-      stroke-dasharray="${dash} ${circ}" stroke-linecap="round" style="transition:stroke-dasharray 0.4s"/>
+      stroke-dasharray="${dash} ${circ}" stroke-linecap="round" style="transition:stroke-dasharray 0.5s cubic-bezier(0.34,1.2,0.64,1)"/>
   </svg>`;
 }
 
 const S={
-  card:{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:16,backdropFilter:"blur(12px)",boxShadow:T.shadow},
-  input:{width:"100%",padding:"10px 12px",borderRadius:13,border:`1px solid ${T.border}`,
-    background:"rgba(255,255,255,0.05)",color:T.text,fontSize:14,outline:"none",boxSizing:"border-box",transition:"border-color 0.15s"},
-  section:{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1.2,marginBottom:10,textTransform:"uppercase"},
+  card:{background:T.surface,border:`1px solid ${T.border}`,borderRadius:22,padding:16,backdropFilter:"blur(16px)",boxShadow:T.shadow},
+  input:{width:"100%",padding:"11px 14px",borderRadius:14,border:`1px solid ${T.border}`,
+    background:"rgba(255,255,255,0.045)",color:T.text,fontSize:14,outline:"none",boxSizing:"border-box",transition:"border-color 0.15s,box-shadow 0.15s"},
+  section:{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1.4,marginBottom:10,textTransform:"uppercase"},
 };
 
 function Btn({onClick,children,variant="default",style={},disabled=false}){
   const V={
     default:{background:T.surface,border:`1px solid ${T.border}`,color:T.text},
-    primary:{background:T.blueGlow,border:`1px solid ${T.blueBorder}`,color:T.blue},
+    primary:{background:T.blueGlow,border:`1px solid ${T.blueBorder}`,color:T.blue,boxShadow:`0 0 16px ${T.blueGlow}`},
     accent:{background:T.accentGlow,border:`1px solid ${T.accentBorder}`,color:T.accent},
     danger:{background:T.redGlow,border:`1px solid ${T.redBorder}`,color:T.red},
     ghost:{background:"transparent",border:`1px solid ${T.border}`,color:T.muted},
   };
   return html`<button onClick=${onClick} disabled=${disabled} style=${{
     display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,
-    padding:"9px 16px",borderRadius:14,fontFamily:"inherit",fontWeight:800,fontSize:13,
-    letterSpacing:0.3,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.45:1,
-    transition:"all 0.15s",userSelect:"none",...V[variant],...style
+    padding:"10px 18px",borderRadius:14,fontFamily:"inherit",fontWeight:800,fontSize:13,
+    letterSpacing:0.4,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.4:1,
+    userSelect:"none",...V[variant],...style
   }}>${children}</button>`;
 }
 
-function Chip({children,active=false,onClick}){
+function Chip({children,active=false,onClick,color}){
+  const c=color||T.accent;
+  const cGlow=active?`${c}22`:"transparent";
   return html`<button onClick=${onClick} style=${{
-    display:"inline-flex",alignItems:"center",gap:4,padding:"6px 12px",
-    borderRadius:999,border:`1px solid ${active?T.accentBorder:T.border}`,
-    background:active?T.accentGlow:T.surface,color:active?T.accent:T.muted,
+    display:"inline-flex",alignItems:"center",gap:4,padding:"6px 13px",
+    borderRadius:999,border:`1px solid ${active?c+"55":T.border}`,
+    background:active?cGlow:T.surface,color:active?c:T.muted,
     fontSize:12,fontWeight:800,cursor:"pointer",whiteSpace:"nowrap",
-    fontFamily:"inherit",transition:"all 0.15s",
-    boxShadow:active?`0 0 0 1px ${T.accentBorder}`:"none",
+    fontFamily:"inherit",
+    boxShadow:active?`0 0 12px ${c}22`:"none",
   }}>${children}</button>`;
 }
 
 function IconBtn({onClick,children,style={}}){
   return html`<button onClick=${onClick} style=${{
     width:38,height:38,borderRadius:13,border:`1px solid ${T.border}`,
-    background:T.surface,color:T.text,fontSize:15,cursor:"pointer",
-    display:"grid",placeItems:"center",flexShrink:0,transition:"all 0.15s",...style
+    background:T.surface,color:T.muted,fontSize:15,cursor:"pointer",
+    display:"grid",placeItems:"center",flexShrink:0,...style
   }}>${children}</button>`;
 }
 
@@ -267,41 +282,47 @@ function Toast({onReady}){
   const [msg,setMsg]=useState(""); const [vis,setVis]=useState(false); const t=useRef();
   useEffect(()=>{ onReady(m=>{setMsg(m);setVis(true);clearTimeout(t.current);t.current=setTimeout(()=>setVis(false),2600);}); },[]);
   if(!vis) return null;
-  return html`<div style=${{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",
-    background:"rgba(10,12,22,0.96)",border:`1px solid ${T.borderActive}`,
-    borderRadius:14,padding:"10px 18px",zIndex:200,color:T.text,fontSize:13,
-    fontWeight:700,maxWidth:320,textAlign:"center",backdropFilter:"blur(14px)"}}>${msg}</div>`;
+  return html`<div style=${{position:"fixed",bottom:96,left:"50%",transform:"translateX(-50%)",
+    background:"rgba(7,11,20,0.97)",border:`1px solid ${T.blueBorder}`,
+    borderRadius:16,padding:"10px 20px",zIndex:200,color:T.text,fontSize:13,
+    fontWeight:800,maxWidth:320,textAlign:"center",backdropFilter:"blur(20px)",
+    boxShadow:`0 8px 32px rgba(0,0,0,0.5),0 0 0 1px rgba(129,140,248,0.12) inset`,
+    animation:"fadeUp 0.2s ease",letterSpacing:0.2}}>${msg}</div>`;
 }
 
 // ── Task Item ─────────────────────────────────────────────────
 function TaskItem({task,onToggle,onEdit,highlight=false}){
   const cat=CATS[task.category]||CATS.other;
-  return html`<div onClick=${()=>onEdit(task)} style=${{
-    display:"flex",alignItems:"flex-start",gap:10,padding:"11px 12px 11px 10px",
-    borderRadius:14,border:`1px solid ${highlight?T.blueBorder:T.border}`,
-    borderLeft:`3px solid ${task.completed?T.border:cat.color}40`,
-    background:task.completed?"rgba(255,255,255,0.01)":(highlight?T.blueGlow:T.surface),
-    cursor:"pointer",transition:"all 0.15s",opacity:task.completed?0.45:1,
+  return html`<div onClick=${()=>onEdit(task)} className="sk-task" style=${{
+    display:"flex",alignItems:"center",gap:11,padding:"12px 14px 12px 12px",
+    borderRadius:16,
+    border:`1px solid ${highlight?cat.border:task.completed?"rgba(255,255,255,0.05)":T.border}`,
+    borderLeft:`3px solid ${task.completed?"rgba(255,255,255,0.08)":cat.color}`,
+    background:task.completed?"rgba(255,255,255,0.015)":(highlight?`${cat.glow}`:`${T.surface}`),
+    cursor:"pointer",transition:"background 0.15s,border-color 0.15s",
+    opacity:task.completed?0.42:1,
   }}>
     <button onClick=${e=>{e.stopPropagation();onToggle(task.id);}} style=${{
-      width:24,height:24,borderRadius:8,
-      border:`1.5px solid ${task.completed?cat.color:T.border}`,
-      background:task.completed?cat.glow:"transparent",
-      color:task.completed?cat.color:"transparent",
-      flexShrink:0,marginTop:2,cursor:"pointer",display:"grid",placeItems:"center",
-      fontSize:11,fontWeight:900,transition:"all 0.15s",
+      width:26,height:26,borderRadius:9,flexShrink:0,
+      border:`2px solid ${task.completed?cat.color:T.border}`,
+      background:task.completed?cat.color:"transparent",
+      color:"#070b14",
+      cursor:"pointer",display:"grid",placeItems:"center",
+      fontSize:12,fontWeight:900,
+      animation:task.completed?"popIn 0.25s cubic-bezier(0.34,1.56,0.64,1)":undefined,
+      boxShadow:task.completed?`0 0 10px ${cat.color}55`:undefined,
     }}>${task.completed?"✓":""}</button>
     <div style=${{flex:1,minWidth:0}}>
       <div style=${{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-        <span style=${{fontSize:14}}>${cat.emoji}</span>
-        <span style=${{fontSize:14,fontWeight:800,color:T.text,textDecoration:task.completed?"line-through":"none"}}>
+        <span style=${{fontSize:15}}>${cat.emoji}</span>
+        <span style=${{fontSize:14,fontWeight:800,color:task.completed?T.muted:T.text,textDecoration:task.completed?"line-through":"none",letterSpacing:-0.1}}>
           ${task.title}
         </span>
-        ${highlight?html`<span style=${{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:999,background:T.blueGlow,border:`1px solid ${T.blueBorder}44`,color:T.blue}}>NEXT</span>`:""}
+        ${highlight?html`<span style=${{fontSize:10,fontWeight:900,padding:"2px 8px",borderRadius:999,background:`${cat.color}22`,border:`1px solid ${cat.color}55`,color:cat.color,letterSpacing:0.5}}>NOW</span>`:""}
       </div>
       ${(task.time||task.notes)&&task.category!=="work"?html`
-        <div style=${{marginTop:4,display:"flex",gap:10,color:T.muted,fontSize:12,fontWeight:600}}>
-          ${task.time?html`<span>${fmtTime(task.time)}</span>`:""}
+        <div style=${{marginTop:3,display:"flex",gap:10,color:T.muted,fontSize:12,fontWeight:600}}>
+          ${task.time?html`<span style=${{color:`${cat.color}bb`}}>${fmtTime(task.time)}</span>`:""}
           ${task.notes?html`<span style=${{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>${task.notes}</span>`:""}
         </div>`:""}
     </div>
@@ -325,60 +346,72 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
   },[tasks]);
   const todayHabits=habits.filter(h=>h.days.includes(now.getDay()));
 
-  return html`<div style=${{padding:"14px 14px 100px",maxWidth:820,margin:"0 auto"}}>
-    <div style=${{background:"linear-gradient(135deg,rgba(143,184,255,0.09) 0%,rgba(255,209,107,0.06) 60%,rgba(196,181,253,0.04) 100%)",border:`1px solid ${T.border}`,borderRadius:22,padding:18,marginBottom:14,boxShadow:"0 0 0 1px rgba(143,184,255,0.06) inset"}}>
+  const pctColor=pct>=80?T.green:pct>=50?T.blue:T.accent;
+  return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
+    <!-- hero card -->
+    <div className="sk-card" style=${{
+      background:`linear-gradient(140deg,rgba(129,140,248,0.10) 0%,rgba(52,211,153,0.06) 55%,rgba(251,191,36,0.05) 100%)`,
+      border:`1px solid ${T.border}`,borderRadius:24,padding:20,marginBottom:16,
+      boxShadow:`0 0 0 1px rgba(129,140,248,0.08) inset,${T.shadow}`,
+    }}>
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
         <div style=${{flex:1}}>
-          <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:4}}>TODAY</div>
-          <div style=${{fontSize:18,fontWeight:900,color:T.text,lineHeight:1.2}}>${fmtDayLong(todayStr)}</div>
-          <div style=${{marginTop:10,display:"flex",gap:6,flexWrap:"wrap"}}>
+          <div style=${{fontSize:10,fontWeight:900,color:T.muted,letterSpacing:1.6,marginBottom:5}}>TODAY</div>
+          <div style=${{fontSize:19,fontWeight:900,color:T.text,lineHeight:1.2,letterSpacing:-0.3}}>${fmtDayLong(todayStr)}</div>
+          <div style=${{marginTop:11,display:"flex",gap:5,flexWrap:"wrap"}}>
             ${Object.entries(weekCats).filter(([k])=>!["other","work"].includes(k)&&weekCats[k].total>0).map(([k,s])=>
-              html`<${Chip} key=${k} active=${s.done>0}>${CATS[k]?.emoji} ${s.done}/${s.total}<//>`)
+              html`<${Chip} key=${k} active=${s.done>0} color=${CATS[k]?.color}>${CATS[k]?.emoji} ${s.done}/${s.total}<//>`)
             }
           </div>
         </div>
         <div style=${{textAlign:"center",flexShrink:0}}>
-          <div style=${{position:"relative",width:52,height:52}}>
-            <${Ring} pct=${pct} size=${52} color=${pct>=80?T.green:pct>=50?T.accent:T.blue}/>
-            <div style=${{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:11,fontWeight:900,color:T.text}}>${pct}%</div>
+          <div style=${{position:"relative",width:58,height:58}}>
+            <${Ring} pct=${pct} size=${58} stroke=${4.5} color=${pctColor} glow=${pct>0}/>
+            <div style=${{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:13,fontWeight:900,color:pctColor}}>${pct}%</div>
           </div>
-          <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:2}}>${done}/${total}</div>
+          <div style=${{fontSize:11,color:T.muted,fontWeight:700,marginTop:3}}>${done}/${total}</div>
         </div>
       </div>
     </div>
 
     ${total===0?html`
-      <div style=${{border:`1px dashed ${T.border}`,borderRadius:16,padding:24,textAlign:"center",marginBottom:14,background:T.surface,cursor:"pointer"}} onClick=${onOpenCoach}>
-        <div style=${{fontSize:24,marginBottom:6}}>🤖</div>
-        <div style=${{fontWeight:700,fontSize:14,color:T.text}}>Nothing scheduled yet</div>
-        <div style=${{fontSize:12,color:T.muted,marginTop:3}}>Ask Coach to plan your day</div>
+      <div className="sk-card" onClick=${onOpenCoach} style=${{
+        border:`1px dashed ${T.border}`,borderRadius:18,padding:28,textAlign:"center",marginBottom:14,
+        background:T.surface,cursor:"pointer",
+      }}>
+        <div style=${{fontSize:26,marginBottom:8}}>⚡</div>
+        <div style=${{fontWeight:800,fontSize:14,color:T.text}}>Nothing scheduled yet</div>
+        <div style=${{fontSize:12,color:T.muted,marginTop:4}}>Ask Coach to plan your day</div>
       </div>`:""}
 
     ${total>0?html`
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-        <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1}}>TODAY'S PLAN</div>
+        <div style=${{fontSize:10,fontWeight:900,color:T.muted,letterSpacing:1.4}}>TODAY'S PLAN</div>
         <div style=${{fontSize:12,color:T.muted,fontWeight:700}}>${done} of ${total} done</div>
       </div>
-      <div style=${{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+      <div style=${{display:"flex",flexDirection:"column",gap:7,marginBottom:18}}>
         ${todayTasks.map(t=>html`<${TaskItem} key=${t.id} task=${t} onToggle=${onToggleTask} onEdit=${onEditTask} highlight=${t.id===nextTask?.id}/>`)}
       </div>`:""}
 
     ${todayHabits.length>0?html`
-      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:10}}>HABITS</div>
-      <div style=${{display:"flex",flexDirection:"column",gap:7}}>
+      <div style=${{fontSize:10,fontWeight:900,color:T.muted,letterSpacing:1.4,marginBottom:10}}>HABITS</div>
+      <div style=${{display:"flex",flexDirection:"column",gap:6}}>
         ${todayHabits.map(h=>{
           const done2=!!habitLogs[`${h.id}_${todayStr}`];
-          return html`<div key=${h.id} onClick=${()=>onToggleHabit(h.id,todayStr)} style=${{
-            display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:14,
+          return html`<div key=${h.id} onClick=${()=>onToggleHabit(h.id,todayStr)} className="sk-habit" style=${{
+            display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderRadius:15,
             border:`1px solid ${done2?T.greenBorder:T.border}`,
-            background:done2?T.greenGlow:T.surface,cursor:"pointer",transition:"all 0.15s",
+            background:done2?T.greenGlow:T.surface,cursor:"pointer",transition:"background 0.15s,border-color 0.15s",
           }}>
-            <div style=${{width:24,height:24,borderRadius:8,border:`1.5px solid ${done2?T.green:T.border}`,
-              background:done2?"rgba(110,231,183,0.15)":"transparent",
-              display:"grid",placeItems:"center",fontSize:11,color:T.green,fontWeight:900,flexShrink:0}}>${done2?"✓":""}</div>
-            <span style=${{fontSize:17}}>${h.emoji}</span>
+            <div style=${{width:26,height:26,borderRadius:9,
+              border:`2px solid ${done2?T.green:T.border}`,
+              background:done2?T.green:"transparent",
+              display:"grid",placeItems:"center",fontSize:12,color:"#070b14",fontWeight:900,flexShrink:0,
+              boxShadow:done2?`0 0 10px ${T.green}55`:undefined,
+            }}>${done2?"✓":""}</div>
+            <span style=${{fontSize:18}}>${h.emoji}</span>
             <span style=${{fontWeight:700,fontSize:13,color:T.text}}>${h.title}</span>
-            ${done2?html`<span style=${{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:999,background:T.greenGlow,border:`1px solid ${T.greenBorder}44`,color:T.green,marginLeft:"auto"}}>done</span>`:""}
+            ${done2?html`<span style=${{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:999,background:`${T.green}22`,border:`1px solid ${T.green}44`,color:T.green,marginLeft:"auto",letterSpacing:0.5}}>✓ DONE</span>`:""}
           </div>`;
         })}
       </div>`:""}
@@ -395,11 +428,12 @@ function WeekView({tasks,onToggleTask,onEditTask,onAddForDate}){
       const isToday=date===todayStr,isPast=date<todayStr,done=dt.filter(t=>t.completed).length;
       return html`<div key=${date} style=${{marginBottom:14}}>
         <div style=${{display:"flex",alignItems:"center",gap:10,marginBottom:7}}>
-          <div style=${{fontSize:12,fontWeight:900,letterSpacing:0.5,
-            color:isToday?T.accent:(isPast?T.muted:T.text),
-            background:isToday?T.accentGlow:"transparent",
-            border:isToday?`1px solid ${T.accentBorder}`:"1px solid transparent",
-            padding:isToday?"3px 9px":"3px 4px",borderRadius:8}}>
+          <div style=${{fontSize:12,fontWeight:900,letterSpacing:0.4,
+            color:isToday?T.blue:(isPast?T.muted:T.text),
+            background:isToday?T.blueGlow:"transparent",
+            border:isToday?`1px solid ${T.blueBorder}`:"1px solid transparent",
+            padding:isToday?"3px 10px":"3px 4px",borderRadius:9,
+            boxShadow:isToday?`0 0 10px ${T.blueGlow}`:undefined}}>
             ${fmtDayShort(date).toUpperCase()} ${fmtDateNum(date)}
           </div>
           ${dt.length>0?html`<span style=${{fontSize:11,color:T.muted,fontWeight:700}}>${done}/${dt.length}</span>`:""}
@@ -436,30 +470,33 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit}){
       const weekDone=weekDates.filter(d=>!!habitLogs[`${h.id}_${d}`]).length;
       let streak=0;const ti=weekDates.indexOf(todayStr);
       for(let i=ti>=0?ti:weekDates.length-1;i>=0;i--){if(habitLogs[`${h.id}_${weekDates[i]}`])streak++;else break;}
-      return html`<div key=${h.id} style=${{...S.card,marginBottom:10}}>
+      return html`<div key=${h.id} className="sk-card" style=${{...S.card,marginBottom:10}}>
         <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-          <div style=${{display:"flex",alignItems:"center",gap:10}}>
-            <span style=${{fontSize:22}}>${h.emoji}</span>
+          <div style=${{display:"flex",alignItems:"center",gap:11}}>
+            <div style=${{width:42,height:42,borderRadius:14,background:`${T.green}18`,border:`1px solid ${T.greenBorder}`,display:"grid",placeItems:"center",fontSize:20,flexShrink:0}}>${h.emoji}</div>
             <div>
-              <div style=${{fontWeight:800,fontSize:14,color:T.text}}>${h.title}</div>
-              <div style=${{fontSize:11,color:T.muted,marginTop:2}}>${weekDone}/7 this week · ${streak}d streak</div>
+              <div style=${{fontWeight:800,fontSize:14,color:T.text,letterSpacing:-0.2}}>${h.title}</div>
+              <div style=${{fontSize:11,color:T.muted,marginTop:2,display:"flex",gap:8}}>
+                <span style=${{color:weekDone>0?T.green:T.muted}}>${weekDone}/7 this week</span>
+                ${streak>0?html`<span style=${{color:T.accent}}>🔥 ${streak}d</span>`:""}
+              </div>
             </div>
           </div>
-          <${IconBtn} onClick=${()=>onEditHabit(h)}>✎<//>
+          <${IconBtn} onClick=${()=>onEditHabit(h)} style=${{fontSize:13}}>✎<//>
         </div>
-        <div style=${{display:"flex",gap:5,marginTop:12}}>
+        <div style=${{display:"flex",gap:5,marginTop:13}}>
           ${weekDates.map((date,i)=>{
             const done=!!habitLogs[`${h.id}_${date}`],isToday=date===todayStr;
             return html`<button key=${date} onClick=${()=>onToggleHabit(h.id,date)} style=${{
-              flex:1,paddingTop:"100%",position:"relative",borderRadius:10,
-              border:`1px solid ${done?T.greenBorder:isToday?T.borderActive:T.border}`,
-              background:done?T.greenGlow:isToday?"rgba(255,255,255,0.03)":T.surface,
+              flex:1,paddingTop:"100%",position:"relative",
+              border:`1px solid ${done?T.greenBorder:isToday?T.blueBorder:T.border}`,
+              background:done?T.greenGlow:isToday?T.blueGlow:"rgba(255,255,255,0.025)",
               cursor:"pointer",overflow:"hidden",borderRadius:12,
-              boxShadow:done?`0 0 0 1px ${T.greenBorder} inset`:"none",
+              boxShadow:done?`0 0 10px ${T.green}33`:isToday?`0 0 8px ${T.blue}22`:"none",
             }}>
               <div style=${{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
-                <span style=${{fontSize:9,fontWeight:800,color:done?T.green:isToday?T.text:T.muted}}>${DAY_LABELS[i]}</span>
-                ${done?html`<span style=${{fontSize:10,color:T.green}}>✓</span>`:""}
+                <span style=${{fontSize:9,fontWeight:900,color:done?T.green:isToday?T.blue:T.muted,letterSpacing:0.4}}>${DAY_LABELS[i]}</span>
+                ${done?html`<span style=${{fontSize:11,color:T.green,lineHeight:1}}>✓</span>`:""}
               </div>
             </button>`;
           })}
@@ -511,13 +548,15 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus}){
 
 // ── Modals ────────────────────────────────────────────────────
 function BottomSheet({children,title,onClose}){
-  return html`<div style=${{position:"fixed",inset:0,background:"rgba(0,0,0,0.70)",backdropFilter:"blur(10px)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center",animation:"fadeIn 0.2s ease"}} onClick=${onClose}>
-    <div style=${{background:"rgba(10,12,28,0.98)",backdropFilter:"blur(24px)",borderRadius:"24px 24px 0 0",border:`1px solid ${T.border}`,borderBottom:"none",
-      padding:"16px 16px calc(16px + env(safe-area-inset-bottom))",
-      width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto",
-      boxShadow:"0 -24px 80px rgba(0,0,0,0.6)",animation:"slideUp 0.28s cubic-bezier(0.22,1,0.36,1)"}} onClick=${e=>e.stopPropagation()}>
-      <div style=${{width:36,height:4,background:T.borderActive,borderRadius:99,margin:"0 auto 16px"}}/>
-      <div style=${{fontWeight:900,fontSize:18,color:T.text,marginBottom:18}}>${title}</div>
+  return html`<div style=${{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(14px)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center",animation:"fadeIn 0.18s ease"}} onClick=${onClose}>
+    <div style=${{background:"rgba(7,11,20,0.98)",backdropFilter:"blur(32px)",borderRadius:"26px 26px 0 0",
+      border:`1px solid ${T.border}`,borderBottom:"none",
+      padding:"16px 18px calc(20px + env(safe-area-inset-bottom))",
+      width:"100%",maxWidth:580,maxHeight:"92vh",overflowY:"auto",
+      boxShadow:`0 -32px 80px rgba(0,0,0,0.7),0 0 0 1px rgba(129,140,248,0.06) inset`,
+      animation:"slideUp 0.28s cubic-bezier(0.22,1,0.36,1)"}} onClick=${e=>e.stopPropagation()}>
+      <div style=${{width:32,height:3,background:"rgba(255,255,255,0.15)",borderRadius:99,margin:"0 auto 18px"}}/>
+      <div style=${{fontWeight:900,fontSize:18,color:T.text,marginBottom:20,letterSpacing:-0.4}}>${title}</div>
       ${children}
     </div>
   </div>`;
@@ -627,17 +666,23 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
   };
 
   if(!isOpen) return null;
-  return html`<div style=${{position:"fixed",inset:0,zIndex:80,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick=${onClose}>
-    <div style=${{background:"rgba(8,9,26,0.97)",backdropFilter:"blur(24px)",borderRadius:"24px 24px 0 0",border:`1px solid ${T.border}`,borderBottom:"none",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.7)",animation:"slideUp 0.3s cubic-bezier(0.22,1,0.36,1)"}} onClick=${e=>e.stopPropagation()}>
-      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 14px 10px",borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
-        <div style=${{display:"flex",alignItems:"center",gap:10}}>
-          <div style=${{width:40,height:40,borderRadius:14,background:"linear-gradient(135deg,rgba(143,184,255,0.18),rgba(255,209,107,0.12))",border:`1px solid ${T.blueBorder}`,display:"grid",placeItems:"center",fontSize:20,boxShadow:T.shadow}}>🤖</div>
+  return html`<div style=${{position:"fixed",inset:0,zIndex:80,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(12px)",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick=${onClose}>
+    <div style=${{background:"rgba(7,11,20,0.98)",backdropFilter:"blur(32px)",borderRadius:"26px 26px 0 0",border:`1px solid ${T.border}`,borderBottom:"none",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:`0 -32px 80px rgba(0,0,0,0.8),0 0 0 1px rgba(129,140,248,0.08) inset`,animation:"slideUp 0.3s cubic-bezier(0.22,1,0.36,1)"}} onClick=${e=>e.stopPropagation()}>
+      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 16px 12px",borderBottom:`1px solid ${T.border}`,flexShrink:0}}>
+        <div style=${{display:"flex",alignItems:"center",gap:11}}>
+          <div style=${{width:42,height:42,borderRadius:15,
+            background:"linear-gradient(135deg,rgba(129,140,248,0.25),rgba(251,191,36,0.12))",
+            border:`1px solid rgba(129,140,248,0.35)`,
+            display:"grid",placeItems:"center",fontSize:20,
+            boxShadow:`0 0 20px rgba(129,140,248,0.25)`}}>⚡</div>
           <div>
-            <div style=${{fontWeight:900,fontSize:15,color:T.text}}>Coach</div>
-            <div style=${{fontSize:11,fontWeight:700,color:busy?T.accent:T.green}}>${busy?"thinking…":"● ready"}</div>
+            <div style=${{fontWeight:900,fontSize:16,color:T.text,letterSpacing:-0.3}}>Coach</div>
+            <div style=${{fontSize:11,fontWeight:700,color:busy?T.accent:T.green,display:"flex",alignItems:"center",gap:4}}>
+              ${busy?html`<span style=${{animation:"pulseGlow 1s infinite"}}>◌</span> thinking…`:html`<span>◉</span> ready`}
+            </div>
           </div>
         </div>
-        <${IconBtn} onClick=${onClose}>✕<//>
+        <${IconBtn} onClick=${onClose} style=${{color:T.muted}}>✕<//>
       </div>
       <div ref=${bodyRef} style=${{flex:1,overflowY:"auto",padding:"12px 14px",display:"flex",flexDirection:"column",gap:10,minHeight:180}}>
         ${msgs.map((m,i)=>html`<div key=${i} style=${{
@@ -773,28 +818,28 @@ function HealthView({tasks,healthLogs,onUpsertLog}){
   return html`<div style=${{padding:"16px 14px 120px"}}>
     <!-- 3 metric rings -->
     <div style=${{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
-      <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.3s ease"}}>
-        <${Ring} pct=${recovery??0} size=${56} stroke=${4} color=${rCol}/>
-        <div style=${{fontWeight:900,fontSize:recovery!=null?22:18,color:rCol,marginTop:6,lineHeight:1}}>${recovery!=null?recovery:"-"}</div>
-        <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:3}}>RECOVERY</div>
+      <div className="sk-card" style=${{background:`linear-gradient(160deg,${rCol}14,rgba(255,255,255,0.04))`,border:`1px solid ${rCol}30`,borderRadius:22,padding:"18px 8px",textAlign:"center",animation:"fadeUp 0.3s ease"}}>
+        <${Ring} pct=${recovery??0} size=${62} stroke=${5} color=${rCol} glow=${true}/>
+        <div style=${{fontWeight:900,fontSize:recovery!=null?24:20,color:rCol,marginTop:8,lineHeight:1,textShadow:`0 0 16px ${rCol}88`}}>${recovery!=null?recovery:"-"}</div>
+        <div style=${{fontSize:10,color:T.muted,fontWeight:800,marginTop:4,letterSpacing:1.2}}>RECOVERY</div>
       </div>
-      <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.35s ease"}}>
-        <${Ring} pct=${sleepMins!=null?Math.min(100,sleepMins/(8*60)*100):0} size=${56} stroke=${4} color=${T.blue}/>
-        <div style=${{fontWeight:900,fontSize:sleepHrs?15:18,color:T.blue,marginTop:6,lineHeight:1}}>${sleepHrs||"-"}</div>
-        <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:3}}>SLEEP</div>
+      <div className="sk-card" style=${{background:`linear-gradient(160deg,${T.blue}14,rgba(255,255,255,0.04))`,border:`1px solid ${T.blue}30`,borderRadius:22,padding:"18px 8px",textAlign:"center",animation:"fadeUp 0.35s ease"}}>
+        <${Ring} pct=${sleepMins!=null?Math.min(100,sleepMins/(8*60)*100):0} size=${62} stroke=${5} color=${T.blue} glow=${true}/>
+        <div style=${{fontWeight:900,fontSize:sleepHrs?15:20,color:T.blue,marginTop:8,lineHeight:1,textShadow:`0 0 16px ${T.blue}88`}}>${sleepHrs||"-"}</div>
+        <div style=${{fontSize:10,color:T.muted,fontWeight:800,marginTop:4,letterSpacing:1.2}}>SLEEP</div>
       </div>
-      <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.4s ease"}}>
-        <${Ring} pct=${Math.min(100,strain/21*100)} size=${56} stroke=${4} color=${sCol}/>
-        <div style=${{fontWeight:900,fontSize:22,color:sCol,marginTop:6,lineHeight:1}}>${strain.toFixed(1)}</div>
-        <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:3}}>STRAIN</div>
+      <div className="sk-card" style=${{background:`linear-gradient(160deg,${sCol}14,rgba(255,255,255,0.04))`,border:`1px solid ${sCol}30`,borderRadius:22,padding:"18px 8px",textAlign:"center",animation:"fadeUp 0.4s ease"}}>
+        <${Ring} pct=${Math.min(100,strain/21*100)} size=${62} stroke=${5} color=${sCol} glow=${true}/>
+        <div style=${{fontWeight:900,fontSize:24,color:sCol,marginTop:8,lineHeight:1,textShadow:`0 0 16px ${sCol}88`}}>${strain.toFixed(1)}</div>
+        <div style=${{fontSize:10,color:T.muted,fontWeight:800,marginTop:4,letterSpacing:1.2}}>STRAIN</div>
       </div>
     </div>
 
     <!-- Sleep card -->
-    <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:16,marginBottom:12,animation:"fadeUp 0.3s ease"}}>
+    <div className="sk-card" style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:22,padding:16,marginBottom:12,animation:"fadeUp 0.3s ease"}}>
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:log.sleep?12:0}}>
-        <div style=${{fontWeight:800,fontSize:14}}>💤 Sleep</div>
-        <button onClick=${()=>setSleepModal(true)} style=${{background:T.blueGlow,border:`1px solid ${T.blueBorder}`,borderRadius:10,padding:"5px 12px",color:T.blue,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>${log.sleep?"Edit":"Log"}</button>
+        <div style=${{fontWeight:900,fontSize:14,letterSpacing:-0.2}}>💤 Sleep</div>
+        <button onClick=${()=>setSleepModal(true)} style=${{background:T.blueGlow,border:`1px solid ${T.blueBorder}`,borderRadius:10,padding:"5px 13px",color:T.blue,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:`0 0 10px ${T.blueGlow}`}}>${log.sleep?"Edit":"Log"}</button>
       </div>
       ${log.sleep?html`<div style=${{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
         ${[{label:"Duration",v:sleepHrs||"-",c:T.blue},{label:"Quality",v:["😴","😐","🙂","😊","🌟"][log.sleep.quality-1]||"-",c:T.blue},{label:"Wake",v:fmtTime(log.sleep.wakeTime)||"-",c:T.blue}]
@@ -806,10 +851,10 @@ function HealthView({tasks,healthLogs,onUpsertLog}){
     </div>
 
     <!-- Wellness card -->
-    <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:16,marginBottom:12,animation:"fadeUp 0.35s ease"}}>
+    <div className="sk-card" style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:22,padding:16,marginBottom:12,animation:"fadeUp 0.35s ease"}}>
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:(log.hrv||log.energy)?12:0}}>
-        <div style=${{fontWeight:800,fontSize:14}}>📊 Wellness</div>
-        <button onClick=${()=>setWellnessModal(true)} style=${{background:T.greenGlow,border:`1px solid ${T.greenBorder}`,borderRadius:10,padding:"5px 12px",color:T.green,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>${(log.hrv||log.energy)?"Edit":"Check-in"}</button>
+        <div style=${{fontWeight:900,fontSize:14,letterSpacing:-0.2}}>📊 Wellness</div>
+        <button onClick=${()=>setWellnessModal(true)} style=${{background:T.greenGlow,border:`1px solid ${T.greenBorder}`,borderRadius:10,padding:"5px 13px",color:T.green,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:`0 0 10px ${T.greenGlow}`}}>${(log.hrv||log.energy)?"Edit":"Check-in"}</button>
       </div>
       ${(log.hrv||log.energy)?html`<div style=${{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
         ${[
@@ -825,8 +870,8 @@ function HealthView({tasks,healthLogs,onUpsertLog}){
     </div>
 
     <!-- Strain breakdown -->
-    <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:16,marginBottom:12,animation:"fadeUp 0.4s ease"}}>
-      <div style=${{fontWeight:800,fontSize:14,marginBottom:12}}>🔥 Today's Strain</div>
+    <div className="sk-card" style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:22,padding:16,marginBottom:12,animation:"fadeUp 0.4s ease"}}>
+      <div style=${{fontWeight:900,fontSize:14,marginBottom:12,letterSpacing:-0.2}}>🔥 Today's Strain</div>
       ${tasks.filter(t=>t.date===today&&t.category!=="work").length===0
         ?html`<div style=${{color:T.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>No activities today — strain will update as tasks complete.</div>`
         :html`<div style=${{display:"flex",flexDirection:"column",gap:8}}>
@@ -852,8 +897,8 @@ function HealthView({tasks,healthLogs,onUpsertLog}){
     </div>
 
     <!-- 7-day trend -->
-    <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:16,animation:"fadeUp 0.45s ease"}}>
-      <div style=${{fontWeight:800,fontSize:14,marginBottom:14}}>📈 7-Day Trend</div>
+    <div className="sk-card" style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:22,padding:16,animation:"fadeUp 0.45s ease"}}>
+      <div style=${{fontWeight:900,fontSize:14,marginBottom:14,letterSpacing:-0.2}}>📈 7-Day Trend</div>
       <div style=${{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
         ${last7.map(date=>{
           const dl=healthLogs[date]||{};
@@ -921,10 +966,14 @@ function App(){
   }),[mut]);
 
   if(!ready||!state) return html`<div style=${{height:"100vh",display:"grid",placeItems:"center",background:T.bg,color:T.muted}}>
-    <div style=${{textAlign:"center",animation:"fadeUp 0.6s ease"}}><div style=${{fontSize:36,marginBottom:12}}>⚡</div><div style=${{fontWeight:800,letterSpacing:0.5}}>Loading…</div></div>
+    <div style=${{textAlign:"center",animation:"fadeUp 0.5s ease"}}>
+      <div style=${{fontSize:32,marginBottom:14,filter:`drop-shadow(0 0 12px ${T.blue})`}}>◉</div>
+      <div style=${{fontWeight:900,letterSpacing:-0.3,fontSize:15,color:T.text}}>Feliz Dias</div>
+      <div style=${{fontSize:12,color:T.muted,marginTop:4,fontWeight:700}}>Loading…</div>
+    </div>
   </div>`;
 
-  const NAV=[{id:"today",icon:"☀",label:"Today"},{id:"week",icon:"▦",label:"Week"},{id:"habits",icon:"✓",label:"Habits"},{id:"health",icon:"❤",label:"Health"},{id:"settings",icon:"⚙",label:"Settings"}];
+  const NAV=[{id:"today",icon:"◉",label:"Today"},{id:"week",icon:"⊞",label:"Week"},{id:"habits",icon:"✦",label:"Habits"},{id:"health",icon:"♥",label:"Health"},{id:"settings",icon:"⊙",label:"More"}];
   const weekDates=getWeekDates();
   const wTotal=state.tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").length;
   const wDone=state.tasks.filter(t=>weekDates.includes(t.date)&&t.completed&&t.category!=="work").length;
@@ -932,25 +981,32 @@ function App(){
   return html`<div style=${{background:T.bg,minHeight:"100vh",color:T.text,fontFamily:"ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif"}}>
     <!-- Ambient -->
     <div style=${{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
-      <div style=${{position:"absolute",top:"-5%",left:"5%",width:700,height:600,borderRadius:"50%",background:"radial-gradient(rgba(143,184,255,0.06),transparent 70%)"}}/>
-      <div style=${{position:"absolute",top:"5%",right:0,width:500,height:450,borderRadius:"50%",background:"radial-gradient(rgba(255,209,107,0.05),transparent 65%)"}}/>
+      <div style=${{position:"absolute",top:"-10%",left:"-5%",width:600,height:600,borderRadius:"50%",background:"radial-gradient(rgba(129,140,248,0.09),transparent 65%)"}}/>
+      <div style=${{position:"absolute",top:"30%",right:"-10%",width:500,height:500,borderRadius:"50%",background:"radial-gradient(rgba(34,211,238,0.06),transparent 65%)"}}/>
+      <div style=${{position:"absolute",bottom:"10%",left:"20%",width:400,height:400,borderRadius:"50%",background:"radial-gradient(rgba(52,211,153,0.05),transparent 65%)"}}/>
     </div>
 
     <div style=${{position:"relative",zIndex:1}}>
       <!-- Header -->
       <header style=${{position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"space-between",
-        padding:"calc(12px + env(safe-area-inset-top)) 14px 12px",
-        background:"rgba(7,8,15,0.85)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${T.border}`}}>
+        padding:"calc(14px + env(safe-area-inset-top)) 16px 14px",
+        background:"rgba(7,11,20,0.88)",backdropFilter:"blur(24px)",
+        borderBottom:`1px solid ${T.border}`}}>
         <div style=${{display:"flex",alignItems:"center",gap:10}}>
-          <div style=${{width:36,height:36,borderRadius:13,background:T.blueGlow,border:`1px solid ${T.blueBorder}`,display:"grid",placeItems:"center",boxShadow:`0 0 0 1px ${T.blueBorder} inset`}}><span style=${{background:`linear-gradient(135deg,${T.blue},${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:900,fontSize:12}}>FD</span></div>
+          <div style=${{width:38,height:38,borderRadius:14,
+            background:"linear-gradient(135deg,rgba(129,140,248,0.25),rgba(34,211,238,0.12))",
+            border:`1px solid rgba(129,140,248,0.35)`,display:"grid",placeItems:"center",
+            boxShadow:`0 0 16px rgba(129,140,248,0.2)`}}>
+            <span style=${{background:`linear-gradient(135deg,${T.blue},#22d3ee)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:900,fontSize:13,letterSpacing:-0.5}}>FD</span>
+          </div>
           <div>
-            <div style=${{fontWeight:900,fontSize:15,color:T.text}}>Feliz Dias</div>
+            <div style=${{fontWeight:900,fontSize:16,color:T.text,letterSpacing:-0.3}}>Feliz Dias</div>
             <div style=${{fontSize:11,color:T.muted,fontWeight:700,marginTop:1}}>${wDone}/${wTotal} this week</div>
           </div>
         </div>
-        <div style=${{display:"flex",gap:8}}>
-          <${IconBtn} onClick=${()=>setTaskModal({task:null,date:todayISO()})} style=${{background:T.blueGlow,borderColor:T.blueBorder,color:T.blue,fontSize:17,fontWeight:900}}>＋<//>
-          <${IconBtn} onClick=${()=>setCoachOpen(true)} style=${{background:T.accentGlow,borderColor:T.accentBorder,fontSize:18}}>🤖<//>
+        <div style=${{display:"flex",gap:7}}>
+          <${IconBtn} onClick=${()=>setTaskModal({task:null,date:todayISO()})} style=${{background:T.blueGlow,borderColor:T.blueBorder,color:T.blue,fontSize:18,fontWeight:900,boxShadow:`0 0 12px ${T.blueGlow}`}}>＋<//>
+          <${IconBtn} onClick=${()=>setCoachOpen(true)} style=${{background:T.accentGlow,borderColor:T.accentBorder,color:T.accent,fontSize:17,fontWeight:900}}>⚡<//>
         </div>
       </header>
 
@@ -964,24 +1020,32 @@ function App(){
         onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});}}/>`:""}
 
       <!-- Bottom nav -->
-      <nav style=${{position:"fixed",left:12,right:12,bottom:0,zIndex:25,display:"flex",gap:3,
-        padding:"6px",marginBottom:"calc(8px + env(safe-area-inset-bottom))",
-        background:"rgba(7,8,15,0.92)",backdropFilter:"blur(20px)",
-        border:`1px solid ${T.border}`,borderRadius:22,
-        boxShadow:"0 8px 32px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.04)"}}>
+      <nav style=${{position:"fixed",left:10,right:10,bottom:0,zIndex:25,display:"flex",gap:2,
+        padding:"5px",marginBottom:"calc(10px + env(safe-area-inset-bottom))",
+        background:"rgba(7,11,20,0.94)",backdropFilter:"blur(28px)",
+        border:`1px solid ${T.border}`,borderRadius:24,
+        boxShadow:`0 -4px 40px rgba(0,0,0,0.5),0 0 0 1px rgba(129,140,248,0.06) inset`}}>
         ${NAV.map(v=>html`<button key=${v.id} onClick=${()=>setView(v.id)} style=${{
-          flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
-          padding:"7px 4px",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
-          border:`1px solid ${view===v.id?T.borderActive:"transparent"}`,
-          background:view===v.id?"rgba(255,255,255,0.07)":"transparent",
-          color:view===v.id?T.text:T.muted,transition:"all 0.15s",
-        }}><span style=${{fontSize:16}}>${v.icon}</span><span style=${{fontSize:10,fontWeight:800,letterSpacing:0.3}}>${v.label}</span></button>`)}
+          flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,
+          padding:"7px 4px",borderRadius:18,cursor:"pointer",fontFamily:"inherit",
+          border:`1px solid ${view===v.id?T.blueBorder+"88":"transparent"}`,
+          background:view===v.id?`linear-gradient(135deg,${T.blueGlow},rgba(34,211,238,0.04))`:"transparent",
+          color:view===v.id?T.blue:T.muted,
+        }}>
+          <span style=${{fontSize:15,filter:view===v.id?`drop-shadow(0 0 5px ${T.blue})`:"none",transition:"filter 0.2s"}}>${v.icon}</span>
+          <span style=${{fontSize:10,fontWeight:900,letterSpacing:0.4}}>${v.label}</span>
+        </button>`)}
         <button onClick=${()=>setCoachOpen(true)} style=${{
-          flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
-          padding:"7px 4px",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
-          border:`1px solid ${T.accentBorder}`,background:T.accentGlow,color:T.accent,
-          transition:"all 0.15s",
-        }}><span style=${{fontSize:16}}>🤖</span><span style=${{fontSize:10,fontWeight:800,letterSpacing:0.3}}>Coach</span></button>
+          flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,
+          padding:"7px 4px",borderRadius:18,cursor:"pointer",fontFamily:"inherit",
+          border:`1px solid ${T.accentBorder}`,
+          background:`linear-gradient(135deg,${T.accentGlow},rgba(129,140,248,0.06))`,
+          color:T.accent,
+          boxShadow:`0 0 14px ${T.accentGlow}`,
+        }}>
+          <span style=${{fontSize:15,filter:`drop-shadow(0 0 5px ${T.accent}88)`}}>⚡</span>
+          <span style=${{fontSize:10,fontWeight:900,letterSpacing:0.4}}>Coach</span>
+        </button>
       </nav>
     </div>
 
