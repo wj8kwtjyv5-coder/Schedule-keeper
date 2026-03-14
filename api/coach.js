@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ reply: "Method not allowed", actions: [] });
 
-  const apiKey = process.env.ANTHROPICAPIKEY || process.env.ANTHROPIC_API_KEY;
+  const apiKey = (process.env.ANTHROPICAPIKEY || process.env.ANTHROPIC_API_KEY || "").trim();
   if (!apiKey) return res.status(200).json({ reply: "Add ANTHROPICAPIKEY in Vercel environment variables.", actions: [] });
 
   let payload;
