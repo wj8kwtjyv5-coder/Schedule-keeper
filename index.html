@@ -670,6 +670,217 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
   </div>`;
 }
 
+// ── Health ──────────────────────────────────────────────────
+const STRAIN_WEIGHTS={game:3.5,football:3.5,run:2.5,bike:2.0,pilates:1.5,sauna:0.7,recovery:0.5,work:0,other:0.5};
+
+function calcSleepMins(bedtime,wakeTime){
+  if(!bedtime||!wakeTime)return null;
+  const[bh,bm]=bedtime.split(":").map(Number);
+  const[wh,wm]=wakeTime.split(":").map(Number);
+  let m=(wh*60+wm)-(bh*60+bm);
+  if(m<0)m+=1440;
+  return m;
+}
+function calcRecovery(log){
+  if(!log)return null;
+  let pts=0,total=0;
+  if(log.sleep?.bedtime&&log.sleep?.wakeTime){
+    const mins=calcSleepMins(log.sleep.bedtime,log.sleep.wakeTime);
+    if(mins!=null){const hrs=mins/60;pts+=Math.min(40,hrs>=8?40:40*(hrs/8));}
+    total+=40;
+  }
+  if(log.sleep?.quality){pts+=(log.sleep.quality-1)/4*20;total+=20;}
+  if(log.hrv){pts+=Math.min(25,Math.max(0,(log.hrv-30)/50*25));total+=25;}
+  if(log.restingHR){pts+=Math.min(15,Math.max(0,(80-log.restingHR)/40*15));total+=15;}
+  if(total===0)return null;
+  return Math.round(pts/total*100);
+}
+function calcStrain(tasks,date){
+  return tasks.filter(t=>t.date===date&&t.completed).reduce((s,t)=>s+(STRAIN_WEIGHTS[t.category]??0.5),0);
+}
+function recoveryColor(s){if(s==null)return T.muted;if(s>=67)return T.green;if(s>=34)return"#fbbf24";return T.red;}
+function strainColor(s){if(s<7)return T.green;if(s<14)return"#fbbf24";return T.red;}
+
+function SleepModal({log,onSave,onClose}){
+  const[bedtime,setBedtime]=useState(log?.sleep?.bedtime||"22:30");
+  const[wakeTime,setWakeTime]=useState(log?.sleep?.wakeTime||"07:00");
+  const[quality,setQuality]=useState(log?.sleep?.quality||3);
+  const mins=calcSleepMins(bedtime,wakeTime);
+  const label=["😴 Poor","😐 Fair","🙂 Good","😊 Great","🌟 Optimal"];
+  return html`<${BottomSheet} title="💤 Log Sleep" onClose=${onClose}>
+    <div style=${{display:"flex",flexDirection:"column",gap:16}}>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div><${Label}>Bedtime<//><input type="time" value=${bedtime} onInput=${e=>setBedtime(e.target.value)} style=${{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 12px",color:T.text,fontSize:15}}/></div>
+        <div><${Label}>Wake up<//><input type="time" value=${wakeTime} onInput=${e=>setWakeTime(e.target.value)} style=${{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 12px",color:T.text,fontSize:15}}/></div>
+      </div>
+      ${mins!=null?html`<div style=${{textAlign:"center",color:T.blue,fontWeight:800,fontSize:16}}>⏱ ${Math.floor(mins/60)}h ${mins%60}m</div>`:""}
+      <div>
+        <${Label}>Sleep Quality<//>
+        <div style=${{display:"flex",gap:6,marginTop:6}}>
+          ${[1,2,3,4,5].map(q=>html`<button key=${q} onClick=${()=>setQuality(q)} style=${{flex:1,padding:"10px 4px",borderRadius:12,border:`1px solid ${quality===q?T.accentBorder:T.border}`,background:quality===q?T.accentGlow:T.surface,color:quality===q?T.accent:T.muted,cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:700,transition:"all 0.15s"}}>${label[q-1]}</button>`)}
+        </div>
+      </div>
+      <${Btn} onClick=${()=>{onSave({sleep:{bedtime,wakeTime,quality}});onClose();}} variant="primary">Save Sleep<//>
+    </div>
+  <//>`;
+}
+
+function WellnessModal({log,onSave,onClose}){
+  const[hrv,setHrv]=useState(log?.hrv||"");
+  const[rhr,setRhr]=useState(log?.restingHR||"");
+  const[energy,setEnergy]=useState(log?.energy||3);
+  const[mood,setMood]=useState(log?.mood||3);
+  const[stress,setStress]=useState(log?.stress||2);
+  const[hydration,setHydration]=useState(log?.hydration||3);
+  function Row({label,emoji,value,onChange,labs}){
+    return html`<div>
+      <div style=${{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+        <span style=${{fontSize:13,color:T.muted,fontWeight:700}}>${emoji} ${label}</span>
+        <span style=${{fontSize:13,color:T.text,fontWeight:800}}>${labs[value-1]}</span>
+      </div>
+      <div style=${{display:"flex",gap:6}}>
+        ${[1,2,3,4,5].map(v=>html`<button key=${v} onClick=${()=>onChange(v)} style=${{flex:1,height:30,borderRadius:8,border:`1px solid ${value===v?T.blueBorder:T.border}`,background:value===v?T.blueGlow:T.surface,cursor:"pointer",fontSize:11,fontWeight:800,color:value===v?T.blue:T.muted,fontFamily:"inherit"}}>${v}</button>`)}
+      </div>
+    </div>`;
+  }
+  return html`<${BottomSheet} title="📊 Recovery Check-in" onClose=${onClose}>
+    <div style=${{display:"flex",flexDirection:"column",gap:16}}>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div><${Label}>HRV (ms)<//><input type="number" value=${hrv} onInput=${e=>setHrv(e.target.value)} placeholder="e.g. 65" style=${{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 12px",color:T.text,fontSize:15}}/></div>
+        <div><${Label}>Resting HR (bpm)<//><input type="number" value=${rhr} onInput=${e=>setRhr(e.target.value)} placeholder="e.g. 52" style=${{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 12px",color:T.text,fontSize:15}}/></div>
+      </div>
+      <${Row} label="Energy" emoji="⚡" value=${energy} onChange=${setEnergy} labs=${["Drained","Low","OK","Good","High"]}/>
+      <${Row} label="Mood" emoji="😊" value=${mood} onChange=${setMood} labs=${["Bad","Poor","OK","Good","Great"]}/>
+      <${Row} label="Stress" emoji="🧠" value=${stress} onChange=${setStress} labs=${["None","Low","Moderate","High","Max"]}/>
+      <${Row} label="Hydration" emoji="💧" value=${hydration} onChange=${setHydration} labs=${["Dehydrated","Low","OK","Good","Great"]}/>
+      <${Btn} onClick=${()=>{onSave({hrv:hrv?Number(hrv):undefined,restingHR:rhr?Number(rhr):undefined,energy,mood,stress,hydration});onClose();}} variant="primary">Save Check-in<//>
+    </div>
+  <//>`;
+}
+
+function HealthView({tasks,healthLogs,onUpsertLog}){
+  const today=todayISO();
+  const log=healthLogs[today]||{};
+  const[sleepModal,setSleepModal]=useState(false);
+  const[wellnessModal,setWellnessModal]=useState(false);
+  const recovery=calcRecovery(log);
+  const strain=calcStrain(tasks,today);
+  const sleepMins=log.sleep?.bedtime&&log.sleep?.wakeTime?calcSleepMins(log.sleep.bedtime,log.sleep.wakeTime):null;
+  const sleepHrs=sleepMins!=null?`${Math.floor(sleepMins/60)}h ${sleepMins%60}m`:null;
+  const last7=Array.from({length:7},(_,i)=>isoDate(addDays(new Date(),-6+i)));
+  const rCol=recoveryColor(recovery);
+  const sCol=strainColor(strain);
+  return html`<div style=${{padding:"16px 14px 120px"}}>
+    <!-- 3 metric rings -->
+    <div style=${{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+      <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.3s ease"}}>
+        <${Ring} pct=${recovery??0} size=${56} stroke=${4} color=${rCol}/>
+        <div style=${{fontWeight:900,fontSize:recovery!=null?22:18,color:rCol,marginTop:6,lineHeight:1}}>${recovery!=null?recovery:"-"}</div>
+        <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:3}}>RECOVERY</div>
+      </div>
+      <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.35s ease"}}>
+        <${Ring} pct=${sleepMins!=null?Math.min(100,sleepMins/(8*60)*100):0} size=${56} stroke=${4} color=${T.blue}/>
+        <div style=${{fontWeight:900,fontSize:sleepHrs?15:18,color:T.blue,marginTop:6,lineHeight:1}}>${sleepHrs||"-"}</div>
+        <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:3}}>SLEEP</div>
+      </div>
+      <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.4s ease"}}>
+        <${Ring} pct=${Math.min(100,strain/21*100)} size=${56} stroke=${4} color=${sCol}/>
+        <div style=${{fontWeight:900,fontSize:22,color:sCol,marginTop:6,lineHeight:1}}>${strain.toFixed(1)}</div>
+        <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:3}}>STRAIN</div>
+      </div>
+    </div>
+
+    <!-- Sleep card -->
+    <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:16,marginBottom:12,animation:"fadeUp 0.3s ease"}}>
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:log.sleep?12:0}}>
+        <div style=${{fontWeight:800,fontSize:14}}>💤 Sleep</div>
+        <button onClick=${()=>setSleepModal(true)} style=${{background:T.blueGlow,border:`1px solid ${T.blueBorder}`,borderRadius:10,padding:"5px 12px",color:T.blue,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>${log.sleep?"Edit":"Log"}</button>
+      </div>
+      ${log.sleep?html`<div style=${{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        ${[{label:"Duration",v:sleepHrs||"-",c:T.blue},{label:"Quality",v:["😴","😐","🙂","😊","🌟"][log.sleep.quality-1]||"-",c:T.blue},{label:"Wake",v:fmtTime(log.sleep.wakeTime)||"-",c:T.blue}]
+          .map(m=>html`<div style=${{textAlign:"center",background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"8px 4px"}}>
+            <div style=${{fontSize:16,fontWeight:900,color:m.c}}>${m.v}</div>
+            <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:2}}>${m.label}</div>
+          </div>`)}
+      </div>`:html`<div style=${{color:T.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>Tap Log to record last night's sleep.</div>`}
+    </div>
+
+    <!-- Wellness card -->
+    <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:16,marginBottom:12,animation:"fadeUp 0.35s ease"}}>
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:(log.hrv||log.energy)?12:0}}>
+        <div style=${{fontWeight:800,fontSize:14}}>📊 Wellness</div>
+        <button onClick=${()=>setWellnessModal(true)} style=${{background:T.greenGlow,border:`1px solid ${T.greenBorder}`,borderRadius:10,padding:"5px 12px",color:T.green,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>${(log.hrv||log.energy)?"Edit":"Check-in"}</button>
+      </div>
+      ${(log.hrv||log.energy)?html`<div style=${{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+        ${[
+          {label:"HRV",v:log.hrv?log.hrv+"ms":"-",c:log.hrv?T.green:T.muted},
+          {label:"HR",v:log.restingHR?log.restingHR+"bpm":"-",c:log.restingHR?T.red:T.muted},
+          {label:"Energy",v:log.energy?["🔋","⚡","⚡⚡","⚡⚡⚡","🔥"][log.energy-1]:"-",c:T.accent},
+          {label:"Mood",v:log.mood?["😞","😐","🙂","😊","🤩"][log.mood-1]:"-",c:T.accent},
+        ].map(m=>html`<div style=${{textAlign:"center",background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"8px 4px"}}>
+          <div style=${{fontSize:14,fontWeight:900,color:m.c}}>${m.v}</div>
+          <div style=${{fontSize:10,color:T.muted,fontWeight:700,marginTop:2}}>${m.label}</div>
+        </div>`)}
+      </div>`:html`<div style=${{color:T.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>Log HRV, resting HR and how you feel.</div>`}
+    </div>
+
+    <!-- Strain breakdown -->
+    <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:16,marginBottom:12,animation:"fadeUp 0.4s ease"}}>
+      <div style=${{fontWeight:800,fontSize:14,marginBottom:12}}>🔥 Today's Strain</div>
+      ${tasks.filter(t=>t.date===today&&t.category!=="work").length===0
+        ?html`<div style=${{color:T.muted,fontSize:13,textAlign:"center",padding:"8px 0"}}>No activities today — strain will update as tasks complete.</div>`
+        :html`<div style=${{display:"flex",flexDirection:"column",gap:8}}>
+          ${tasks.filter(t=>t.date===today&&t.category!=="work").map(t=>{
+            const w=STRAIN_WEIGHTS[t.category]??0.5;
+            const c=CATS[t.category]?.color||T.muted;
+            return html`<div key=${t.id} style=${{display:"flex",alignItems:"center",gap:10,opacity:t.completed?1:0.45}}>
+              <span style=${{fontSize:16}}>${CATS[t.category]?.emoji||"📌"}</span>
+              <div style=${{flex:1}}>
+                <div style=${{fontSize:12,fontWeight:700,marginBottom:3}}>${t.title}</div>
+                <div style=${{height:4,borderRadius:99,background:"rgba(255,255,255,0.07)"}}>
+                  <div style=${{height:"100%",borderRadius:99,background:c,width:t.completed?`${Math.min(100,w/21*100*5)}%`:"0%",transition:"width 0.4s ease"}}></div>
+                </div>
+              </div>
+              <span style=${{fontSize:11,fontWeight:800,color:t.completed?c:T.muted}}>${t.completed?"+"+w.toFixed(1):"—"}</span>
+            </div>`;
+          })}
+          <div style=${{borderTop:`1px solid ${T.border}`,paddingTop:8,display:"flex",justifyContent:"space-between"}}>
+            <span style=${{fontSize:12,color:T.muted,fontWeight:700}}>Total Strain</span>
+            <span style=${{fontSize:14,fontWeight:900,color:sCol}}>${strain.toFixed(1)} / 21</span>
+          </div>
+        </div>`}
+    </div>
+
+    <!-- 7-day trend -->
+    <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:16,animation:"fadeUp 0.45s ease"}}>
+      <div style=${{fontWeight:800,fontSize:14,marginBottom:14}}>📈 7-Day Trend</div>
+      <div style=${{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+        ${last7.map(date=>{
+          const dl=healthLogs[date]||{};
+          const rec=calcRecovery(dl);
+          const str=calcStrain(tasks,date);
+          const isToday=date===today;
+          return html`<div key=${date} style=${{textAlign:"center"}}>
+            <div style=${{fontSize:10,color:isToday?T.text:T.muted,fontWeight:isToday?800:600,marginBottom:6}}>${fmtDayShort(date)}</div>
+            <div style=${{height:48,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden",display:"flex",alignItems:"flex-end",marginBottom:3}}>
+              <div style=${{width:"100%",background:recoveryColor(rec),borderRadius:6,height:`${rec||0}%`,transition:"height 0.5s ease"}}></div>
+            </div>
+            <div style=${{fontSize:9,fontWeight:800,color:recoveryColor(rec)}}>${rec!=null?rec:"-"}</div>
+            <div style=${{marginTop:3,height:3,borderRadius:99,background:str>0?strainColor(str):"rgba(255,255,255,0.08)"}}></div>
+          </div>`;
+        })}
+      </div>
+      <div style=${{display:"flex",gap:14,marginTop:10,justifyContent:"center"}}>
+        <div style=${{display:"flex",gap:5,alignItems:"center"}}><div style=${{width:8,height:8,borderRadius:2,background:T.green}}></div><span style=${{fontSize:10,color:T.muted}}>Recovery %</span></div>
+        <div style=${{display:"flex",gap:5,alignItems:"center"}}><div style=${{width:20,height:3,borderRadius:99,background:T.red}}></div><span style=${{fontSize:10,color:T.muted}}>Strain</span></div>
+      </div>
+    </div>
+
+    ${sleepModal?html`<${SleepModal} log=${log} onSave=${s=>onUpsertLog(today,s)} onClose=${()=>setSleepModal(false)}/>`:""}
+    ${wellnessModal?html`<${WellnessModal} log=${log} onSave=${s=>onUpsertLog(today,s)} onClose=${()=>setWellnessModal(false)}/>`:""}
+  </div>`;
+}
+
 // ── App ───────────────────────────────────────────────────────
 function App(){
   const [state,setState]=useState(null); const [ready,setReady]=useState(false);
@@ -680,8 +891,8 @@ function App(){
 
   useEffect(()=>{
     loadState().then(saved=>{
-      if(saved) setState({tasks:[],habits:[],habitLogs:{},goals:[],settings:DEF_SETTINGS,...saved,settings:{...DEF_SETTINGS,...saved?.settings}});
-      else setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});
+      if(saved) setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},goals:[],settings:DEF_SETTINGS,...saved,settings:{...DEF_SETTINGS,...saved?.settings}});
+      else setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},goals:[],settings:{...DEF_SETTINGS}});
       setReady(true);
       // Check sync
       fetch(SYNC_URL).then(()=>setSyncStatus("ok")).catch(()=>setSyncStatus("offline"));
@@ -697,6 +908,7 @@ function App(){
   const toggleHabit=useCallback((hid,date)=>mut(s=>({habitLogs:{...s.habitLogs,[`${hid}_${date}`]:!s.habitLogs[`${hid}_${date}`]}})),[mut]);
   const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,h]};}),[mut]);
   const deleteHabit=useCallback(id=>mut(s=>({habits:s.habits.filter(h=>h.id!==id)})),[mut]);
+  const upsertHealthLog=useCallback((date,patch)=>mut(s=>({healthLogs:{...s.healthLogs,[date]:{...s.healthLogs[date],...patch}}})),[mut]);
   const applyActions=useCallback(actions=>mut(s=>{
     let tasks=[...s.tasks];
     for(const a of actions){
@@ -712,7 +924,7 @@ function App(){
     <div style=${{textAlign:"center",animation:"fadeUp 0.6s ease"}}><div style=${{fontSize:36,marginBottom:12}}>⚡</div><div style=${{fontWeight:800,letterSpacing:0.5}}>Loading…</div></div>
   </div>`;
 
-  const NAV=[{id:"today",icon:"☀",label:"Today"},{id:"week",icon:"▦",label:"Week"},{id:"habits",icon:"✓",label:"Habits"},{id:"settings",icon:"⚙",label:"Settings"}];
+  const NAV=[{id:"today",icon:"☀",label:"Today"},{id:"week",icon:"▦",label:"Week"},{id:"habits",icon:"✓",label:"Habits"},{id:"health",icon:"❤",label:"Health"},{id:"settings",icon:"⚙",label:"Settings"}];
   const weekDates=getWeekDates();
   const wTotal=state.tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").length;
   const wDone=state.tasks.filter(t=>weekDates.includes(t.date)&&t.completed&&t.category!=="work").length;
@@ -745,6 +957,7 @@ function App(){
       ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)}/>`:""}
       ${view==="week"?html`<${WeekView} tasks=${state.tasks} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
       ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
+      ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog}/>`:""}
       ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
         onExport=${()=>{const b=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`sk-backup-${todayISO()}.json`;a.click();}}
