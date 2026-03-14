@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>ScheduleKeeper</title>
+<title>Feliz Dias</title>
 <meta name="theme-color" content="#07080f"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="SK"/>
+<meta name="apple-mobile-web-app-title" content="FD"/>
 <link rel="manifest" href="/manifest.json"/>
 <link rel="apple-touch-icon" href="/icons/icon-192.png"/>
 <script type="importmap">
@@ -98,7 +98,7 @@ function detectCat(title=""){
 
 // ── Sync ────────────────────────────────────────────────────
 const SK_KEY="sk2";
-const SYNC_URL="/.netlify/functions/sync";
+const SYNC_URL="/api/sync";
 
 async function loadState(){
   try{ const r=await window.storage?.get(SK_KEY); if(r?.value)return JSON.parse(r.value); }catch{}
@@ -197,7 +197,7 @@ ACTIONS:
 {"type":"completeTask","taskId":"..."}`;
 
 async function callCoach(msg,ctx){
-  const res=await fetch("/.netlify/functions/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
+  const res=await fetch("/api/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
   const data=await res.json();
   if(typeof data.reply==="string") return data;
   return {reply:"Try again.",actions:[]};
@@ -504,7 +504,7 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus}){
       <${Btn} onClick=${onReset} variant="danger">Reset all data<//>
     </div>
     <div style=${{marginTop:24,fontSize:12,color:T.muted,fontWeight:700,textAlign:"center"}}>
-      ScheduleKeeper v2 · Powered by Claude AI
+      Feliz Dias v2 · Powered by Claude AI
     </div>
   </div>`;
 }
@@ -730,9 +730,9 @@ function App(){
         padding:"calc(12px + env(safe-area-inset-top)) 14px 12px",
         background:"rgba(7,8,15,0.85)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${T.border}`}}>
         <div style=${{display:"flex",alignItems:"center",gap:10}}>
-          <div style=${{width:36,height:36,borderRadius:13,background:"linear-gradient(135deg,rgba(143,184,255,0.15),rgba(255,209,107,0.10))",border:`1px solid ${T.blueBorder}`,display:"grid",placeItems:"center",fontWeight:900,fontSize:12,background:T.blueGlow,boxShadow:`0 0 0 1px ${T.blueBorder} inset`}}><span style=${{background:`linear-gradient(135deg,${T.blue},${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:900,fontSize:12}}>SK</span></div>
+          <div style=${{width:36,height:36,borderRadius:13,background:T.blueGlow,border:`1px solid ${T.blueBorder}`,display:"grid",placeItems:"center",boxShadow:`0 0 0 1px ${T.blueBorder} inset`}}><span style=${{background:`linear-gradient(135deg,${T.blue},${T.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:900,fontSize:12}}>FD</span></div>
           <div>
-            <div style=${{fontWeight:900,fontSize:15,color:T.text}}>ScheduleKeeper</div>
+            <div style=${{fontWeight:900,fontSize:15,color:T.text}}>Feliz Dias</div>
             <div style=${{fontSize:11,color:T.muted,fontWeight:700,marginTop:1}}>${wDone}/${wTotal} this week</div>
           </div>
         </div>
