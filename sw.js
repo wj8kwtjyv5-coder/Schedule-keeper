@@ -1,4 +1,4 @@
-const CACHE = "sk-v2";
+const CACHE = "sk-v3";
 const ASSETS = ["/", "/index.html", "/manifest.json"];
 
 self.addEventListener("install", e => {
@@ -16,7 +16,7 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   // Network-first for API calls, cache-first for assets
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith("/.netlify/")) {
+  if (url.pathname.startsWith("/api/")) {
     e.respondWith(fetch(e.request).catch(() => new Response("{}", { headers: { "Content-Type": "application/json" } })));
     return;
   }
