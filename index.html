@@ -127,6 +127,51 @@ const fmtDayShort = s => parseDate(s).toLocaleDateString("en-GB",{weekday:"short
 const fmtDayLong = s => parseDate(s).toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
 const fmtDateNum = s => parseDate(s).getDate();
 
+// ── Notifications ─────────────────────────────────────────────
+const _notifTimers = [];
+function _clearNotifTimers(){ _notifTimers.forEach(clearTimeout); _notifTimers.length=0; }
+
+function _fireNotif(title, body, tag){
+  const sw = navigator.serviceWorker?.controller;
+  if(sw){ sw.postMessage({type:"SHOW_NOTIFICATION",title,body,tag,data:{}}); }
+  else if(Notification.permission==="granted"){ new Notification(title,{body,icon:"/icons/icon-192.png",tag}); }
+}
+
+function scheduleTaskReminders(tasks){
+  _clearNotifTimers();
+  if(Notification.permission!=="granted") return;
+  const now=Date.now(), todayStr=todayISO(), tomStr=isoDate(addDays(new Date(),1));
+  tasks
+    .filter(t=>!t.completed&&t.time&&t.category!=="work"&&(t.date===todayStr||t.date===tomStr))
+    .forEach(t=>{
+      const taskMs=new Date(`${t.date}T${t.time}:00`).getTime();
+      const cat=CATS[t.category]||CATS.other;
+      [60,15].forEach(mins=>{
+        const delay=taskMs-mins*60_000-now;
+        if(delay>0) _notifTimers.push(setTimeout(()=>{
+          _fireNotif(
+            `${cat.icon} ${t.title} — ${mins===60?"in 1 hour":"in 15 min"}`,
+            `${fmtTime(t.time)}${t.notes?" · "+t.notes:""}`,
+            `task-${t.id}-${mins}`
+          );
+        },delay));
+      });
+    });
+}
+
+function scheduleWellnessReminders(bedtime){
+  if(Notification.permission!=="granted"||!bedtime) return;
+  const now=Date.now(), [bh,bm]=bedtime.split(":").map(Number);
+  [
+    {mins:120, title:"Red light glasses", body:"2 hours to bed — put on red light glasses now"},
+    {mins:30,  title:"Wind down",         body:"30 min to bed — start winding down"},
+  ].forEach(({mins,title,body})=>{
+    const base=new Date(); base.setHours(bh,bm,0,0);
+    const delay=base.getTime()-mins*60_000-now;
+    if(delay>0) _notifTimers.push(setTimeout(()=>_fireNotif(title,body,`wellness-${mins}`),delay));
+  });
+}
+
 function getWeekDates(from=new Date()){
   const d=startOfDay(from); const dow=(d.getDay()+6)%7; const mon=addDays(d,-dow);
   return Array.from({length:7},(_,i)=>isoDate(addDays(mon,i)));
@@ -250,7 +295,12 @@ function seedHabits(){ return [
   {id:uid(),title:"Eat clean",emoji:"🥗",days:[0,1,2,3,4,5,6]},
   {id:uid(),title:"Bed by 9pm",emoji:"🌙",days:[0,1,2,3,4,5,6]},
 ];}
-const DEF_SETTINGS={weekTargets:{run:5,football:5,bike:3,pilates:2,recovery:2,sauna:5},constraints:{wake:"05:00",bed:"21:00"}};
+const DEF_SETTINGS={
+  weekTargets:{run:5,football:5,bike:3,pilates:2,recovery:2,sauna:5},
+  constraints:{wake:"05:00",bed:"21:00"},
+  notifEnabled:false,
+  macroTargets:{cal:2500,protein:160,carbs:220,fat:70},
+};
 
 // ── Coach (Claude) ────────────────────────────────────────────
 const SYSTEM=`You are Coach — a sharp, adaptive performance coach for a dedicated football player.
@@ -873,10 +923,73 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit}){
 // ── Settings View ─────────────────────────────────────────────
 function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
   const [wt,setWt]=useState({...settings.weekTargets});
+  const [mt,setMt]=useState({...( settings.macroTargets||{cal:2500,protein:160,carbs:220,fat:70})});
+
+  // Notification toggle handler
+  const toggleNotif=async()=>{
+    if(settings.notifEnabled){ onUpdate({notifEnabled:false}); showToast("Reminders off"); return; }
+    if(!("Notification" in window)){ showToast("Notifications not supported"); return; }
+    if(Notification.permission==="denied"){ showToast("Enable notifications in browser/device settings"); return; }
+    const perm=Notification.permission==="granted"?"granted":await Notification.requestPermission();
+    if(perm==="granted"){ onUpdate({notifEnabled:true}); showToast("Reminders enabled"); }
+    else { showToast("Permission denied"); }
+  };
+
+  const notifStatus=!("Notification" in window)?"unsupported"
+    :settings.notifEnabled&&Notification.permission==="granted"?"active"
+    :Notification.permission==="denied"?"blocked":"off";
+
   return html`<div style=${{padding:"14px 14px 100px",maxWidth:820,margin:"0 auto"}}>
     <div style=${{fontSize:22,fontWeight:900,color:T.text,marginBottom:16}}>Settings</div>
 
     <${PlansSection} trainingPlans=${trainingPlans||[]} tasks=${tasks||[]} onUpsertPlan=${onUpsertPlan} onDeletePlan=${onDeletePlan}/>
+
+    <!-- Reminders card -->
+    <div style=${{...S.card,marginBottom:10}}>
+      <div style=${{...S.section,marginBottom:10}}>Reminders</div>
+      <div style=${{fontSize:12,color:T.muted,lineHeight:1.6,marginBottom:14}}>
+        Get notified <b style=${{color:T.text}}>1 hour</b> and <b style=${{color:T.text}}>15 min</b> before each session.<br/>
+        Daily <b style=${{color:T.text}}>red light glasses</b> (2h before bed) and <b style=${{color:T.text}}>wind-down</b> (30 min before bed) alerts.
+      </div>
+      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+        <div style=${{display:"flex",alignItems:"center",gap:8}}>
+          <div style=${{
+            width:8,height:8,borderRadius:"50%",flexShrink:0,
+            background:notifStatus==="active"?T.green:notifStatus==="blocked"?T.red:T.muted,
+            boxShadow:notifStatus==="active"?`0 0 6px ${T.green}`:"none",
+          }}/>
+          <span style=${{fontSize:11,fontWeight:700,color:notifStatus==="active"?T.green:notifStatus==="blocked"?T.red:T.muted}}>
+            ${notifStatus==="active"?"Active":notifStatus==="blocked"?"Blocked in browser":notifStatus==="unsupported"?"Not supported":"Tap to enable"}
+          </span>
+        </div>
+        <${Btn} onClick=${toggleNotif} variant=${settings.notifEnabled?"ghost":"primary"} style=${{fontSize:12,padding:"8px 16px"}}>
+          ${settings.notifEnabled?"Turn off":"Enable"}
+        <//>
+      </div>
+    </div>
+
+    <!-- Macro targets card -->
+    <div style=${{...S.card,marginBottom:10}}>
+      <div style=${{...S.section,marginBottom:12}}>Daily Macro Targets</div>
+      ${[
+        {key:"cal",     label:"Calories",  unit:"kcal", color:T.accent, step:100},
+        {key:"protein", label:"Protein",   unit:"g",    color:T.green,  step:5},
+        {key:"carbs",   label:"Carbs",     unit:"g",    color:T.amber,  step:5},
+        {key:"fat",     label:"Fat",       unit:"g",    color:T.blue,   step:5},
+      ].map(({key,label,unit,color,step})=>html`
+        <div key=${key} style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+          <div style=${{display:"flex",alignItems:"center",gap:7}}>
+            <span style=${{width:8,height:8,borderRadius:"50%",background:color,display:"inline-block"}}></span>
+            <span style=${{fontSize:13,fontWeight:700,color:T.text}}>${label}</span>
+            <span style=${{fontSize:11,color:T.muted}}>${unit}</span>
+          </div>
+          <div style=${{display:"flex",alignItems:"center",gap:8}}>
+            <button onClick=${()=>{const nv=Math.max(0,mt[key]-step);const nm={...mt,[key]:nv};setMt(nm);onUpdate({macroTargets:nm});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>-</button>
+            <span style=${{fontWeight:900,fontSize:14,color,minWidth:36,textAlign:"center"}}>${mt[key]}</span>
+            <button onClick=${()=>{const nv=mt[key]+step;const nm={...mt,[key]:nv};setMt(nm);onUpdate({macroTargets:nm});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>+</button>
+          </div>
+        </div>`)}
+    </div>
 
     <div style=${{...S.card,marginBottom:10}}>
       <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:4}}>LOCK SCREEN WIDGET SYNC</div>
@@ -1166,7 +1279,147 @@ function WellnessModal({log,onSave,onClose}){
   <//>`;
 }
 
-function HealthView({tasks,healthLogs,onUpsertLog}){
+// ── Nutrition View ────────────────────────────────────────────
+function NutritionView({foodLogs,macroTargets,onUpsertFoodLog}){
+  const [date,setDate]=useState(todayISO());
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({name:"",cal:"",protein:"",carbs:"",fat:""});
+
+  const meals=(foodLogs[date]?.meals)||[];
+  const totals=meals.reduce((a,m)=>({
+    cal:a.cal+(+m.cal||0),protein:a.protein+(+m.protein||0),
+    carbs:a.carbs+(+m.carbs||0),fat:a.fat+(+m.fat||0),
+  }),{cal:0,protein:0,carbs:0,fat:0});
+
+  const tgt=macroTargets||{cal:2500,protein:160,carbs:220,fat:70};
+
+  const macroFields=[
+    {key:"cal",     label:"Calories", unit:"kcal", color:T.accent},
+    {key:"protein", label:"Protein",  unit:"g",    color:T.green},
+    {key:"carbs",   label:"Carbs",    unit:"g",    color:T.amber},
+    {key:"fat",     label:"Fat",      unit:"g",    color:T.blue},
+  ];
+
+  const addMeal=()=>{
+    if(!form.name.trim()) return;
+    const newMeals=[...meals,{id:uid(),name:form.name.trim(),cal:+form.cal||0,protein:+form.protein||0,carbs:+form.carbs||0,fat:+form.fat||0}];
+    onUpsertFoodLog(date,newMeals);
+    setForm({name:"",cal:"",protein:"",carbs:"",fat:""});
+    setShowForm(false);
+  };
+  const deleteMeal=id=>{ onUpsertFoodLog(date,meals.filter(m=>m.id!==id)); };
+
+  return html`<div style=${{paddingBottom:20}}>
+
+    <!-- Date nav -->
+    <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+      <button onClick=${()=>setDate(isoDate(addDays(parseDate(date),-1)))} style=${{
+        background:"none",border:"none",color:T.muted,fontSize:18,cursor:"pointer",padding:"4px 8px",fontFamily:"inherit"
+      }}>‹</button>
+      <div style=${{fontSize:13,fontWeight:800,color:T.text,letterSpacing:-0.2}}>
+        ${date===todayISO()?"Today — ":""}${parseDate(date).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}
+      </div>
+      <button onClick=${()=>{ const next=isoDate(addDays(parseDate(date),1)); if(next<=todayISO()) setDate(next); }} style=${{
+        background:"none",border:"none",color:date>=todayISO()?T.border:T.muted,fontSize:18,cursor:"pointer",padding:"4px 8px",fontFamily:"inherit"
+      }}>›</button>
+    </div>
+
+    <!-- Macro rings -->
+    <div style=${{...S.card,marginBottom:14}}>
+      <div style=${{display:"flex",justifyContent:"space-around",alignItems:"flex-end",padding:"4px 0 8px"}}>
+        ${macroFields.map(({key,label,unit,color})=>{
+          const consumed=totals[key], target=tgt[key];
+          const pct=target>0?Math.min(100,Math.round(consumed/target*100)):0;
+          const over=consumed>target;
+          return html`<div key=${key} style=${{textAlign:"center",flex:1}}>
+            <div style=${{position:"relative",width:60,height:60,margin:"0 auto 6px"}}>
+              <${Ring} pct=${pct} size=${60} stroke=${4.5} color=${over?T.red:color} glow=${pct>0}/>
+              <div style=${{position:"absolute",inset:0,display:"grid",placeItems:"center"}}>
+                <div style=${{fontSize:11,fontWeight:900,color:over?T.red:color,lineHeight:1}}>${pct}%</div>
+              </div>
+            </div>
+            <div style=${{fontSize:10,fontWeight:900,color:over?T.red:T.text,letterSpacing:-0.1}}>${consumed}</div>
+            <div style=${{fontSize:9,color:T.muted,fontWeight:600}}>/${target}${unit}</div>
+            <div style=${{fontSize:9,fontWeight:800,color:T.muted,letterSpacing:0.5,marginTop:3,textTransform:"uppercase"}}>${label}</div>
+          </div>`;
+        })}
+      </div>
+    </div>
+
+    <!-- Meals list -->
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <div style=${{...S.section,marginBottom:0}}>Meals</div>
+      <button onClick=${()=>setShowForm(v=>!v)} style=${{
+        width:30,height:30,borderRadius:10,border:`1px solid ${T.accentBorder}`,
+        background:T.accentGlow,color:T.accent,cursor:"pointer",fontSize:16,fontWeight:300,
+        display:"grid",placeItems:"center",fontFamily:"inherit",
+      }}>${showForm?"×":"+"}</button>
+    </div>
+
+    ${meals.length===0&&!showForm?html`
+      <div style=${{...S.card,textAlign:"center",padding:"22px 16px",color:T.muted,fontSize:12,fontWeight:600}}>
+        No meals logged yet — tap + to add
+      </div>`:""}
+
+    <div style=${{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+      ${meals.map(m=>html`<div key=${m.id} style=${{
+        ...S.card,padding:"12px 14px",display:"flex",alignItems:"center",gap:10,
+      }}>
+        <div style=${{flex:1,minWidth:0}}>
+          <div style=${{fontSize:14,fontWeight:800,color:T.text,letterSpacing:-0.2,marginBottom:3}}>${m.name}</div>
+          <div style=${{display:"flex",gap:10,fontSize:11,color:T.muted,flexWrap:"wrap"}}>
+            <span style=${{color:T.accent,fontWeight:700}}>${m.cal} kcal</span>
+            <span>P <span style=${{color:T.green,fontWeight:700}}>${m.protein}g</span></span>
+            <span>C <span style=${{color:T.amber,fontWeight:700}}>${m.carbs}g</span></span>
+            <span>F <span style=${{color:T.blue,fontWeight:700}}>${m.fat}g</span></span>
+          </div>
+        </div>
+        <button onClick=${()=>deleteMeal(m.id)} style=${{
+          background:"none",border:`1px solid ${T.border}`,borderRadius:8,
+          color:T.muted,cursor:"pointer",fontSize:11,padding:"4px 8px",fontFamily:"inherit",
+        }}>×</button>
+      </div>`)}
+    </div>
+
+    ${showForm?html`<div style=${{...S.card,marginBottom:10}}>
+      <div style=${{fontSize:10,fontWeight:900,color:T.muted,letterSpacing:2,marginBottom:12,textTransform:"uppercase"}}>Add Meal</div>
+      <div style=${{marginBottom:10}}>
+        <input style=${{...S.input}} value=${form.name}
+          onInput=${e=>setForm(f=>({...f,name:e.target.value}))}
+          placeholder="Meal name (e.g. Chicken & rice)" autoFocus/>
+      </div>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+        <div>
+          <div style=${{fontSize:9,fontWeight:800,color:T.accent,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Calories (kcal)</div>
+          <input type="number" style=${{...S.input}} value=${form.cal}
+            onInput=${e=>setForm(f=>({...f,cal:e.target.value}))} placeholder="0" min="0"/>
+        </div>
+        <div>
+          <div style=${{fontSize:9,fontWeight:800,color:T.green,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Protein (g)</div>
+          <input type="number" style=${{...S.input}} value=${form.protein}
+            onInput=${e=>setForm(f=>({...f,protein:e.target.value}))} placeholder="0" min="0"/>
+        </div>
+        <div>
+          <div style=${{fontSize:9,fontWeight:800,color:T.amber,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Carbs (g)</div>
+          <input type="number" style=${{...S.input}} value=${form.carbs}
+            onInput=${e=>setForm(f=>({...f,carbs:e.target.value}))} placeholder="0" min="0"/>
+        </div>
+        <div>
+          <div style=${{fontSize:9,fontWeight:800,color:T.blue,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Fat (g)</div>
+          <input type="number" style=${{...S.input}} value=${form.fat}
+            onInput=${e=>setForm(f=>({...f,fat:e.target.value}))} placeholder="0" min="0"/>
+        </div>
+      </div>
+      <div style=${{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <${Btn} onClick=${()=>{setShowForm(false);setForm({name:"",cal:"",protein:"",carbs:"",fat:""});}} variant="ghost">Cancel<//>
+        <${Btn} onClick=${addMeal} variant="primary">Add meal<//>
+      </div>
+    </div>`:""}
+  </div>`;
+}
+
+function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFoodLog}){
+  const[healthTab,setHealthTab]=useState("health");
   const today=todayISO();
   const log=healthLogs[today]||{};
   const[sleepModal,setSleepModal]=useState(false);
@@ -1179,6 +1432,21 @@ function HealthView({tasks,healthLogs,onUpsertLog}){
   const rCol=recoveryColor(recovery);
   const sCol=strainColor(strain);
   return html`<div style=${{padding:"16px 14px 120px"}}>
+    <!-- Tab strip -->
+    <div style=${{display:"flex",gap:6,marginBottom:18,padding:"4px",background:"rgba(255,255,255,0.03)",borderRadius:14,border:`1px solid ${T.border}`}}>
+      ${[{id:"health",label:"Health ♦"},{id:"nutrition",label:"Nutrition ◈"}].map(tab=>html`
+        <button key=${tab.id} onClick=${()=>setHealthTab(tab.id)} style=${{
+          flex:1,padding:"8px 4px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+          fontWeight:800,fontSize:12,letterSpacing:0.2,
+          border:`1px solid ${healthTab===tab.id?T.accentBorder:"transparent"}`,
+          background:healthTab===tab.id?"linear-gradient(135deg,rgba(167,139,250,0.14),rgba(167,139,250,0.07))":"transparent",
+          color:healthTab===tab.id?T.accent:T.muted,
+          transition:"background 0.18s,color 0.18s,border-color 0.18s",
+        }}>${tab.label}</button>`)}
+    </div>
+    ${healthTab==="nutrition"?html`<${NutritionView} foodLogs=${foodLogs||{}} macroTargets=${settings?.macroTargets} onUpsertFoodLog=${onUpsertFoodLog}/>`:null}
+    ${healthTab==="health"?html`<div style=${{display:"contents"}}>
+
     <!-- 3 metric rings -->
     <div style=${{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
       <div className="sk-card" style=${{...S.card,background:`rgba(${rCol==="green"?"16,185,129":rCol==="amber"?"245,158,11":"239,68,68"},0.07)`,border:`1px solid ${rCol==="green"?T.greenBorder:rCol==="amber"?"rgba(245,158,11,0.28)":T.redBorder}`,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.3s ease"}}>
@@ -1286,6 +1554,7 @@ function HealthView({tasks,healthLogs,onUpsertLog}){
 
     ${sleepModal?html`<${SleepModal} log=${log} onSave=${s=>onUpsertLog(today,s)} onClose=${()=>setSleepModal(false)}/>`:""}
     ${wellnessModal?html`<${WellnessModal} log=${log} onSave=${s=>onUpsertLog(today,s)} onClose=${()=>setWellnessModal(false)}/>`:""}
+    </div>`:null}
   </div>`;
 }
 
@@ -1573,9 +1842,9 @@ function App(){
           setTimeout(()=>showToast("Habit updated ✓"),400);
         }
         if(action) window.history.replaceState({},"",window.location.pathname);
-        setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},notes:{},goals:[],trainingPlans:[],settings:DEF_SETTINGS,...saved,notes:saved.notes||{},settings:{...DEF_SETTINGS,...saved?.settings}});
+        setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],settings:DEF_SETTINGS,...saved,foodLogs:saved.foodLogs||{},notes:saved.notes||{},settings:{...DEF_SETTINGS,...saved?.settings}});
       } else {
-        setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},notes:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});
+        setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});
       }
       setReady(true);
       // Check sync
@@ -1584,6 +1853,16 @@ function App(){
   },[]);
 
   useEffect(()=>{ if(ready&&state) saveState(state); },[state,ready]);
+  useEffect(()=>{
+    if(!state) return;
+    if(state.settings?.notifEnabled){
+      scheduleTaskReminders(state.tasks||[]);
+      scheduleWellnessReminders(state.settings?.constraints?.bed);
+    } else {
+      _clearNotifTimers();
+    }
+    return _clearNotifTimers;
+  },[state?.tasks, state?.settings?.notifEnabled, state?.settings?.constraints?.bed]);
 
   const mut=useCallback(fn=>setState(p=>({...p,...fn(p)})),[]);
   const toggleTask=useCallback(id=>mut(s=>({tasks:s.tasks.map(t=>t.id===id?{...t,completed:!t.completed,completedAt:!t.completed?Date.now():null}:t)})),[mut]);
@@ -1593,6 +1872,7 @@ function App(){
   const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,h]};}),[mut]);
   const deleteHabit=useCallback(id=>mut(s=>({habits:s.habits.filter(h=>h.id!==id)})),[mut]);
   const upsertHealthLog=useCallback((date,patch)=>mut(s=>({healthLogs:{...s.healthLogs,[date]:{...s.healthLogs[date],...patch}}})),[mut]);
+  const upsertFoodLog=useCallback((date,meals)=>mut(s=>({foodLogs:{...s.foodLogs,[date]:{meals}}})),[mut]);
   const upsertNote=useCallback((date,text)=>mut(s=>({notes:{...s.notes,[date]:text}})),[mut]);
   const upsertPlan=useCallback((plan,newTasks)=>mut(s=>({trainingPlans:[...(s.trainingPlans||[]).filter(p=>p.id!==plan.id),plan],tasks:[...s.tasks,...(newTasks||[])]})),[mut]);
   const deletePlan=useCallback(planId=>mut(s=>({trainingPlans:(s.trainingPlans||[]).filter(p=>p.id!==planId),tasks:s.tasks.filter(t=>!(t.planKey||"").startsWith(`plan_${planId}`))})),[mut]);
@@ -1703,13 +1983,13 @@ function App(){
       ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)}/>`:""}
       ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
       ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
-      ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog}/>`:""}
+      ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog}/>`:""}
       ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
         trainingPlans=${state.trainingPlans||[]} tasks=${state.tasks}
         onUpsertPlan=${upsertPlan} onDeletePlan=${deletePlan}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
         onExport=${()=>{const b=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`sk-backup-${todayISO()}.json`;a.click();}}
-        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},notes:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});}}/>`:""}
+        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});}}/>`:""}
 
       <!-- Bottom nav — WHOOP-style pill -->
       <nav style=${{
