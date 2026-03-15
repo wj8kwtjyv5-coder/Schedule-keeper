@@ -22,20 +22,19 @@ const SYNC_URL = BASE_URL ? `${BASE_URL}/.netlify/functions/sync` : null;
 
 // ── Design tokens ──────────────────────────────────────────
 const C = {
-  bg:      new Color("#07080f"),
-  bgCard:  new Color("#0d0f1e"),
-  text:    new Color("#eeeeff"),
-  muted:   new Color("#888aaa"),
-  accent:  new Color("#ffd16b"),
-  blue:    new Color("#8fb8ff"),
-  green:   new Color("#6ee7b7"),
-  red:     new Color("#ff6a7a"),
-  purple:  new Color("#c4b5fd"),
+  bg:     new Color("#070b14"),
+  text:   new Color("#eef2ff"),
+  muted:  new Color("#5c6490"),
+  accent: new Color("#fbbf24"),  // amber
+  blue:   new Color("#818cf8"),  // indigo
+  green:  new Color("#34d399"),  // emerald
+  red:    new Color("#fb7185"),  // rose
+  purple: new Color("#c084fc"),
 };
 
 const CAT_EMOJI = {
-  run:"🏃", football:"⚽", game:"🏟️", bike:"🚴",
-  pilates:"🧘", recovery:"♻️", sauna:"♨️", work:"💼", other:"📌",
+  run:"🏃", football:"⚽", game:"🏟", bike:"🚴",
+  pilates:"🧘", recovery:"🌿", sauna:"🌡", work:"💼", other:"◈",
 };
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -94,7 +93,7 @@ function buildCircular(d) {
   const w = new ListWidget();
   w.backgroundColor = C.bg;
   w.setPadding(0, 0, 0, 0);
-  if (BASE_URL) w.url = BASE_URL;
+  if (BASE_URL) w.url = SYNC_URL ? `${BASE_URL}?action=completeNext` : BASE_URL;
 
   const stack = w.addStack();
   stack.layoutVertically();
@@ -142,7 +141,7 @@ function buildRectangular(d) {
   const w = new ListWidget();
   w.backgroundColor = C.bg;
   w.setPadding(8, 10, 8, 10);
-  if (BASE_URL) w.url = BASE_URL;
+  if (BASE_URL) w.url = SYNC_URL ? `${BASE_URL}?action=completeNext` : BASE_URL;
 
   if (!d) {
     const t = w.addText("⚡ ScheduleKeeper");
@@ -217,14 +216,14 @@ function buildSmall(d) {
   const w = new ListWidget();
   w.backgroundGradient = (() => {
     const g = new LinearGradient();
-    g.colors = [new Color("#07080f"), new Color("#0d1020")];
+    g.colors = [new Color("#070b14"), new Color("#0d1020")];
     g.locations = [0, 1];
     g.startPoint = new Point(0, 0);
     g.endPoint = new Point(1, 1);
     return g;
   })();
   w.setPadding(12, 12, 12, 12);
-  if (BASE_URL) w.url = BASE_URL;
+  if (BASE_URL) w.url = SYNC_URL ? `${BASE_URL}?action=completeNext` : BASE_URL;
 
   if (!d) {
     const t = w.addText("⚡\nScheduleKeeper");
@@ -295,14 +294,14 @@ function buildMedium(d) {
   const w = new ListWidget();
   w.backgroundGradient = (() => {
     const g = new LinearGradient();
-    g.colors = [new Color("#07080f"), new Color("#0c0e1d")];
+    g.colors = [new Color("#070b14"), new Color("#0c0e1d")];
     g.locations = [0, 1];
     g.startPoint = new Point(0, 0);
     g.endPoint = new Point(1, 1);
     return g;
   })();
   w.setPadding(14, 14, 14, 14);
-  if (BASE_URL) w.url = BASE_URL;
+  if (BASE_URL) w.url = BASE_URL;  // fallback if row tap not supported
 
   if (!d) {
     const t = w.addText("⚡ ScheduleKeeper — Set widget URL parameter");
@@ -348,6 +347,7 @@ function buildMedium(d) {
     row.layoutHorizontally();
     row.spacing = 4;
     row.centerAlignContent();
+    if (BASE_URL && task.id) row.url = `${BASE_URL}?action=complete&taskId=${task.id}`;
 
     const chk = row.addText(task.completed ? "✓ " : "○ ");
     chk.font = Font.boldSystemFont(9);
@@ -371,23 +371,21 @@ function buildMedium(d) {
   habHdr.font = Font.boldSystemFont(8);
   habHdr.textColor = C.muted;
 
-  const today = todayISO();
-  const habitLogs = (d.habits.length > 0) ? {} : {};
   for (const h of d.habits.slice(0, 6)) {
     const row = habCol.addStack();
     row.layoutHorizontally();
     row.spacing = 4;
     row.centerAlignContent();
+    if (BASE_URL && h.id) row.url = `${BASE_URL}?action=toggleHabit&habitId=${h.id}`;
 
-    // We infer done from habitsDone count approximation
-    const done = false; // exact per-habit needs habitLogs in data
     const chk = row.addText(h.done ? "✓" : "·");
     chk.font = Font.boldSystemFont(9);
     chk.textColor = h.done ? C.green : C.muted;
 
-    const name = row.addText(truncate(h.emoji + " " + h.title, 10));
+    const name = row.addText(truncate((h.emoji||"") + " " + h.title, 10));
     name.font = Font.systemFont(9);
-    name.textColor = C.text;
+    name.textColor = h.done ? C.muted : C.text;
+    if (h.done) name.textOpacity = 0.6;
   }
 
   return w;
