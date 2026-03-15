@@ -859,8 +859,89 @@ function DailyPodcast(){
   </div>`;
 }
 
+// ── Body Fuel & Journal Panel ─────────────────────────────────
+function BodyFuelPanel({tasks,healthLog,onUpsertLog,note,onUpsertNote,dateStr}){
+  const ENERGY_EMOJIS=["😴","😑","😐","💪","🔥"];
+  const suggestions=getFuelSuggestions(healthLog,tasks,dateStr);
+  const upcoming=tasks.filter(t=>t.date===dateStr&&!t.completed&&t.time&&new Set(["game","football","run","bike","gym","swim","pilates","recovery","sauna"]).has(t.category)).sort((a,b)=>a.time.localeCompare(b.time))[0];
+  // Countdown to upcoming workout
+  let countdown=null;
+  if(upcoming?.time){
+    const now=new Date();
+    const[uh,um]=upcoming.time.split(":").map(Number);
+    const totalMins=(uh*60+um)-(now.getHours()*60+now.getMinutes());
+    if(totalMins>0) countdown=totalMins>=60?`in ${Math.floor(totalMins/60)}h ${totalMins%60>0?totalMins%60+"min":""}`:`in ${totalMins}min`;
+  }
+  const cat=upcoming?CATS[upcoming.category]:null;
+  return html`<div style=${{...S.card,marginBottom:14,padding:"16px 18px"}}>
+    <!-- Header -->
+    <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:14,textTransform:"uppercase"}}>Body Fuel & Journal</div>
+
+    <!-- Quick energy check-in -->
+    <div style=${{marginBottom:16}}>
+      <div style=${{fontSize:11,fontWeight:700,color:T.textSoft,marginBottom:8}}>How's your body today?</div>
+      <div style=${{display:"flex",gap:6}}>
+        ${ENERGY_EMOJIS.map((e,i)=>html`<button key=${i} onClick=${()=>onUpsertLog({energy:i+1})} style=${{
+          flex:1,padding:"8px 4px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+          border:`1px solid ${healthLog?.energy===i+1?T.accentBorder:T.border}`,
+          background:healthLog?.energy===i+1?T.accentGlow:"rgba(255,255,255,0.03)",
+          fontSize:18,transition:"all 0.15s",
+        }}>${e}</button>`)}
+      </div>
+      ${healthLog?.energy?html`<div style=${{fontSize:10,color:T.muted,marginTop:5,textAlign:"center"}}>
+        ${["Drained — prioritise recovery","Low — keep it gentle today","Decent — train steady","Good — push it","Top form — go hard"][healthLog.energy-1]}
+      </div>`:""}
+    </div>
+
+    <!-- Upcoming workout banner -->
+    ${upcoming?html`<div style=${{
+      display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:12,marginBottom:14,
+      background:`${cat?.glow||"rgba(167,139,250,0.07)"}`,
+      border:`1px solid ${cat?.border||T.border}`,
+    }}>
+      <span style=${{fontSize:20}}>${cat?.emoji||"🏋️"}</span>
+      <div style=${{flex:1,minWidth:0}}>
+        <div style=${{fontSize:13,fontWeight:800,color:cat?.color||T.accent,lineHeight:1.2}}>${upcoming.title}</div>
+        <div style=${{fontSize:10,color:T.muted,fontWeight:600,marginTop:2}}>${fmtTime(upcoming.time)}${countdown?html` · <span style=${{color:cat?.color||T.accent}}>${countdown}</span>`:""}
+        </div>
+      </div>
+    </div>`:html`<div style=${{fontSize:11,color:T.muted,marginBottom:14,padding:"8px 0"}}>No workout scheduled — rest & recovery day</div>`}
+
+    <!-- Fuel suggestion cards -->
+    <div style=${{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+      ${suggestions.slice(0,4).map((s,i)=>html`<div key=${i} style=${{
+        borderRadius:12,padding:"11px 13px",
+        background:"rgba(255,255,255,0.03)",
+        border:`1px solid ${s.color}28`,
+        borderLeft:`3px solid ${s.color}`,
+      }}>
+        <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+          <span style=${{
+            fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:999,letterSpacing:0.8,
+            background:`${s.color}18`,border:`1px solid ${s.color}30`,color:s.color,
+          }}>${s.timing}</span>
+          <span style=${{fontSize:12,fontWeight:800,color:T.text}}>${s.label}</span>
+        </div>
+        <div style=${{display:"flex",flexDirection:"column",gap:2,marginBottom:5}}>
+          ${s.foods.map((f,j)=>html`<div key=${j} style=${{fontSize:11,color:T.textSoft,paddingLeft:4}}>· ${f}</div>`)}
+        </div>
+        <div style=${{fontSize:10,color:T.muted,lineHeight:1.5,fontStyle:"italic"}}>${s.hint}</div>
+      </div>`)}
+    </div>
+
+    <!-- Journal textarea -->
+    <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:8,textTransform:"uppercase"}}>Journal</div>
+    <textarea
+      placeholder="How are you feeling? Notes for today — body, mindset, wins…"
+      value=${note}
+      onInput=${e=>onUpsertNote(dateStr,e.target.value)}
+      style=${{...S.input,minHeight:72,resize:"none",lineHeight:1.6,fontFamily:"inherit",fontSize:13}}
+    />
+  </div>`;
+}
+
 // ── Today View ────────────────────────────────────────────────
-function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenCoach}){
+function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenCoach,healthLog={},onUpsertLog,note="",onUpsertNote}){
   const[sleepMode,setSleepMode]=useState(null);
   const todayStr=todayISO(),now=new Date(),curTime=`${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
   const todayTasks=useMemo(()=>tasks.filter(t=>t.date===todayStr&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")),[tasks,todayStr]);
@@ -959,6 +1040,8 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
           </div>`;
         })}
       </div>`:""}
+
+    <${BodyFuelPanel} tasks=${tasks} healthLog=${healthLog} onUpsertLog=${onUpsertLog} note=${note} onUpsertNote=${onUpsertNote} dateStr=${todayStr}/>
 
     <!-- Nap / Wind-down buttons -->
     ${sleepMode?html`<${SleepModePanel} onClose=${()=>setSleepMode(null)}/>`:null}
@@ -1645,6 +1728,100 @@ function mapAppleWorkout(type){
   if(["sauna","steam","spa"].some(k=>t.includes(k)))return"sauna";
   if(["hiking","walking","walk","hike","mountainclimbing","stairclimbing"].some(k=>t.includes(k)))return"run";
   return"other";
+}
+
+// ── Whole-food fuel plans per workout category ────────────────
+const FUEL_PLANS={
+  game:{
+    meal_3h:{label:"Pre-Game Meal",foods:["Brown rice or sweet potato","Chicken breast or salmon fillet","Broccoli or spinach","Small avocado"],hint:"High carb, moderate protein, low fat — finish eating 3h before"},
+    snack_1h:{label:"Pre-Game Top-Up",foods:["Banana","White bread with honey or peanut butter","2–3 medjool dates"],hint:"Fast-digesting carbs only — avoid fibre and heavy fat"},
+    intra:{label:"At Half Time",foods:["Banana or 2–3 dates","Water with a pinch of salt"],hint:"Replenish fast carbs and stay hydrated"},
+    post:{label:"Post-Game Recovery",foods:["Protein shake + banana (within 30min)","Then: Salmon + sweet potato + spinach","Or: Chicken breast + rice + broccoli"],hint:"Protein + carbs immediately after — repair window is open"},
+  },
+  football:{
+    meal_3h:{label:"Pre-Match Meal",foods:["Brown rice or sweet potato","Chicken breast or beef mince","Broccoli + carrots","Small avocado"],hint:"High carb, moderate protein — fuel the full 90 minutes"},
+    snack_1h:{label:"Pre-Match Top-Up",foods:["Banana","White bread + honey","Small handful dates"],hint:"Fast carbs — nothing heavy"},
+    intra:{label:"At Half Time",foods:["Banana","Dates or raisins","Water or electrolytes"],hint:"Quick carbs — you need the second half fuel"},
+    post:{label:"Post-Match Recovery",foods:["Protein shake + banana within 30min","Then: Salmon + sweet potato + greens within 2h"],hint:"Start repair fast — protein + carbs now"},
+  },
+  run:{
+    meal_3h:{label:"Pre-Run Meal",foods:["Porridge with banana and honey","2 eggs on brown toast","Or: Brown rice + chicken + veg"],hint:"Moderate carb + protein, easily digestible"},
+    snack_1h:{label:"Pre-Run Snack",foods:["Banana","Peanut butter on white bread","Or: Small bowl oats + honey"],hint:"Quick carbs — light, no heavy fat or fibre"},
+    post:{label:"Post-Run Recovery",foods:["Greek yogurt + banana (within 30min)","Then: Chicken breast + rice + mixed veg","Or: Salmon + sweet potato + spinach"],hint:"Replenish glycogen and start muscle repair"},
+  },
+  gym:{
+    meal_3h:{label:"Pre-Gym Meal",foods:["Beef mince or chicken breast","Brown rice or sweet potato","Broccoli or mixed veg"],hint:"Balanced protein + carbs — 3h window for good digestion"},
+    snack_1h:{label:"Pre-Gym Snack",foods:["Protein shake + oats","Or: Greek yogurt + banana"],hint:"Protein + simple carbs 45–60min before lifting"},
+    post:{label:"Post-Gym Recovery",foods:["Protein shake + banana (within 30min)","Then: Eggs + sweet potato + spinach","Or: Cottage cheese + mixed berries + oats"],hint:"Anabolic window — protein + carbs within 30min for max recovery"},
+  },
+  bike:{
+    meal_3h:{label:"Pre-Ride Meal",foods:["Pasta or brown rice","Chicken breast or salmon","Mixed salad with olive oil"],hint:"High carb focus — endurance needs the glycogen stores"},
+    snack_1h:{label:"Pre-Ride Snack",foods:["Banana + small handful almonds","Or: Oats + honey + banana"],hint:"Sustained energy top-up — not too heavy"},
+    post:{label:"Post-Ride Recovery",foods:["Protein shake + banana","Then: Salmon + brown rice + greens","Or: Chicken + sweet potato + broccoli"],hint:"Replenish glycogen and begin muscle repair"},
+  },
+  swim:{
+    meal_3h:{label:"Pre-Swim Meal",foods:["Salmon + sweet potato + steamed greens","Or: Chicken + brown rice + cucumber"],hint:"Light on the stomach — avoid too much fibre before getting in the water"},
+    snack_1h:{label:"Pre-Swim Snack",foods:["Banana","Plain yogurt with honey"],hint:"Light and fast-digesting — keep it simple"},
+    post:{label:"Post-Swim Recovery",foods:["Cottage cheese + banana","Or: Greek yogurt + berries + oats","Or: Eggs + avocado + toast"],hint:"Protein + carbs to repair and restore energy"},
+  },
+  pilates:{
+    meal_3h:{label:"Pre-Pilates Meal",foods:["Eggs + avocado + brown toast","Or: Salmon + mixed salad"],hint:"Light protein + healthy fats — no need to carb-load for pilates"},
+    post:{label:"Post-Pilates",foods:["Greek yogurt + berries","Or: Banana + peanut butter","Light protein smoothie: banana + spinach + protein powder"],hint:"Light recovery focus — prioritise hydration too"},
+  },
+  recovery:{
+    any:{label:"Recovery Day Nutrition",foods:["Salmon or mackerel (omega-3 for inflammation)","Spinach + kale + mixed berries (antioxidants)","Almonds + walnuts","Eggs + avocado","Turmeric in cooking or ginger tea"],hint:"Anti-inflammatory focus — no performance fuelling needed today"},
+  },
+  sauna:{
+    any:{label:"Sauna Day Nutrition",foods:["Plenty of water (2–3L today)","Watermelon or cucumber (hydration)","Light meal: eggs + salad + olive oil","Electrolytes if sweating heavily"],hint:"Hydration is the priority — avoid heavy food before heat exposure"},
+  },
+};
+// Returns fuel suggestion cards based on today's workout and body state
+function getFuelSuggestions(log,tasks,dateStr){
+  const now=new Date();
+  const curHHMM=`${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  const curDecHrs=now.getHours()+now.getMinutes()/60;
+  const WORKOUT_CATS=new Set(["game","football","run","bike","gym","swim","pilates","recovery","sauna"]);
+  // Next uncompleted workout with a time set
+  const upcoming=tasks
+    .filter(t=>t.date===dateStr&&!t.completed&&t.time&&WORKOUT_CATS.has(t.category)&&t.time>curHHMM)
+    .sort((a,b)=>a.time.localeCompare(b.time))[0];
+  // Most recently completed workout (within last 2h)
+  const recent=tasks
+    .filter(t=>{
+      if(!t.completed||t.date!==dateStr||!t.time||!WORKOUT_CATS.has(t.category))return false;
+      const[h,m]=t.time.split(":").map(Number);const wHrs=h+m/60;
+      return curDecHrs-wHrs>=0&&curDecHrs-wHrs<=2;
+    })
+    .sort((a,b)=>b.time.localeCompare(a.time))[0];
+  const suggestions=[];
+  if(upcoming){
+    const[uh,um]=upcoming.time.split(":").map(Number);
+    const hoursUntil=(uh+um/60)-curDecHrs;
+    const plan=FUEL_PLANS[upcoming.category]||FUEL_PLANS.run;
+    if(hoursUntil>=2&&plan.meal_3h)
+      suggestions.push({...plan.meal_3h,timing:`Now — ${Math.round(hoursUntil)}h before`,color:"#a78bfa"});
+    if(hoursUntil>=0.5&&hoursUntil<2.5&&plan.snack_1h)
+      suggestions.push({...plan.snack_1h,timing:`${Math.round(hoursUntil*60)}min before`,color:"#f59e0b"});
+    if(hoursUntil<0.5&&hoursUntil>=0)
+      suggestions.push({label:"Almost Time — Hydrate",foods:["Sip water steadily","Electrolytes if available","No solid food now"],hint:"Save your energy — fuel is already in the tank",timing:"Now",color:"#38bdf8"});
+    if((upcoming.category==="game"||upcoming.category==="football")&&hoursUntil<=0.75&&hoursUntil>=0&&plan.intra)
+      suggestions.push({...plan.intra,timing:"During",color:"#34d399"});
+    if(plan.post) suggestions.push({...plan.post,timing:"Post-workout",color:"#34d399"});
+    else if(plan.any) suggestions.push({...plan.any,timing:"Today",color:"#34d399"});
+  } else if(recent){
+    const plan=FUEL_PLANS[recent.category]||FUEL_PLANS.run;
+    if(plan.post) suggestions.push({...plan.post,timing:"Recovery window",color:"#34d399"});
+    else if(plan.any) suggestions.push({...plan.any,timing:"Recovery",color:"#34d399"});
+  } else {
+    // Rest day or no workout logged
+    suggestions.push({label:"Rest Day Fuelling",foods:["Salmon or mackerel (omega-3)","Dark leafy greens + berries","Almonds or walnuts","Eggs + avocado","Keep meals balanced — no need to overload"],hint:"Eat for recovery and energy balance — this rest is part of the training",timing:"Today",color:"#34d399"});
+  }
+  // Body-state extra cards
+  if(log?.energy<=2)
+    suggestions.push({label:"Low Energy Support",foods:["Porridge with banana (slow carbs)","Eggs (B vitamins + iron)","Spinach + pumpkin seeds (magnesium)"],hint:"Slow-release energy — avoid sugar spikes that crash you later",timing:"Note",color:"#f87171"});
+  if(log?.stress>=4)
+    suggestions.push({label:"High Stress — Recovery Foods",foods:["Almonds + dark leafy greens (magnesium)","Salmon or mackerel (omega-3 fights cortisol)","Chamomile or green tea","Dark berries (antioxidants)"],hint:"Magnesium and omega-3 regulate cortisol — eat these today",timing:"Note",color:"#fb923c"});
+  return suggestions;
 }
 
 function calcSleepMins(bedtime,wakeTime){
@@ -2759,7 +2936,7 @@ function App(){
         </div>
       </header>
 
-      ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)}/>`:""}
+      ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${upsertHealthLog} note=${state.notes?.[todayISO()]||""} onUpsertNote=${upsertNote}/>`:""}
       ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
       ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
       ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog} onUpdateSettings=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}/>`:""}      ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
