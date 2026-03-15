@@ -637,16 +637,22 @@ function SleepModePanel({onClose}){
 
   useEffect(()=>{ return()=>{ stopAudio(); clearInterval(intervalRef.current); }; },[]);
 
+  // Manages countdown interval — starts/stops with `running`
   useEffect(()=>{
     if(!running)return;
-    if(secsLeft<=0){
-      stopAudio(); playAlarm(); setRunning(false); setAlarmFired(true);
-      clearInterval(intervalRef.current);
-      return;
-    }
-    intervalRef.current=setInterval(()=>setSecsLeft(s=>{ if(s<=1){clearInterval(intervalRef.current);return 0;} return s-1;}),1000);
+    intervalRef.current=setInterval(()=>setSecsLeft(s=>s>0?s-1:0),1000);
     return()=>clearInterval(intervalRef.current);
   },[running]);
+  // Fires completion when nap timer reaches 0
+  useEffect(()=>{
+    if(running&&secsLeft===0&&mode==="nap"){
+      clearInterval(intervalRef.current);
+      stopAudio();
+      playAlarm();
+      setRunning(false);
+      setAlarmFired(true);
+    }
+  },[secsLeft,running,mode]);
 
   const start=()=>{
     startBinauralAudio(mode);
@@ -1600,30 +1606,122 @@ function WellnessModal({log,onSave,onClose}){
   <//>`;
 }
 
-// ── Offline nutrition estimates (per typical serving) ────────
+// ── Offline nutrition estimates (per typical serving, whole-food led) ────────
 const FOOD_DB=[
-  {keys:["half a chicken","half chicken"],cal:420,protein:52,carbs:0,fat:22},
-  {keys:["chicken breast","chicken"],cal:330,protein:62,carbs:0,fat:7},
-  {keys:["salmon fillet","salmon"],cal:280,protein:40,carbs:0,fat:13},
-  {keys:["sweet potatoes","sweet potato"],cal:180,protein:3,carbs:41,fat:0},
-  {keys:["white rice","rice"],cal:200,protein:4,carbs:44,fat:0},
-  {keys:["scrambled eggs","poached eggs","boiled eggs","fried eggs","3 eggs","2 eggs","eggs","egg"],cal:220,protein:18,carbs:2,fat:15},
-  {keys:["oatmeal","porridge","oats"],cal:300,protein:10,carbs:54,fat:5},
-  {keys:["protein shake","whey shake","protein powder"],cal:200,protein:30,carbs:8,fat:3},
+  // Poultry
+  {keys:["half a chicken","half chicken","rotisserie chicken"],cal:420,protein:52,carbs:0,fat:22},
+  {keys:["chicken breast"],cal:330,protein:62,carbs:0,fat:7},
+  {keys:["chicken thigh","chicken thighs"],cal:280,protein:38,carbs:0,fat:14},
+  {keys:["chicken mince","ground chicken"],cal:250,protein:30,carbs:0,fat:14},
+  {keys:["chicken"],cal:300,protein:38,carbs:0,fat:14},
+  {keys:["turkey breast"],cal:220,protein:42,carbs:0,fat:5},
+  {keys:["turkey"],cal:200,protein:36,carbs:0,fat:7},
+  // Red meat
+  {keys:["sirloin steak","sirloin"],cal:300,protein:32,carbs:0,fat:18},
+  {keys:["ribeye steak","ribeye"],cal:400,protein:34,carbs:0,fat:28},
+  {keys:["beef mince","ground beef"],cal:350,protein:28,carbs:0,fat:26},
   {keys:["steak"],cal:320,protein:28,carbs:0,fat:22},
-  {keys:["pasta"],cal:380,protein:13,carbs:72,fat:2},
+  {keys:["lamb chop"],cal:280,protein:26,carbs:0,fat:19},
+  {keys:["lamb"],cal:260,protein:24,carbs:0,fat:17},
+  {keys:["pork loin","pork chop"],cal:240,protein:34,carbs:0,fat:11},
+  {keys:["pork"],cal:230,protein:30,carbs:0,fat:12},
+  // Fish & seafood
+  {keys:["salmon fillet"],cal:280,protein:40,carbs:0,fat:13},
+  {keys:["salmon"],cal:250,protein:35,carbs:0,fat:12},
+  {keys:["cod fillet","cod"],cal:180,protein:38,carbs:0,fat:2},
+  {keys:["tuna steak"],cal:220,protein:42,carbs:0,fat:5},
+  {keys:["canned tuna","tinned tuna","tuna can"],cal:150,protein:33,carbs:0,fat:2},
+  {keys:["tuna"],cal:180,protein:38,carbs:0,fat:3},
+  {keys:["mackerel"],cal:300,protein:30,carbs:0,fat:20},
+  {keys:["sardines","sardine"],cal:200,protein:24,carbs:0,fat:11},
+  {keys:["prawns","shrimp"],cal:100,protein:21,carbs:1,fat:1},
+  // Eggs
+  {keys:["3 eggs","three eggs"],cal:210,protein:18,carbs:2,fat:15},
+  {keys:["2 eggs","two eggs"],cal:140,protein:12,carbs:1,fat:10},
+  {keys:["scrambled eggs","poached eggs","boiled eggs","fried eggs","omelette","eggs"],cal:220,protein:18,carbs:2,fat:15},
+  {keys:["egg white","egg whites"],cal:60,protein:13,carbs:1,fat:0},
+  {keys:["egg"],cal:80,protein:7,carbs:1,fat:5},
+  // Dairy
+  {keys:["greek yogurt","greek yoghurt"],cal:130,protein:12,carbs:9,fat:5},
+  {keys:["plain yogurt","natural yogurt","yogurt","yoghurt"],cal:110,protein:7,carbs:12,fat:4},
+  {keys:["cottage cheese"],cal:120,protein:14,carbs:4,fat:5},
+  {keys:["cheddar cheese","cheddar"],cal:180,protein:11,carbs:1,fat:15},
+  {keys:["cheese"],cal:160,protein:10,carbs:1,fat:13},
+  {keys:["whole milk","full fat milk"],cal:150,protein:8,carbs:12,fat:8},
+  {keys:["semi-skimmed milk","semi skimmed milk","skimmed milk"],cal:100,protein:7,carbs:10,fat:2},
+  {keys:["milk"],cal:120,protein:7,carbs:11,fat:5},
+  {keys:["butter"],cal:100,protein:0,carbs:0,fat:11},
+  // Legumes
+  {keys:["lentils","red lentils","green lentils"],cal:230,protein:18,carbs:40,fat:1},
+  {keys:["chickpeas","garbanzo beans"],cal:270,protein:15,carbs:45,fat:4},
+  {keys:["black beans"],cal:230,protein:15,carbs:41,fat:1},
+  {keys:["kidney beans","red kidney beans"],cal:225,protein:15,carbs:40,fat:1},
+  {keys:["edamame"],cal:190,protein:17,carbs:14,fat:8},
+  // Grains & carbs
+  {keys:["oatmeal","porridge","oats"],cal:300,protein:10,carbs:54,fat:5},
+  {keys:["brown rice"],cal:220,protein:5,carbs:46,fat:2},
+  {keys:["white rice","rice"],cal:200,protein:4,carbs:44,fat:0},
+  {keys:["quinoa"],cal:220,protein:8,carbs:39,fat:4},
+  {keys:["whole wheat pasta","wholemeal pasta"],cal:350,protein:14,carbs:68,fat:2},
+  {keys:["pasta","spaghetti","penne"],cal:380,protein:13,carbs:72,fat:2},
+  {keys:["sourdough bread","sourdough"],cal:180,protein:7,carbs:36,fat:1},
+  {keys:["whole wheat bread","wholemeal bread","brown bread"],cal:170,protein:7,carbs:32,fat:2},
+  {keys:["white bread","bread"],cal:160,protein:5,carbs:30,fat:2},
+  {keys:["wrap","tortilla"],cal:200,protein:5,carbs:36,fat:4},
+  // Root vegetables
+  {keys:["sweet potatoes","sweet potato"],cal:180,protein:3,carbs:41,fat:0},
+  {keys:["baked potato","jacket potato"],cal:200,protein:5,carbs:45,fat:0},
+  {keys:["potato","potatoes"],cal:160,protein:4,carbs:36,fat:0},
+  // Vegetables
   {keys:["broccoli"],cal:55,protein:4,carbs:11,fat:1},
+  {keys:["spinach"],cal:35,protein:4,carbs:4,fat:1},
+  {keys:["kale"],cal:50,protein:4,carbs:7,fat:1},
+  {keys:["mixed salad","salad"],cal:30,protein:2,carbs:4,fat:1},
+  {keys:["carrot","carrots"],cal:50,protein:1,carbs:12,fat:0},
+  {keys:["tomatoes","tomato"],cal:35,protein:2,carbs:7,fat:0},
+  {keys:["cucumber"],cal:20,protein:1,carbs:4,fat:0},
+  {keys:["courgette","zucchini"],cal:30,protein:2,carbs:5,fat:0},
+  {keys:["asparagus"],cal:35,protein:4,carbs:4,fat:0},
+  {keys:["green beans"],cal:40,protein:2,carbs:8,fat:0},
+  {keys:["peas"],cal:120,protein:8,carbs:21,fat:1},
+  {keys:["sweetcorn","corn"],cal:130,protein:5,carbs:27,fat:2},
+  // Fruit
+  {keys:["banana","bananas"],cal:105,protein:1,carbs:27,fat:0},
+  {keys:["apple"],cal:95,protein:0,carbs:25,fat:0},
+  {keys:["orange"],cal:62,protein:1,carbs:15,fat:0},
+  {keys:["blueberries","strawberries","mixed berries","berries"],cal:70,protein:1,carbs:17,fat:0},
+  {keys:["mango"],cal:100,protein:1,carbs:25,fat:0},
   {keys:["avocado"],cal:240,protein:3,carbs:13,fat:22},
-  {keys:["greek yogurt","yogurt"],cal:130,protein:12,carbs:9,fat:5},
-  {keys:["banana"],cal:105,protein:1,carbs:27,fat:0},
-  {keys:["brown bread","white bread","bread"],cal:160,protein:5,carbs:30,fat:2},
+  {keys:["grapes"],cal:100,protein:1,carbs:27,fat:0},
+  {keys:["pear"],cal:100,protein:1,carbs:26,fat:0},
+  {keys:["watermelon","melon"],cal:60,protein:1,carbs:15,fat:0},
+  // Nuts, seeds & oils
+  {keys:["peanut butter","almond butter"],cal:190,protein:8,carbs:6,fat:16},
+  {keys:["almonds"],cal:170,protein:6,carbs:6,fat:15},
+  {keys:["walnuts"],cal:185,protein:4,carbs:4,fat:18},
+  {keys:["cashews"],cal:175,protein:5,carbs:10,fat:14},
+  {keys:["mixed nuts","nuts"],cal:170,protein:5,carbs:6,fat:15},
+  {keys:["chia seeds"],cal:140,protein:5,carbs:12,fat:9},
+  {keys:["olive oil"],cal:120,protein:0,carbs:0,fat:14},
+  // Supplements
+  {keys:["protein shake","whey shake","protein powder","whey protein"],cal:200,protein:30,carbs:8,fat:3},
+  {keys:["casein protein","casein"],cal:190,protein:28,carbs:9,fat:3},
 ];
 function estimateMacros(text){
   if(!text)return null;
   const t=text.toLowerCase();
-  const matches=FOOD_DB.filter(f=>f.keys.some(k=>t.includes(k)));
+  const matches=[];
+  for(const f of FOOD_DB){
+    const matchedKey=f.keys.find(k=>t.includes(k));
+    if(matchedKey) matches.push({...f,_key:matchedKey});
+  }
   if(!matches.length)return null;
-  return matches.reduce((a,f)=>({cal:a.cal+f.cal,protein:a.protein+f.protein,carbs:a.carbs+f.carbs,fat:a.fat+f.fat}),{cal:0,protein:0,carbs:0,fat:0});
+  // Remove entries whose matched key is a substring of a longer matched key from another entry
+  // e.g. "chicken" is shadowed when "chicken breast" also matches
+  const filtered=matches.filter(m=>
+    !matches.some(other=>other._key!==m._key&&other._key.includes(m._key))
+  );
+  return filtered.reduce((a,f)=>({cal:a.cal+f.cal,protein:a.protein+f.protein,carbs:a.carbs+f.carbs,fat:a.fat+f.fat}),{cal:0,protein:0,carbs:0,fat:0});
 }
 
 // ── Nutrition View ────────────────────────────────────────────
