@@ -179,6 +179,24 @@ const BIBLE_QUOTES=[
   {text:"The Lord is my strength and song, and he has become my salvation.",ref:"Exodus 15:2"},
 ];
 
+// ── Curated podcast suggestions (daily rotation) ─────────────
+const PODCASTS=[
+  {show:"Elevation with Steven Furtick",episode:"Champions Are Built Through Obedience",description:"Greatness isn't given — it's grown in the small, faithful moments nobody sees. Show up for God's process today.",emoji:"🎙️",tag:"Faith · Mindset",appleUrl:"https://podcasts.apple.com/us/podcast/elevation-with-steven-furtick/id405843510",youtubeUrl:"https://www.youtube.com/@ElevationChurch"},
+  {show:"Elevation with Steven Furtick",episode:"You Already Have What You Need",description:"Stop waiting for better circumstances. God has already placed inside you everything required to win this season.",emoji:"🎙️",tag:"Faith · Purpose",appleUrl:"https://podcasts.apple.com/us/podcast/elevation-with-steven-furtick/id405843510",youtubeUrl:"https://www.youtube.com/@ElevationChurch"},
+  {show:"Ed Mylett Show",episode:"Max Out — Faith + Relentless Action",description:"The top 1% aren't more talented — they've mastered the discipline of going all-in every single day.",emoji:"🔥",tag:"Mindset · Success",appleUrl:"https://podcasts.apple.com/us/podcast/the-ed-mylett-show/id1181857062",youtubeUrl:"https://www.youtube.com/@EdMylett"},
+  {show:"Elevation with Steven Furtick",episode:"God's Plan Is Bigger Than Your Problem",description:"The obstacle in front of you isn't a dead end — it's the exact place where God does His best work.",emoji:"🎙️",tag:"Faith · Resilience",appleUrl:"https://podcasts.apple.com/us/podcast/elevation-with-steven-furtick/id405843510",youtubeUrl:"https://www.youtube.com/@ElevationChurch"},
+  {show:"Craig Groeschel Leadership Podcast",episode:"Lead Yourself First",description:"You can't lead others to a place you haven't gone yourself. Master self-discipline before you expect it from anyone else.",emoji:"📖",tag:"Leadership · Faith",appleUrl:"https://podcasts.apple.com/us/podcast/craig-groeschel-leadership-podcast/id1070649025",youtubeUrl:"https://www.youtube.com/@LifeChurch"},
+  {show:"Transformation Church – Michael Todd",episode:"Winning from the Inside Out",description:"External results are just the overflow of internal transformation. Let God rewire your thinking first.",emoji:"⚡",tag:"Faith · Identity",appleUrl:"https://podcasts.apple.com/us/podcast/transformation-church/id1070374587",youtubeUrl:"https://www.youtube.com/@TransformationChurch"},
+  {show:"Elevation with Steven Furtick",episode:"Stop Waiting for Permission to Be Great",description:"God already said yes. The only thing holding you back is the voice inside saying you're not ready yet.",emoji:"🎙️",tag:"Faith · Confidence",appleUrl:"https://podcasts.apple.com/us/podcast/elevation-with-steven-furtick/id405843510",youtubeUrl:"https://www.youtube.com/@ElevationChurch"},
+  {show:"TD Jakes Podcast",episode:"Walk in Your Calling",description:"God didn't design you for average. There's a greatness placed in you that the world is waiting for you to unwrap.",emoji:"✝️",tag:"Faith · Purpose",appleUrl:"https://podcasts.apple.com/us/podcast/td-jakes-podcast/id1538656735",youtubeUrl:"https://www.youtube.com/@BishopTDJakes"},
+  {show:"Elevation with Steven Furtick",episode:"Declare It Before You See It",description:"Faith speaks victory before the evidence arrives. Today, confess what God has promised — not what you currently see.",emoji:"🎙️",tag:"Faith · Victory",appleUrl:"https://podcasts.apple.com/us/podcast/elevation-with-steven-furtick/id405843510",youtubeUrl:"https://www.youtube.com/@ElevationChurch"},
+  {show:"Ed Mylett Show",episode:"The Mindset That Separates Winners",description:"Winners don't think differently because they won — they won because they thought differently. Upgrade your standard today.",emoji:"🔥",tag:"Mindset · Excellence",appleUrl:"https://podcasts.apple.com/us/podcast/the-ed-mylett-show/id1181857062",youtubeUrl:"https://www.youtube.com/@EdMylett"},
+  {show:"Elevation with Steven Furtick",episode:"When the Pressure Is Part of the Process",description:"The weight you're carrying isn't meant to crush you — it's strengthening you for something greater than you can imagine.",emoji:"🎙️",tag:"Faith · Perseverance",appleUrl:"https://podcasts.apple.com/us/podcast/elevation-with-steven-furtick/id405843510",youtubeUrl:"https://www.youtube.com/@ElevationChurch"},
+  {show:"Andy Stanley Leadership Podcast",episode:"Next Generation Leader",description:"The decisions you make today are writing the story that defines who you become tomorrow. Choose with intention.",emoji:"📖",tag:"Leadership · Growth",appleUrl:"https://podcasts.apple.com/us/podcast/andy-stanley-leadership-podcast/id290055666",youtubeUrl:"https://www.youtube.com/@NorthPointMinistries"},
+  {show:"Transformation Church – Michael Todd",episode:"God Is Not Finished with Your Story",description:"What looks like a chapter ending is often God setting up the plot twist. Stay in faith — your comeback is being written.",emoji:"⚡",tag:"Faith · Hope",appleUrl:"https://podcasts.apple.com/us/podcast/transformation-church/id1070374587",youtubeUrl:"https://www.youtube.com/@TransformationChurch"},
+  {show:"Elevation with Steven Furtick",episode:"Faith That Moves Mountains Starts Small",description:"Every big breakthrough started with one quiet act of obedience. The small things done faithfully lead to the impossible.",emoji:"🎙️",tag:"Faith · Action",appleUrl:"https://podcasts.apple.com/us/podcast/elevation-with-steven-furtick/id405843510",youtubeUrl:"https://www.youtube.com/@ElevationChurch"},
+];
+
 // ── Utils ──────────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2,"0");
 const uid = () => crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -798,6 +816,49 @@ function DailyQuote(){
   </div>`;
 }
 
+function DailyPodcast(){
+  const pod=PODCASTS[Math.floor(Date.now()/86_400_000)%PODCASTS.length];
+  const btnBase={fontFamily:"inherit",cursor:"pointer",fontWeight:800,fontSize:11,borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:6,border:"none"};
+  return html`<div style=${{
+    ...S.card,marginBottom:14,
+    background:"linear-gradient(135deg,rgba(167,139,250,0.08) 0%,rgba(251,191,36,0.05) 50%,rgba(167,139,250,0.04) 100%)",
+    border:"1px solid rgba(167,139,250,0.18)",padding:"16px 18px",
+  }}>
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,textTransform:"uppercase"}}>Today's Listen</div>
+      <span style=${{
+        fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:999,letterSpacing:0.8,
+        background:"rgba(167,139,250,0.12)",border:"1px solid rgba(167,139,250,0.22)",color:T.accent,
+      }}>${pod.tag}</span>
+    </div>
+    <div style=${{display:"flex",gap:12,alignItems:"flex-start",marginBottom:12}}>
+      <div style=${{
+        width:46,height:46,borderRadius:13,flexShrink:0,
+        background:"linear-gradient(135deg,rgba(167,139,250,0.22),rgba(251,191,36,0.14))",
+        border:"1px solid rgba(167,139,250,0.28)",
+        display:"grid",placeItems:"center",fontSize:22,
+      }}>${pod.emoji}</div>
+      <div style=${{flex:1,minWidth:0}}>
+        <div style=${{fontSize:13,fontWeight:800,color:T.text,lineHeight:1.3,marginBottom:3}}>${pod.episode}</div>
+        <div style=${{fontSize:11,fontWeight:700,color:T.accent,marginBottom:5}}>${pod.show}</div>
+        <div style=${{fontSize:11,color:T.muted,lineHeight:1.55}}>${pod.description}</div>
+      </div>
+    </div>
+    <div style=${{display:"flex",gap:8}}>
+      <button onClick=${()=>window.open(pod.appleUrl,"_blank")} style=${{
+        ...btnBase,flex:1,justifyContent:"center",
+        background:"linear-gradient(135deg,rgba(167,139,250,0.14),rgba(167,139,250,0.07))",
+        border:"1px solid rgba(167,139,250,0.28)",color:T.accent,
+      }}>🎧 Apple Podcasts</button>
+      <button onClick=${()=>window.open(pod.youtubeUrl,"_blank")} style=${{
+        ...btnBase,flex:1,justifyContent:"center",
+        background:"linear-gradient(135deg,rgba(239,68,68,0.12),rgba(239,68,68,0.06))",
+        border:"1px solid rgba(239,68,68,0.28)",color:"#f87171",
+      }}>▶ YouTube</button>
+    </div>
+  </div>`;
+}
+
 // ── Today View ────────────────────────────────────────────────
 function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenCoach}){
   const[sleepMode,setSleepMode]=useState(null);
@@ -819,6 +880,7 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
   const pctColor=pct>=80?T.green:pct>=50?T.accent:T.amber;
   return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
     <${DailyQuote}/>
+    <${DailyPodcast}/>
     <!-- hero card — WHOOP-style -->
     <div className="sk-card" style=${{
       background:"linear-gradient(145deg,rgba(167,139,250,0.10) 0%,rgba(109,40,217,0.05) 30%,rgba(52,211,153,0.05) 70%,rgba(56,189,248,0.04) 100%)",
