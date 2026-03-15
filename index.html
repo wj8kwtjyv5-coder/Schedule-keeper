@@ -1316,7 +1316,7 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
           const colors=["","#f87171","#fb923c","#fbbf24","#34d399","#a78bfa"];
           const h=e?Math.round(8+e*5):4;
           return html`<div key=${i} title=${d.date} style=${{
-            flex:1,height:${h},borderRadius:3,
+            flex:1,height:h,borderRadius:3,
             background:e?colors[e]:"rgba(255,255,255,0.08)",
             transition:"height 0.3s",
           }}/>`;
