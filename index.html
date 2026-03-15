@@ -502,54 +502,6 @@ ACTIONS:
 {"type":"deleteTask","taskId":"..."}
 {"type":"completeTask","taskId":"..."}`;
 
-function localCoach(msg,ctx){
-  const m=msg.toLowerCase(),tasks=ctx.tasks||[],today=ctx.today,actions=[];let reply="";
-  if(/match.cancel|game.cancel|game.is.off|game.off|no.game/.test(m)){
-    const g=tasks.find(t=>t.date===today&&["game","football"].includes(t.category)&&!t.completed);
-    if(g){
-      actions.push({type:"deleteTask",taskId:g.id});
-      actions.push({type:"addTask",task:{id:uid(),date:today,time:g.time||"18:00",title:"Run 40min + 4 sprint strides [match cancelled]",category:"run",notes:"Quality session to replace match.",completed:false,createdAt:Date.now()}});
-      reply=`Game removed. Added a quality run session instead.\n\nYou've got a good training window — use it.`;
-    }else{reply="No game on today's schedule. Add a quality session manually.";}
-  }else if(/tired|exhausted|sore|heavy legs|low energy|knackered|drain/.test(m)){
-    reply="Listen to your body today.\n\n• Swap the main session for 20min easy walk + mobility\n• Keep the session but drop intensity — Zone 1 only\n• Sauna + full rest if you're genuinely run-down\n\nRecovery is part of the plan.";
-  }else if(/game.tomorrow|match.tomorrow/.test(m)){
-    const tm=msg.match(/(\d{1,2})[:.h](\d{2})?\s*(am|pm)?/i);
-    let t2="17:00";
-    if(tm){let h=parseInt(tm[1]),mn=tm[2]?parseInt(tm[2]):0;if(tm[3]?.toLowerCase()==="pm"&&h<12)h+=12;t2=`${String(h).padStart(2,"0")}:${String(mn).padStart(2,"0")}`;}
-    const tmrw=isoDate(addDays(new Date(),1));
-    actions.push({type:"addTask",task:{id:uid(),date:tmrw,time:t2,title:"Game",category:"game",notes:"Match day.",completed:false,createdAt:Date.now()}});
-    reply=`Game added for tomorrow at ${fmtTime(t2)}. Go light in the morning — no intense session.`;
-  }else if(/^add\s+/i.test(msg.trim())){
-    const title=msg.replace(/^add\s+/i,"").trim();
-    actions.push({type:"addTask",task:{id:uid(),date:today,time:"",title,category:detectCat(title),notes:"",completed:false,createdAt:Date.now()}});
-    reply=`Added "${title}" to today.`;
-  }else if(/^(delete|remove)\s+/i.test(msg.trim())){
-    const title=msg.replace(/^(delete|remove)\s+/i,"").trim().toLowerCase();
-    const t=tasks.find(t=>t.date===today&&t.title.toLowerCase().includes(title));
-    if(t){actions.push({type:"deleteTask",taskId:t.id});reply=`Deleted "${t.title}".`;}
-    else reply=`Couldn't find a task matching "${title}" today.`;
-  }else if(/what.should|next session|what.do|plan/.test(m)){
-    const up=tasks.filter(t=>t.date===today&&!t.completed&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
-    reply=up.length?`Next up today:\n\n${up.slice(0,3).map(t=>`• ${t.time?fmtTime(t.time)+" — ":""}${t.title}`).join("\n")}\n\nStay on schedule.`:"Nothing left today. Good work or rest day — make it count.";
-  }else{
-    reply="I'm in offline mode — no AI connection.\n\nI can handle:\n• Match cancelled\n• Game tomorrow at 7pm\n• Add [session]\n• Delete [session]\n• What should I do\n• Feeling tired";
-  }
-  return{reply:reply+"\n\n_[offline mode]_",actions};
-}
-
-async function callCoach(msg,ctx){
-  try{
-    const res=await fetch("/api/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
-    if(!res.ok)throw new Error(`HTTP ${res.status}`);
-    const data=await res.json();
-    if(typeof data.reply==="string")return data;
-    throw new Error("bad response");
-  }catch{
-    return localCoach(msg,ctx);
-  }
-}
-
 // ── Base components ───────────────────────────────────────────
 function Ring({pct=0,size=48,stroke=3,color=T.accent,glow=false}){
   const r=(size-stroke*2)/2,circ=2*Math.PI*r,dash=(Math.min(100,pct)/100)*circ;
@@ -860,9 +812,10 @@ function DailyPodcast(){
 }
 
 // ── Body Fuel & Journal Panel ─────────────────────────────────
-function BodyFuelPanel({tasks,healthLog,onUpsertLog,note,onUpsertNote,dateStr}){
+function BodyFuelPanel({tasks,healthLog,onUpsertLog,dateStr}){
   const ENERGY_EMOJIS=["😴","😑","😐","💪","🔥"];
   const suggestions=getFuelSuggestions(healthLog,tasks,dateStr);
+  const herbs=getHerbSuggestions(healthLog,tasks,dateStr);
   const upcoming=tasks.filter(t=>t.date===dateStr&&!t.completed&&t.time&&new Set(["game","football","run","bike","gym","swim","pilates","recovery","sauna"]).has(t.category)).sort((a,b)=>a.time.localeCompare(b.time))[0];
   // Countdown to upcoming workout
   let countdown=null;
@@ -929,19 +882,223 @@ function BodyFuelPanel({tasks,healthLog,onUpsertLog,note,onUpsertNote,dateStr}){
       </div>`)}
     </div>
 
-    <!-- Journal textarea -->
-    <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:8,textTransform:"uppercase"}}>Journal</div>
-    <textarea
-      placeholder="How are you feeling? Notes for today — body, mindset, wins…"
-      value=${note}
-      onInput=${e=>onUpsertNote(dateStr,e.target.value)}
-      style=${{...S.input,minHeight:72,resize:"none",lineHeight:1.6,fontFamily:"inherit",fontSize:13}}
-    />
+    <!-- Herbs & Supplements -->
+    ${herbs.length>0?html`<div style=${{marginTop:4}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Herbs & Supplements</div>
+      <div style=${{display:"flex",flexDirection:"column",gap:8}}>
+        ${herbs.map((h,i)=>html`<div key=${i} style=${{
+          borderRadius:12,padding:"10px 12px",
+          background:"rgba(52,211,153,0.04)",
+          border:"1px solid rgba(52,211,153,0.15)",
+          borderLeft:"3px solid rgba(52,211,153,0.5)",
+        }}>
+          <div style=${{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+            <span style=${{fontSize:16}}>${h.emoji}</span>
+            <span style=${{fontSize:12,fontWeight:800,color:T.text,flex:1}}>${h.name}</span>
+            <div style=${{display:"flex",gap:4}}>
+              ${h.tags.slice(0,2).map((tg,j)=>html`<span key=${j} style=${{
+                fontSize:8,fontWeight:700,padding:"2px 6px",borderRadius:999,letterSpacing:0.6,
+                background:"rgba(52,211,153,0.10)",border:"1px solid rgba(52,211,153,0.20)",color:"#34d399",
+              }}>${tg}</span>`)}
+            </div>
+          </div>
+          <div style=${{fontSize:11,color:T.textSoft,lineHeight:1.5,marginBottom:3}}>${h.benefit}</div>
+          <div style=${{fontSize:10,color:T.muted,fontStyle:"italic"}}>⏱ ${h.timing}</div>
+        </div>`)}
+      </div>
+    </div>`:""}
+  </div>`;
+}
+
+// ── Journal View ──────────────────────────────────────────────
+function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEditTasks}){
+  const today=todayISO();
+  const weekDates=getWeekDates();
+  const todayLog=healthLogs[today]||{};
+  const [dismissedReschedule,setDismissedReschedule]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem("dismissedReschedule")||"{}");}catch{return{};}
+  });
+  const missedWorkouts=useMemo(()=>getMissedWorkouts(tasks).filter(t=>!dismissedReschedule[t.id]),[tasks,dismissedReschedule]);
+  const herbs=getHerbSuggestions(todayLog,tasks,today);
+  const fuelSuggestions=getFuelSuggestions(todayLog,tasks,today);
+  const ENERGY_EMOJIS=["😴","😑","😐","💪","🔥"];
+  const ENERGY_LABELS=["Drained","Low","Decent","Good","Top form"];
+  const isSick=todayLog.sickMode;
+
+  // Pending week rebalance
+  const weekConflicts=useMemo(()=>detectWeekConflicts(tasks,weekDates),[tasks,weekDates]);
+
+  function dismissReschedule(id){
+    const next={...dismissedReschedule,[id]:true};
+    setDismissedReschedule(next);
+    localStorage.setItem("dismissedReschedule",JSON.stringify(next));
+  }
+  function moveToToday(t){
+    onBulkEditTasks([{task:t,toDate:today}]);
+    dismissReschedule(t.id);
+    showToast(`${t.title} moved to today`);
+  }
+
+  // Past 14 days for history
+  const pastDays=Array.from({length:14},(_,i)=>{
+    const d=isoDate(addDays(new Date(),-(i)));
+    return{date:d,note:notes[d]||"",log:healthLogs[d]||{}};
+  });
+
+  return html`<div style=${{padding:"16px 14px",paddingBottom:120}}>
+    <!-- Sick/injured mode banner -->
+    ${isSick?html`<div style=${{
+      borderRadius:14,padding:"12px 14px",marginBottom:14,
+      background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.25)",
+      display:"flex",alignItems:"center",gap:10,
+    }}>
+      <span style=${{fontSize:20}}>🤕</span>
+      <div style=${{flex:1}}>
+        <div style=${{fontWeight:800,fontSize:13,color:"#fbbf24"}}>Recovery Day</div>
+        <div style=${{fontSize:11,color:T.textSoft,marginTop:2}}>Your body is healing — rest is training. Herb & fuel suggestions adjusted.</div>
+      </div>
+      <button onClick=${()=>onUpsertLog(today,{sickMode:false})} style=${{
+        background:"transparent",border:"none",color:T.muted,cursor:"pointer",fontSize:18,padding:4,
+      }}>×</button>
+    </div>`:""}
+
+    <!-- Energy check-in -->
+    <div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:12,textTransform:"uppercase"}}>How's your body today?</div>
+      <div style=${{display:"flex",gap:6,marginBottom:8}}>
+        ${ENERGY_EMOJIS.map((e,i)=>html`<button key=${i} onClick=${()=>onUpsertLog(today,{energy:i+1})} style=${{
+          flex:1,padding:"9px 4px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+          border:`1px solid ${todayLog.energy===i+1?T.accentBorder:T.border}`,
+          background:todayLog.energy===i+1?T.accentGlow:"rgba(255,255,255,0.03)",
+          fontSize:19,transition:"all 0.15s",
+        }}>${e}</button>`)}
+      </div>
+      ${todayLog.energy?html`<div style=${{fontSize:11,color:T.muted,textAlign:"center",fontWeight:600}}>
+        ${ENERGY_LABELS[todayLog.energy-1]}${todayLog.energy===1?" — rest & replenish today":""}
+      </div>`:""}
+      <!-- Sick toggle -->
+      <button onClick=${()=>onUpsertLog(today,{sickMode:!isSick})} style=${{
+        marginTop:10,width:"100%",padding:"8px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+        border:`1px solid ${isSick?"rgba(251,191,36,0.35)":T.border}`,
+        background:isSick?"rgba(251,191,36,0.08)":"rgba(255,255,255,0.03)",
+        color:isSick?"#fbbf24":T.muted,fontSize:12,fontWeight:700,
+      }}>🤕 ${isSick?"Recovery mode ON — tap to deactivate":"Mark as sick / injured day"}</button>
+    </div>
+
+    <!-- Missed workout reschedule -->
+    ${missedWorkouts.map(t=>html`<div key=${t.id} style=${{
+      ...S.card,marginBottom:14,padding:"12px 14px",
+      background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.22)",
+    }}>
+      <div style=${{fontSize:9,fontWeight:900,color:"#f59e0b",letterSpacing:2,marginBottom:8,textTransform:"uppercase"}}>Missed Workout</div>
+      <div style=${{fontSize:13,fontWeight:800,color:T.text,marginBottom:4}}>${t.title}</div>
+      <div style=${{fontSize:11,color:T.muted,marginBottom:12}}>Yesterday's ${CATS[t.category]?.label||t.category} wasn't completed — reschedule?</div>
+      <div style=${{display:"flex",gap:8}}>
+        <button onClick=${()=>moveToToday(t)} style=${{
+          flex:1,padding:"9px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+          border:"1px solid rgba(245,158,11,0.35)",background:"rgba(245,158,11,0.10)",
+          color:"#f59e0b",fontSize:12,fontWeight:800,
+        }}>Move to Today</button>
+        <button onClick=${()=>dismissReschedule(t.id)} style=${{
+          flex:1,padding:"9px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+          border:`1px solid ${T.border}`,background:"transparent",
+          color:T.muted,fontSize:12,fontWeight:700,
+        }}>Skip</button>
+      </div>
+    </div>`)}
+
+    <!-- Today's journal entry -->
+    <div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Today's Journal</div>
+      <textarea
+        placeholder="How are you feeling? Notes for today — body, mindset, wins, gratitude…"
+        value=${notes[today]||""}
+        onInput=${e=>onUpsertNote(today,e.target.value)}
+        style=${{...S.input,minHeight:110,resize:"none",lineHeight:1.7,fontFamily:"inherit",fontSize:13}}
+      />
+    </div>
+
+    <!-- Today's fuel suggestions -->
+    ${fuelSuggestions.length>0?html`<div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Fuel Plan</div>
+      <div style=${{display:"flex",flexDirection:"column",gap:8}}>
+        ${fuelSuggestions.slice(0,3).map((s,i)=>html`<div key=${i} style=${{
+          borderRadius:11,padding:"9px 11px",
+          background:"rgba(255,255,255,0.03)",
+          border:`1px solid ${s.color}28`,borderLeft:`3px solid ${s.color}`,
+        }}>
+          <div style=${{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+            <span style=${{fontSize:8,fontWeight:800,padding:"2px 6px",borderRadius:999,background:`${s.color}18`,border:`1px solid ${s.color}30`,color:s.color}}>${s.timing}</span>
+            <span style=${{fontSize:12,fontWeight:800,color:T.text}}>${s.label}</span>
+          </div>
+          <div style=${{display:"flex",flexDirection:"column",gap:1}}>
+            ${s.foods.slice(0,3).map((f,j)=>html`<div key=${j} style=${{fontSize:11,color:T.textSoft,paddingLeft:4}}>· ${f}</div>`)}
+          </div>
+        </div>`)}
+      </div>
+    </div>`:""}
+
+    <!-- Herb suggestions -->
+    ${herbs.length>0?html`<div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Herbs & Supplements</div>
+      <div style=${{display:"flex",flexDirection:"column",gap:8}}>
+        ${herbs.map((h,i)=>html`<div key=${i} style=${{
+          borderRadius:11,padding:"9px 11px",
+          background:"rgba(52,211,153,0.04)",
+          border:"1px solid rgba(52,211,153,0.14)",borderLeft:"3px solid rgba(52,211,153,0.45)",
+        }}>
+          <div style=${{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
+            <span style=${{fontSize:15}}>${h.emoji}</span>
+            <span style=${{fontSize:12,fontWeight:800,color:T.text,flex:1}}>${h.name}</span>
+          </div>
+          <div style=${{fontSize:11,color:T.textSoft,marginBottom:3}}>${h.benefit}</div>
+          <div style=${{fontSize:10,color:T.muted,fontStyle:"italic"}}>⏱ ${h.timing}</div>
+        </div>`)}
+      </div>
+    </div>`:""}
+
+    <!-- Mood timeline — last 14 days -->
+    <div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:12,textTransform:"uppercase"}}>14-Day Energy</div>
+      <div style=${{display:"flex",gap:3,alignItems:"flex-end",height:36,marginBottom:6}}>
+        ${[...pastDays].reverse().map((d,i)=>{
+          const e=d.log.energy||0;
+          const colors=["","#f87171","#fb923c","#fbbf24","#34d399","#a78bfa"];
+          const h=e?Math.round(8+e*5):4;
+          return html`<div key=${i} title=${d.date} style=${{
+            flex:1,height:${h},borderRadius:3,
+            background:e?colors[e]:"rgba(255,255,255,0.08)",
+            transition:"height 0.3s",
+          }}/>`;
+        })}
+      </div>
+      <div style=${{display:"flex",justifyContent:"space-between",fontSize:8,color:T.muted}}>
+        <span>14 days ago</span><span>Today</span>
+      </div>
+    </div>
+
+    <!-- Past journal entries -->
+    <div style=${{...S.card,padding:"14px 16px"}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:12,textTransform:"uppercase"}}>Past Entries</div>
+      ${pastDays.slice(1).filter(d=>d.note).length===0?html`<div style=${{fontSize:12,color:T.muted,textAlign:"center",padding:"16px 0"}}>No past entries yet — start writing above</div>`:""}
+      <div style=${{display:"flex",flexDirection:"column",gap:10}}>
+        ${pastDays.slice(1).filter(d=>d.note).map((d,i)=>html`<div key=${i} style=${{
+          borderRadius:11,padding:"10px 12px",
+          background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",
+        }}>
+          <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+            <div style=${{fontSize:10,fontWeight:800,color:T.accent}}>${new Date(d.date).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}</div>
+            ${d.log.energy?html`<span style=${{fontSize:12}}>${["","😴","😑","😐","💪","🔥"][d.log.energy]}</span>`:""}
+          </div>
+          <div style=${{fontSize:12,color:T.textSoft,lineHeight:1.6,whiteSpace:"pre-wrap"}}>${d.note.length>200?d.note.slice(0,200)+"…":d.note}</div>
+        </div>`)}
+      </div>
+    </div>
   </div>`;
 }
 
 // ── Today View ────────────────────────────────────────────────
-function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenCoach,healthLog={},onUpsertLog,note="",onUpsertNote}){
+function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenJournal,healthLog={},onUpsertLog}){
   const[sleepMode,setSleepMode]=useState(null);
   const todayStr=todayISO(),now=new Date(),curTime=`${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
   const todayTasks=useMemo(()=>tasks.filter(t=>t.date===todayStr&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")),[tasks,todayStr]);
@@ -1001,13 +1158,13 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
     </div>
 
     ${total===0?html`
-      <div className="sk-card" onClick=${onOpenCoach} style=${{
+      <div className="sk-card" onClick=${onOpenJournal} style=${{
         border:"1px dashed rgba(255,255,255,0.07)",borderRadius:16,padding:28,textAlign:"center",marginBottom:14,
         background:"rgba(255,255,255,0.02)",cursor:"pointer",backdropFilter:"blur(8px)",
       }}>
-        <div style=${{fontSize:22,marginBottom:8,color:T.accent,fontWeight:900}}>▸</div>
+        <div style=${{fontSize:22,marginBottom:8,color:T.accent,fontWeight:900}}>✦</div>
         <div style=${{fontWeight:700,fontSize:14,color:T.text}}>Nothing scheduled yet</div>
-        <div style=${{fontSize:12,color:T.muted,marginTop:4}}>Ask Coach to plan your day</div>
+        <div style=${{fontSize:12,color:T.muted,marginTop:4}}>Open journal to plan your day</div>
       </div>`:""}
 
     ${total>0?html`
@@ -1041,7 +1198,7 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
         })}
       </div>`:""}
 
-    <${BodyFuelPanel} tasks=${tasks} healthLog=${healthLog} onUpsertLog=${onUpsertLog} note=${note} onUpsertNote=${onUpsertNote} dateStr=${todayStr}/>
+    <${BodyFuelPanel} tasks=${tasks} healthLog=${healthLog} onUpsertLog=${onUpsertLog} dateStr=${todayStr}/>
 
     <!-- Nap / Wind-down buttons -->
     ${sleepMode?html`<${SleepModePanel} onClose=${()=>setSleepMode(null)}/>`:null}
@@ -1626,91 +1783,6 @@ function HabitModal({habit,onSave,onDelete,onClose}){
   <//>`;
 }
 
-// ── Coach Panel ───────────────────────────────────────────────
-function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActions}){
-  const [msgs,setMsgs]=useState([{role:"assistant",content:"Coach ready.\n\nTell me what's changed:\n— Match cancelled — I'll swap it for quality training\n— Game tomorrow at 7pm\n— Feeling tired today\n— What should I do next?"}]);
-  const [input,setInput]=useState(""); const [busy,setBusy]=useState(false);
-  const bodyRef=useRef(null); const inputRef=useRef(null);
-  useEffect(()=>{ if(isOpen) setTimeout(()=>inputRef.current?.focus(),100); },[isOpen]);
-  useEffect(()=>{ if(bodyRef.current) bodyRef.current.scrollTop=bodyRef.current.scrollHeight; },[msgs,busy]);
-
-  const buildCtx=useCallback(()=>{
-    const now=new Date(),todayStr=todayISO(),weekDates=getWeekDates();
-    const upcoming=tasks.filter(t=>t.date>=todayStr).sort((a,b)=>(`${a.date}${a.time||""}`).localeCompare(`${b.date}${b.time||""}`)).slice(0,60).map(t=>({id:t.id,title:t.title,date:t.date,time:t.time||null,category:t.category,completed:t.completed,planKey:t.planKey||null,notes:t.notes||""}));
-    const weekStats={};tasks.filter(t=>weekDates.includes(t.date)).forEach(t=>{if(!weekStats[t.category])weekStats[t.category]={done:0,total:0};weekStats[t.category].total++;if(t.completed)weekStats[t.category].done++;});
-    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habits.filter(h=>h.days.includes(now.getDay())).map(h=>({id:h.id,title:h.title,done:!!habitLogs[`${h.id}_${todayStr}`]}))};
-  },[tasks,habits,habitLogs,settings]);
-
-  const QUICK=[
-    {l:"Match cancelled",p:"Match cancelled"},
-    {l:"Game tomorrow",p:"I have a game tomorrow evening"},
-    {l:"Tired today",p:"I feel tired and heavy legged today"},
-    {l:"What's next?",p:"What should I do next?"},
-    {l:"Week check",p:"How is my week going so far?"},
-    {l:"Rest day",p:"Make today a rest day"},
-    {l:"Add sprints",p:"Add a sprint session today at 6am"},
-  ];
-  const send=async(text)=>{
-    const t=text.trim(); if(!t||busy) return;
-    setMsgs(p=>[...p,{role:"user",content:t}]); setInput(""); setBusy(true);
-    try{
-      const r=await callCoach(t,buildCtx());
-      setMsgs(p=>[...p,{role:"assistant",content:r.reply}]);
-      if(r.actions?.length){ onApplyActions(r.actions); showToast(`${r.actions.length} update${r.actions.length>1?"s":""} applied`); }
-    }catch{setMsgs(p=>[...p,{role:"assistant",content:"Connection unavailable — try again."}]);}
-    finally{setBusy(false);}
-  };
-
-  if(!isOpen) return null;
-  return html`<div style=${{position:"fixed",inset:0,zIndex:80,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(16px)",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick=${onClose}>
-    <div style=${{background:"rgba(7,9,13,0.97)",backdropFilter:"blur(32px)",borderRadius:"22px 22px 0 0",border:"1px solid rgba(255,255,255,0.08)",borderBottom:"none",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.7)",animation:"slideUp 0.28s cubic-bezier(0.22,1,0.36,1)"}} onClick=${e=>e.stopPropagation()}>
-      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 16px 12px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexShrink:0}}>
-        <div style=${{display:"flex",alignItems:"center",gap:11}}>
-          <div style=${{width:38,height:38,borderRadius:12,
-            background:"rgba(139,92,246,0.12)",border:"1px solid rgba(139,92,246,0.28)",
-            display:"grid",placeItems:"center",fontSize:16,color:T.accent,fontWeight:900}}>▸</div>
-          <div>
-            <div style=${{fontWeight:800,fontSize:15,color:T.text,letterSpacing:-0.3}}>Coach</div>
-            <div style=${{fontSize:10,fontWeight:700,color:busy?T.amber:T.green,display:"flex",alignItems:"center",gap:4,letterSpacing:0.5}}>
-              ${busy?html`<span style=${{animation:"pulseGlow 1s infinite"}}>◌</span> thinking`:html`<span>◉</span> ready`}
-            </div>
-          </div>
-        </div>
-        <${IconBtn} onClick=${onClose} style=${{color:T.muted}}>×<//>
-      </div>
-      <div ref=${bodyRef} style=${{flex:1,overflowY:"auto",padding:"12px 14px",display:"flex",flexDirection:"column",gap:10,minHeight:180}}>
-        ${msgs.map((m,i)=>html`<div key=${i} style=${{
-          alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",padding:"10px 13px",
-          borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",
-          background:m.role==="user"?"rgba(139,92,246,0.12)":"rgba(255,255,255,0.04)",
-          border:`1px solid ${m.role==="user"?"rgba(139,92,246,0.28)":"rgba(255,255,255,0.07)"}`,
-          color:T.text,fontSize:14,lineHeight:1.55,whiteSpace:"pre-wrap",
-        }}>
-          ${m.role==="assistant"?html`<div style=${{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
-            <span style=${{fontSize:9,fontWeight:800,color:T.accent,letterSpacing:1.2}}>COACH</span>
-            ${m.content.includes("[offline mode]")?html`<span style=${{fontSize:9,fontWeight:800,color:"#f59e0b",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.25)",borderRadius:5,padding:"1px 6px",letterSpacing:0.5}}>OFFLINE</span>`:""}
-          </div>`:""}
-          ${m.content.replace(/\n\n_\[offline mode\]_$/,"")}
-        </div>`)}
-        ${busy?html`<div style=${{alignSelf:"flex-start",padding:"12px 16px",borderRadius:"14px 14px 14px 4px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",color:T.muted,fontSize:18,letterSpacing:4}}>···</div>`:""}
-      </div>
-      <div style=${{display:"flex",gap:6,padding:"8px 14px",overflowX:"auto",flexShrink:0,borderTop:"1px solid rgba(255,255,255,0.06)",scrollbarWidth:"none",WebkitMaskImage:"linear-gradient(to right, transparent, black 10px, black 90%, transparent)"}}>
-        ${QUICK.map(c=>html`<${Chip} key=${c.l} onClick=${()=>send(c.p)}>${c.l}<//>` )}
-      </div>
-      <div style=${{display:"flex",gap:8,padding:"10px 14px 12px",flexShrink:0}}>
-        <textarea ref=${inputRef} value=${input}
-          onInput=${e=>setInput(e.target.value)}
-          onKeyDown=${e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);} }}
-          placeholder="Message Coach…" rows=${1}
-          style=${{flex:1,padding:"10px 12px",borderRadius:12,border:"1px solid rgba(255,255,255,0.09)",
-            background:"rgba(255,255,255,0.04)",color:T.text,fontSize:14,fontFamily:"inherit",
-            outline:"none",resize:"none",minHeight:44,lineHeight:1.4,maxHeight:120}}/>
-        <${Btn} onClick=${()=>send(input)} variant="primary" disabled=${!input.trim()||busy} style=${{height:44,padding:"0 16px",flexShrink:0}}>▸<//>
-      </div>
-    </div>
-  </div>`;
-}
-
 // ── Health ──────────────────────────────────────────────────
 const STRAIN_WEIGHTS={game:3.5,football:3.5,run:2.5,bike:2.0,gym:2.5,swim:2.0,pilates:1.5,sauna:0.7,recovery:0.5,work:0,other:0.5};
 // Maps Apple Health / fitness app workout type strings → app category
@@ -1822,6 +1894,105 @@ function getFuelSuggestions(log,tasks,dateStr){
   if(log?.stress>=4)
     suggestions.push({label:"High Stress — Recovery Foods",foods:["Almonds + dark leafy greens (magnesium)","Salmon or mackerel (omega-3 fights cortisol)","Chamomile or green tea","Dark berries (antioxidants)"],hint:"Magnesium and omega-3 regulate cortisol — eat these today",timing:"Note",color:"#fb923c"});
   return suggestions;
+}
+
+const WORKOUT_CATS=["game","football","run","bike","gym","swim","pilates","recovery","sauna"];
+const WORKOUT_CATS_SET=new Set(WORKOUT_CATS);
+const HIGH_STRAIN_CATS=new Set(["game","football","run","gym"]);
+
+const HERB_DB=[
+  // Adaptogens
+  {keys:["ashwagandha"],name:"Ashwagandha",emoji:"🌿",benefit:"Reduces cortisol, supports recovery, calms nervous system",timing:"Evening or post-workout",bodyState:"highStress",workoutTypes:["gym","run","game","football"],tags:["adaptogen","cortisol","recovery"]},
+  {keys:["rhodiola"],name:"Rhodiola Rosea",emoji:"🌸",benefit:"Reduces fatigue, sharpens focus, improves endurance",timing:"Morning — 30min before training",bodyState:"lowEnergy",workoutTypes:["run","gym","bike"],tags:["adaptogen","energy","focus"]},
+  {keys:["holy basil","tulsi"],name:"Holy Basil (Tulsi)",emoji:"🌿",benefit:"Adaptogen — calms nervous system, reduces anxiety",timing:"As tea, morning or evening",bodyState:"highStress",workoutTypes:[],tags:["adaptogen","calm","anxiety"]},
+  {keys:["maca"],name:"Maca Root",emoji:"🟡",benefit:"Stamina, hormonal balance, natural energy without jitters",timing:"Morning with breakfast",bodyState:"lowEnergy",workoutTypes:["gym","run","bike"],tags:["energy","stamina","hormonal"]},
+  {keys:["ginseng"],name:"Ginseng",emoji:"🌱",benefit:"Energy, mental clarity, immune support",timing:"Morning",bodyState:"lowEnergy",workoutTypes:["game","football","run"],tags:["energy","immune","mental"]},
+  // Anti-inflammatory / Recovery
+  {keys:["turmeric"],name:"Turmeric + Black Pepper",emoji:"🟡",benefit:"Potent anti-inflammatory, joint support, speeds recovery",timing:"Post-workout — always pair with black pepper (2000× absorption)",bodyState:"recovery",workoutTypes:["game","football","run","gym"],tags:["anti-inflammatory","recovery","joints"]},
+  {keys:["ginger"],name:"Ginger",emoji:"🟠",benefit:"Reduces muscle soreness, aids digestion, anti-nausea",timing:"Post-workout tea or with meals",bodyState:"recovery",workoutTypes:["run","gym","game"],tags:["recovery","digestion","soreness"]},
+  // Cognitive / Focus
+  {keys:["lion's mane","lions mane"],name:"Lion's Mane",emoji:"🍄",benefit:"Nerve growth factor — focus, memory, clears brain fog",timing:"Morning with coffee or before training",bodyState:"lowEnergy",workoutTypes:["game","football"],tags:["cognitive","focus","brain"]},
+  {keys:["matcha"],name:"Matcha",emoji:"🍵",benefit:"L-theanine + caffeine: calm focus, sustained energy, no crash",timing:"1h before training or early morning",bodyState:"lowEnergy",workoutTypes:["run","gym","game","football"],tags:["energy","focus","calm"]},
+  // Sleep / Recovery
+  {keys:["reishi"],name:"Reishi",emoji:"🍄",benefit:"Immune modulation, improves sleep quality, deep calm",timing:"Evening — 1–2h before bed",bodyState:"sleep",workoutTypes:[],tags:["sleep","immune","calm"]},
+  {keys:["valerian"],name:"Valerian Root",emoji:"🌾",benefit:"Reduces sleep onset time, eases anxiety, promotes deep rest",timing:"30–60min before bed",bodyState:"sleep",workoutTypes:[],tags:["sleep","anxiety","rest"]},
+  {keys:["chamomile"],name:"Chamomile",emoji:"🌼",benefit:"Mild sedative, anti-anxiety, soothes gut",timing:"Evening tea",bodyState:"sleep",workoutTypes:[],tags:["sleep","gut","calm"]},
+  // Performance / Game Day
+  {keys:["cordyceps"],name:"Cordyceps",emoji:"🍄",benefit:"VO₂ max, ATP production, aerobic capacity — game day energy",timing:"1–2h before competition or hard session",bodyState:"preGame",workoutTypes:["game","football","run","bike"],tags:["vo2","energy","performance"]},
+  {keys:["beetroot","beet juice"],name:"Beetroot",emoji:"🟣",benefit:"Nitric oxide boost — blood flow, reduces oxygen cost of exercise",timing:"2–3h before competition",bodyState:"preGame",workoutTypes:["run","bike","game","football"],tags:["nitric oxide","performance","endurance"]},
+  {keys:["cayenne"],name:"Cayenne Pepper",emoji:"🌶️",benefit:"Improves circulation, thermogenesis, metabolic rate",timing:"Pre-workout with meals",bodyState:"preGame",workoutTypes:["gym","run"],tags:["circulation","metabolism"]},
+  // Gut / Immune / Always
+  {keys:["spirulina"],name:"Spirulina",emoji:"🟢",benefit:"Complete protein, iron, anti-inflammatory, alkalising",timing:"Morning in smoothie",bodyState:"always",workoutTypes:[],tags:["protein","iron","alkaline"]},
+  {keys:["chlorella"],name:"Chlorella",emoji:"🟢",benefit:"Detox support, iron, chlorophyll, immune strengthening",timing:"Morning on empty stomach",bodyState:"always",workoutTypes:[],tags:["detox","iron","immune"]},
+  {keys:["kefir"],name:"Kefir",emoji:"🥛",benefit:"50+ probiotic strains — gut microbiome, immunity, protein",timing:"Morning or post-workout",bodyState:"always",workoutTypes:[],tags:["probiotic","gut","immune"]},
+  {keys:["apple cider vinegar"],name:"Apple Cider Vinegar",emoji:"🍶",benefit:"Blood sugar regulation, digestion, gut environment",timing:"Diluted 1tbsp in water before meals",bodyState:"always",workoutTypes:[],tags:["blood sugar","digestion","gut"]},
+  {keys:["green tea"],name:"Green Tea",emoji:"🍵",benefit:"EGCG antioxidant, gentle caffeine, L-theanine calm focus",timing:"Morning or pre-workout (not after 3pm)",bodyState:"always",workoutTypes:["run","gym"],tags:["antioxidant","focus","calm"]},
+  {keys:["moringa"],name:"Moringa",emoji:"🌿",benefit:"Superfood multivitamin — iron, calcium, Vit C, all amino acids",timing:"Morning in smoothie or as tea",bodyState:"always",workoutTypes:[],tags:["vitamins","minerals","complete"]},
+  {keys:["mct oil"],name:"MCT Oil",emoji:"⚡",benefit:"Fast ketone energy, brain fuel, supports fat metabolism",timing:"Morning coffee or pre-workout",bodyState:"lowEnergy",workoutTypes:["gym","run"],tags:["energy","keto","brain"]},
+];
+
+function getHerbSuggestions(log,tasks,dateStr){
+  const now=new Date();
+  const curDecHrs=now.getHours()+now.getMinutes()/60;
+  const upcoming=tasks.filter(t=>t.date===dateStr&&!t.completed&&WORKOUT_CATS_SET.has(t.category)&&t.time)
+    .sort((a,b)=>a.time.localeCompare(b.time))[0];
+  const cat=upcoming?.category||null;
+  const hoursUntil=upcoming?.time
+    ?(()=>{const[h,m]=upcoming.time.split(":").map(Number);return(h+m/60)-curDecHrs;})()
+    :null;
+  const isGameDay=tasks.some(t=>t.date===dateStr&&["game","football"].includes(t.category));
+  const isLowEnergy=(log?.energy||3)<=2;
+  const isHighStress=(log?.stress||1)>=4;
+  const isEvening=now.getHours()>=19;
+  const isSick=log?.sickMode;
+  const results=[];
+  if(isSick){
+    results.push(...HERB_DB.filter(h=>["Ginger","Turmeric + Black Pepper","Echinacea","Reishi","Chlorella"].includes(h.name)||h.tags.includes("immune")));
+  } else {
+    if(isGameDay&&hoursUntil!==null&&hoursUntil>0&&hoursUntil<3)
+      results.push(...HERB_DB.filter(h=>h.bodyState==="preGame"||(h.workoutTypes.includes(cat||"")&&h.bodyState!=="sleep"&&h.bodyState!=="always")));
+    if(isLowEnergy) results.push(...HERB_DB.filter(h=>h.bodyState==="lowEnergy"));
+    if(isHighStress) results.push(...HERB_DB.filter(h=>h.bodyState==="highStress"));
+    if(isEvening) results.push(...HERB_DB.filter(h=>h.bodyState==="sleep"));
+    if(cat&&!isEvening) results.push(...HERB_DB.filter(h=>h.workoutTypes.includes(cat)&&h.bodyState==="recovery"));
+    if(results.length===0) results.push(...HERB_DB.filter(h=>h.bodyState==="always").slice(0,3));
+  }
+  return results.filter((h,i,arr)=>arr.findIndex(x=>x.name===h.name)===i).slice(0,4);
+}
+
+// Returns missed workouts from yesterday that need reschedule prompt
+function getMissedWorkouts(tasks){
+  const yest=isoDate(addDays(new Date(),-1));
+  return tasks.filter(t=>t.date===yest&&!t.completed&&WORKOUT_CATS_SET.has(t.category)&&!t.fromAppleHealth);
+}
+
+// Detects week conflicts when a new high-priority task is added
+function detectWeekConflicts(tasks,weekDates){
+  const byDay={};
+  weekDates.forEach(d=>{byDay[d]=tasks.filter(t=>t.date===d&&WORKOUT_CATS_SET.has(t.category));});
+  const conflicts=[];
+  weekDates.forEach(d=>{if(byDay[d].length>2)conflicts.push({date:d,tasks:byDay[d]});});
+  return conflicts;
+}
+
+// Rebalances week tasks to accommodate a last-minute high-priority event
+function rebalanceWeek(tasks,newTaskDate,weekDates){
+  const today=todayISO();
+  const moveable=tasks.filter(t=>
+    weekDates.includes(t.date)&&t.date>=today&&!t.completed&&
+    WORKOUT_CATS_SET.has(t.category)&&t.date!==newTaskDate&&
+    !["game","football"].includes(t.category)
+  );
+  const occupied=new Set(tasks.filter(t=>weekDates.includes(t.date)&&WORKOUT_CATS_SET.has(t.category)&&t.date!==newTaskDate).map(t=>t.date));
+  const free=weekDates.filter(d=>d>=today&&d!==newTaskDate&&!occupied.has(d));
+  const moves=[];
+  let fi=0;
+  // Find overloaded days on newTaskDate and try to spread
+  const overloaded=tasks.filter(t=>t.date===newTaskDate&&WORKOUT_CATS_SET.has(t.category)&&!t.completed&&!["game","football"].includes(t.category));
+  for(const t of overloaded){
+    if(fi<free.length){moves.push({task:t,toDate:free[fi]});fi++;}
+  }
+  return moves;
 }
 
 function calcSleepMins(bedtime,wakeTime){
@@ -2009,6 +2180,60 @@ const FOOD_DB=[
   // Supplements
   {keys:["protein shake","whey shake","protein powder","whey protein"],cal:200,protein:30,carbs:8,fat:3},
   {keys:["casein protein","casein"],cal:190,protein:28,carbs:9,fat:3},
+  // ── Herbs & Spices ───────────────────────────────────────────
+  {keys:["turmeric","turmeric powder"],cal:8,protein:0,carbs:2,fat:0},
+  {keys:["fresh ginger","ginger root","ginger"],cal:5,protein:0,carbs:1,fat:0},
+  {keys:["cinnamon","cinnamon powder"],cal:6,protein:0,carbs:2,fat:0},
+  {keys:["cayenne pepper","cayenne"],cal:3,protein:0,carbs:1,fat:0},
+  {keys:["black pepper"],cal:3,protein:0,carbs:1,fat:0},
+  {keys:["cumin"],cal:8,protein:0,carbs:1,fat:0},
+  {keys:["cardamom"],cal:6,protein:0,carbs:1,fat:0},
+  {keys:["oregano"],cal:3,protein:0,carbs:1,fat:0},
+  {keys:["rosemary"],cal:3,protein:0,carbs:1,fat:0},
+  {keys:["garlic clove","garlic"],cal:5,protein:0,carbs:1,fat:0},
+  {keys:["fresh basil","basil"],cal:1,protein:0,carbs:0,fat:0},
+  {keys:["fresh parsley","parsley"],cal:2,protein:0,carbs:0,fat:0},
+  {keys:["fresh mint","mint leaves","mint"],cal:2,protein:0,carbs:0,fat:0},
+  // ── Superfoods & Adaptogens ───────────────────────────────────
+  {keys:["spirulina powder","spirulina"],cal:20,protein:4,carbs:2,fat:0},
+  {keys:["chlorella powder","chlorella"],cal:15,protein:3,carbs:1,fat:0},
+  {keys:["moringa powder","moringa"],cal:25,protein:2,carbs:4,fat:0},
+  {keys:["matcha powder","matcha latte","matcha"],cal:35,protein:2,carbs:4,fat:1},
+  {keys:["maca powder","maca root","maca"],cal:20,protein:1,carbs:4,fat:0},
+  {keys:["ashwagandha powder","ashwagandha"],cal:10,protein:0,carbs:2,fat:0},
+  {keys:["wheatgrass powder","wheatgrass"],cal:10,protein:1,carbs:1,fat:0},
+  {keys:["acai powder","acai bowl","acai"],cal:20,protein:0,carbs:2,fat:1},
+  // ── Functional Mushrooms ──────────────────────────────────────
+  {keys:["lion's mane","lions mane mushroom","lion mane"],cal:10,protein:1,carbs:1,fat:0},
+  {keys:["reishi mushroom","reishi"],cal:8,protein:1,carbs:1,fat:0},
+  {keys:["cordyceps mushroom","cordyceps"],cal:8,protein:1,carbs:1,fat:0},
+  {keys:["chaga mushroom","chaga"],cal:5,protein:0,carbs:1,fat:0},
+  // ── Fermented Foods ───────────────────────────────────────────
+  {keys:["kefir milk","plain kefir","kefir"],cal:150,protein:8,carbs:12,fat:8},
+  {keys:["kimchi"],cal:25,protein:2,carbs:4,fat:0},
+  {keys:["sauerkraut"],cal:20,protein:1,carbs:4,fat:0},
+  {keys:["kombucha"],cal:40,protein:0,carbs:9,fat:0},
+  {keys:["miso soup","miso paste","miso"],cal:35,protein:2,carbs:5,fat:1},
+  {keys:["tempeh"],cal:190,protein:19,carbs:10,fat:11},
+  // ── Additional Seeds ─────────────────────────────────────────
+  {keys:["hemp hearts","hemp seeds"],cal:170,protein:10,carbs:3,fat:14},
+  {keys:["pumpkin seeds","pepitas"],cal:180,protein:9,carbs:5,fat:14},
+  {keys:["sunflower seeds"],cal:175,protein:6,carbs:7,fat:14},
+  {keys:["ground flaxseed","flax seeds","flaxseed"],cal:55,protein:2,carbs:3,fat:4},
+  // ── Natural Supplements ───────────────────────────────────────
+  {keys:["raw honey","manuka honey","honey"],cal:60,protein:0,carbs:17,fat:0},
+  {keys:["apple cider vinegar","acv"],cal:3,protein:0,carbs:1,fat:0},
+  {keys:["coconut oil"],cal:120,protein:0,carbs:0,fat:14},
+  {keys:["mct oil"],cal:130,protein:0,carbs:0,fat:14},
+  {keys:["collagen peptides","collagen powder","collagen"],cal:70,protein:18,carbs:0,fat:0},
+  // ── Herbal Teas ───────────────────────────────────────────────
+  {keys:["chamomile tea","chamomile"],cal:2,protein:0,carbs:0,fat:0},
+  {keys:["green tea"],cal:2,protein:0,carbs:0,fat:0},
+  {keys:["peppermint tea","peppermint"],cal:2,protein:0,carbs:0,fat:0},
+  {keys:["ginger tea"],cal:5,protein:0,carbs:1,fat:0},
+  {keys:["valerian tea","valerian root","valerian"],cal:2,protein:0,carbs:0,fat:0},
+  {keys:["rooibos tea","rooibos"],cal:2,protein:0,carbs:0,fat:0},
+  {keys:["echinacea tea","echinacea"],cal:2,protein:0,carbs:0,fat:0},
 ];
 function estimateMacros(text){
   if(!text)return null;
@@ -2723,7 +2948,7 @@ function PlansSection({trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
 // ── App ───────────────────────────────────────────────────────
 function App(){
   const [state,setState]=useState(null); const [ready,setReady]=useState(false);
-  const [view,setView]=useState("today"); const [coachOpen,setCoachOpen]=useState(false);
+  const [view,setView]=useState("today");
   const [taskModal,setTaskModal]=useState(null); const [habitModal,setHabitModal]=useState(null);
   const [syncStatus,setSyncStatus]=useState(null);
   const toastReady=useCallback(fn=>{ _toast.fn=fn; },[]);
@@ -2821,6 +3046,7 @@ function App(){
   const upsertHealthLog=useCallback((date,patch)=>mut(s=>({healthLogs:{...s.healthLogs,[date]:{...s.healthLogs[date],...patch}}})),[mut]);
   const upsertFoodLog=useCallback((date,meals)=>mut(s=>({foodLogs:{...s.foodLogs,[date]:{meals}}})),[mut]);
   const upsertNote=useCallback((date,text)=>mut(s=>({notes:{...s.notes,[date]:text}})),[mut]);
+  const bulkEditTasks=useCallback(moves=>mut(s=>({tasks:s.tasks.map(t=>{const mv=moves.find(m=>m.task.id===t.id);return mv?{...t,date:mv.toDate}:t;})})),[mut]);
   const upsertPlan=useCallback((plan,newTasks)=>mut(s=>({trainingPlans:[...(s.trainingPlans||[]).filter(p=>p.id!==plan.id),plan],tasks:[...s.tasks,...(newTasks||[])]})),[mut]);
   const deletePlan=useCallback(planId=>mut(s=>({trainingPlans:(s.trainingPlans||[]).filter(p=>p.id!==planId),tasks:s.tasks.filter(t=>!(t.planKey||"").startsWith(`plan_${planId}`))})),[mut]);
   const applyActions=useCallback(actions=>mut(s=>{
@@ -2853,7 +3079,7 @@ function App(){
     </div>
   </div>`;
 
-  const NAV=[{id:"today",icon:"◉",label:"Today"},{id:"week",icon:"◫",label:"Review"},{id:"habits",icon:"◈",label:"Habits"},{id:"health",icon:"♦",label:"Health"},{id:"settings",icon:"⊙",label:"More"}];
+  const NAV=[{id:"today",icon:"◉",label:"Today"},{id:"week",icon:"◫",label:"Review"},{id:"habits",icon:"◈",label:"Habits"},{id:"health",icon:"♦",label:"Health"},{id:"journal",icon:"✦",label:"Journal"},{id:"settings",icon:"⊙",label:"More"}];
   const weekDates=getWeekDates();
   const wTotal=state.tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").length;
   const wDone=state.tasks.filter(t=>weekDates.includes(t.date)&&t.completed&&t.category!=="work").length;
@@ -2929,17 +3155,19 @@ function App(){
             border:"1px solid rgba(167,139,250,0.32)",color:T.accent,
             display:"grid",placeItems:"center",fontFamily:"inherit",
             boxShadow:"0 0 12px rgba(167,139,250,0.12)"}}>+</button>
-          <button onClick=${()=>setCoachOpen(true)} style=${{
+          <button onClick=${()=>setView("journal")} style=${{
             width:38,height:38,borderRadius:13,cursor:"pointer",fontSize:15,
             background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",
-            color:T.muted,display:"grid",placeItems:"center",fontFamily:"inherit"}}>▸</button>
+            color:T.muted,display:"grid",placeItems:"center",fontFamily:"inherit"}}>✦</button>
         </div>
       </header>
 
-      ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${upsertHealthLog} note=${state.notes?.[todayISO()]||""} onUpsertNote=${upsertNote}/>`:""}
+      ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)}/>`:""}
       ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
       ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
-      ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog} onUpdateSettings=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}/>`:""}      ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
+      ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog} onUpdateSettings=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}/>`:""}
+      ${view==="journal"?html`<${JournalView} tasks=${state.tasks} notes=${state.notes||{}} onUpsertNote=${upsertNote} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} onBulkEditTasks=${bulkEditTasks}/>`:""}
+      ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
         trainingPlans=${state.trainingPlans||[]} tasks=${state.tasks}
         onUpsertPlan=${upsertPlan} onDeletePlan=${deletePlan}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
@@ -2972,17 +3200,6 @@ function App(){
           }}>${v.icon}</span>
           <span style=${{fontSize:8,fontWeight:900,letterSpacing:0.8,textTransform:"uppercase"}}>${v.label}</span>
         </button>`)}
-        <button onClick=${()=>setCoachOpen(true)} style=${{
-          flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
-          padding:"8px 4px 7px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
-          border:"1px solid rgba(167,139,250,0.30)",
-          background:"linear-gradient(145deg,rgba(167,139,250,0.18),rgba(109,40,217,0.10))",
-          color:T.accent,
-          boxShadow:"0 0 20px rgba(167,139,250,0.14),0 1px 0 rgba(255,255,255,0.06) inset",
-        }}>
-          <span style=${{fontSize:16,filter:`drop-shadow(0 0 6px ${T.accent})`}}>⚡</span>
-          <span style=${{fontSize:8,fontWeight:900,letterSpacing:0.8,textTransform:"uppercase"}}>Coach</span>
-        </button>
       </nav>
     </div>
 
@@ -2994,10 +3211,6 @@ function App(){
       onSave=${h=>{upsertHabit(h);setHabitModal(null);showToast(habitModal.isNew?"Habit added":"Updated");}}
       onDelete=${id=>{deleteHabit(id);setHabitModal(null);showToast("Deleted");}}
       onClose=${()=>setHabitModal(null)}/>`:""}
-
-    <${CoachPanel} isOpen=${coachOpen} onClose=${()=>setCoachOpen(false)}
-      tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs}
-      settings=${state.settings} onApplyActions=${applyActions}/>
 
     <${Toast} onReady=${toastReady}/>
   </div>`;
