@@ -39,6 +39,7 @@ textarea::placeholder,input::placeholder{color:rgba(241,245,249,0.16)}
 @keyframes popIn{0%{transform:scale(0)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
 @keyframes pulseGlow{0%,100%{opacity:0.4}50%{opacity:1}}
 @keyframes opalShift{0%,100%{opacity:0.8}50%{opacity:1}}
+@keyframes heatPulse{0%,100%{opacity:0.85}50%{opacity:1}}
 button{transition:transform 0.14s cubic-bezier(0.34,1.56,0.64,1),opacity 0.14s,background 0.18s,border-color 0.18s,box-shadow 0.18s}
 button:active{transform:scale(0.93)!important}
 button:hover{opacity:0.88}
@@ -926,8 +927,7 @@ function BodyView({bodyMap,onUpdateBodyMap}){
     const z=zones[id];
     if(!z)return null;
     const base=BODY_TYPE_COLORS[z.type]||"#a78bfa";
-    const opacity=0.18+(z.level/5)*0.65;
-    return{fill:`${base}${Math.round(opacity*255).toString(16).padStart(2,"0")}`,stroke:base};
+    return{fill:"url(#hg-"+id+")",stroke:base};
   }
   function openPicker(id,e){
     e.stopPropagation();
@@ -957,17 +957,33 @@ function BodyView({bodyMap,onUpdateBodyMap}){
   const markedZones=Object.entries(zones);
 
   // SVG silhouette paths (front + back)
-  const frontSilhouette=html`<g stroke="rgba(255,255,255,0.06)" fill="none" strokeWidth="1.2">
+  const frontSilhouette=html`<g stroke="rgba(255,255,255,0.10)" fill="rgba(255,255,255,0.03)" strokeWidth="1.2">
     <ellipse cx="80" cy="26" rx="20" ry="23"/>
-    <rect x="74" y="48" width="12" height="14" rx="3"/>
-    <path d="M50,62 Q46,78 28,100 L20,168 L36,170 L32,280 L58,280 L58,210 L65,210 L65,280 L95,280 L95,210 L102,210 L102,280 L128,280 L124,168 L140,168 L132,100 Q114,78 110,62 Q95,74 80,74 Q65,74 50,62Z"/>
-    <path d="M50,62 L24,148 L34,152 L50,80"/><path d="M110,62 L136,148 L126,152 L110,80"/>
-    <path d="M24,148 L18,172 L28,174 L34,152"/><path d="M136,148 L142,172 L132,174 L126,152"/>
+    <path d="M73,48 L73,60 Q80,63 87,60 L87,48 Q80,45 73,48Z"/>
+    <path d="M48,62 Q36,68 30,80 Q24,94 24,108 Q24,122 26,136 L22,160 L38,164 Q48,166 58,165 L60,163 Q62,168 80,168 Q98,168 100,163 L102,165 Q112,166 122,164 L138,160 L134,136 Q136,122 136,108 Q136,94 130,80 Q124,68 112,62 Q96,75 80,75 Q64,75 48,62Z"/>
+    <path d="M48,62 Q36,68 28,84 L20,120 L20,158 L28,160 L36,120 L44,84 Q46,74 50,68Z"/>
+    <path d="M112,62 Q124,68 132,84 L140,120 L140,158 L132,160 L124,120 L116,84 Q114,74 110,68Z"/>
+    <path d="M60,163 L54,165 L48,210 L47,252 Q51,268 60,272 Q68,274 72,268 L73,252 L72,210 L68,165Z"/>
+    <path d="M100,163 L106,165 L112,210 L113,252 Q109,268 100,272 Q92,274 88,268 L87,252 L88,210 L92,165Z"/>
+    <ellipse cx="59" cy="268" rx="14" ry="7" fill="rgba(255,255,255,0.025)"/>
+    <ellipse cx="101" cy="268" rx="14" ry="7" fill="rgba(255,255,255,0.025)"/>
+    <path d="M73,60 Q64,63 52,68" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.8"/>
+    <path d="M87,60 Q96,63 108,68" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.8"/>
   </g>`;
-  const backSilhouette=html`<g stroke="rgba(255,255,255,0.06)" fill="none" strokeWidth="1.2">
+  const backSilhouette=html`<g stroke="rgba(255,255,255,0.10)" fill="rgba(255,255,255,0.03)" strokeWidth="1.2">
     <ellipse cx="80" cy="26" rx="20" ry="23"/>
-    <rect x="74" y="48" width="12" height="14" rx="3"/>
-    <path d="M50,62 Q46,78 28,100 L20,168 L36,170 L32,280 L58,280 L58,210 L65,210 L65,280 L95,280 L95,210 L102,210 L102,280 L128,280 L124,168 L140,168 L132,100 Q114,78 110,62 Q95,74 80,74 Q65,74 50,62Z"/>
+    <path d="M73,48 L73,60 Q80,63 87,60 L87,48 Q80,45 73,48Z"/>
+    <path d="M48,62 Q36,68 30,80 Q24,94 24,108 Q24,122 26,136 L22,160 L38,164 Q48,166 58,165 L60,163 Q62,168 80,168 Q98,168 100,163 L102,165 Q112,166 122,164 L138,160 L134,136 Q136,122 136,108 Q136,94 130,80 Q124,68 112,62 Q96,75 80,75 Q64,75 48,62Z"/>
+    <path d="M48,62 Q36,68 28,84 L20,120 L20,158 L28,160 L36,120 L44,84 Q46,74 50,68Z"/>
+    <path d="M112,62 Q124,68 132,84 L140,120 L140,158 L132,160 L124,120 L116,84 Q114,74 110,68Z"/>
+    <path d="M60,163 L54,165 L48,210 L47,252 Q51,268 60,272 Q68,274 72,268 L73,252 L72,210 L68,165Z"/>
+    <path d="M100,163 L106,165 L112,210 L113,252 Q109,268 100,272 Q92,274 88,268 L87,252 L88,210 L92,165Z"/>
+    <ellipse cx="59" cy="268" rx="14" ry="7" fill="rgba(255,255,255,0.025)"/>
+    <ellipse cx="101" cy="268" rx="14" ry="7" fill="rgba(255,255,255,0.025)"/>
+    <path d="M80,50 L80,155" fill="none" stroke="rgba(255,255,255,0.13)" strokeWidth="0.9"/>
+    <path d="M62,64 Q56,72 58,84 Q62,88 68,84 Q72,76 70,66 Q67,62 62,64Z" fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
+    <path d="M98,64 Q104,72 102,84 Q98,88 92,84 Q88,76 90,66 Q93,62 98,64Z" fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
+    <path d="M80,140 L80,165" fill="none" stroke="rgba(255,255,255,0.13)" strokeWidth="0.9"/>
   </g>`;
 
   return html`<div style=${{padding:"16px 14px",paddingBottom:120}}>
@@ -995,12 +1011,27 @@ function BodyView({bodyMap,onUpdateBodyMap}){
       <!-- SVG body map -->
       <div style=${{display:"flex",justifyContent:"center"}} onClick=${()=>{setPickerZone(null);}}>
         <svg viewBox="0 0 160 286" style=${{width:200,height:357,maxWidth:"100%"}}>
+          <defs>
+            ${Object.entries(zones).map(([id,z])=>{
+              const base=BODY_TYPE_COLORS[z.type]||"#a78bfa";
+              const centerOpacities=[0,0.5,0.6,0.72,0.85,0.95];
+              const co=centerOpacities[z.level]||0.5;
+              return html`<radialGradient key=${id} id=${"hg-"+id} cx="50%" cy="35%" r="70%" gradientUnits="objectBoundingBox">
+                <stop offset="0%" stopColor=${base} stopOpacity=${co}/>
+                <stop offset="100%" stopColor=${base} stopOpacity="0.08"/>
+              </radialGradient>`;
+            })}
+          </defs>
           ${view==="f"?frontSilhouette:backSilhouette}
           ${visibleZones.map(z=>{
             const col=zoneColor(z.id);
             const isSelected=selectedZone===z.id;
             const isConnected=connections.has(z.id);
             const isPickerOpen=pickerZone===z.id;
+            const zoneState=zones[z.id];
+            const shouldPulse=zoneState&&zoneState.type==="pain"&&zoneState.level>=4;
+            const pulseAnim=shouldPulse?"heatPulse 2s ease-in-out infinite":"none";
+            const dropFilter=isSelected&&col?`drop-shadow(0 0 6px ${col.stroke}aa)`:"none";
             return html`<g key=${z.id} onClick=${(e)=>openPicker(z.id,e)} style=${{cursor:"pointer"}}>
               <ellipse
                 cx=${z.cx} cy=${z.cy} rx=${z.rx+2} ry=${z.ry+2}
@@ -1010,12 +1041,12 @@ function BodyView({bodyMap,onUpdateBodyMap}){
                 cx=${z.cx} cy=${z.cy} rx=${z.rx} ry=${z.ry}
                 fill=${col?col.fill:"rgba(255,255,255,0.07)"}
                 stroke=${isPickerOpen?"#fff":isSelected?(col?.stroke||T.accent):isConnected?"#38bdf8":col?.stroke||"rgba(255,255,255,0.18)"}
-                strokeWidth=${isPickerOpen?2:isSelected||isConnected?1.5:0.8}
-                style=${{filter:isSelected&&col?`drop-shadow(0 0 4px ${col.stroke}88)`:"none",transition:"all 0.15s"}}
+                strokeWidth=${isPickerOpen?2.5:isSelected||isConnected?1.8:0.8}
+                style=${{filter:dropFilter,animation:pulseAnim,transition:"all 0.15s"}}
               />
               ${col?html`<text x=${z.cx} y=${z.cy+1} textAnchor="middle" dominantBaseline="middle"
                 fontSize="5.5" fill="rgba(255,255,255,0.9)" style=${{pointerEvents:"none",fontWeight:"bold",fontFamily:"sans-serif"}}
-              >${z.level||""}</text>`:""}
+              >${zones[z.id]?.level||""}</text>`:""}
             </g>`;
           })}
         </svg>
@@ -1024,7 +1055,16 @@ function BodyView({bodyMap,onUpdateBodyMap}){
 
     <!-- Zone picker (inline card) -->
     ${pickerZone?html`<div style=${{...S.card,padding:"14px 16px",marginBottom:14,border:"1px solid rgba(255,255,255,0.12)"}}>
-      <div style=${{fontSize:11,fontWeight:800,color:T.text,marginBottom:10}}>${BODY_ZONES.find(z=>z.id===pickerZone)?.label||pickerZone}</div>
+      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <div style=${{fontSize:13,fontWeight:900,color:T.text}}>${BODY_ZONES.find(z=>z.id===pickerZone)?.label||pickerZone}</div>
+        <div style=${{display:"flex",gap:3,alignItems:"center"}}>
+          ${[1,2,3,4,5].map(l=>{
+            const dotColor=l<=pickerLevel?BODY_TYPE_COLORS[pickerType]:"rgba(255,255,255,0.10)";
+            const dotSize=l===pickerLevel?9:7;
+            return html`<div key=${l} style=${{width:dotSize,height:dotSize,borderRadius:"50%",background:dotColor,transition:"all 0.15s"}}/>`;
+          })}
+        </div>
+      </div>
       <!-- Type selector -->
       <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,marginBottom:6,textTransform:"uppercase"}}>Symptom</div>
       <div style=${{display:"flex",gap:6,marginBottom:12}}>
