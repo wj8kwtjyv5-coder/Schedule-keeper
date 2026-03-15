@@ -1600,11 +1600,43 @@ function WellnessModal({log,onSave,onClose}){
   <//>`;
 }
 
+// ── Offline nutrition estimates (per typical serving) ────────
+const FOOD_DB=[
+  {keys:["half a chicken","half chicken"],cal:420,protein:52,carbs:0,fat:22},
+  {keys:["chicken breast","chicken"],cal:330,protein:62,carbs:0,fat:7},
+  {keys:["salmon fillet","salmon"],cal:280,protein:40,carbs:0,fat:13},
+  {keys:["sweet potatoes","sweet potato"],cal:180,protein:3,carbs:41,fat:0},
+  {keys:["white rice","rice"],cal:200,protein:4,carbs:44,fat:0},
+  {keys:["scrambled eggs","poached eggs","boiled eggs","fried eggs","3 eggs","2 eggs","eggs","egg"],cal:220,protein:18,carbs:2,fat:15},
+  {keys:["oatmeal","porridge","oats"],cal:300,protein:10,carbs:54,fat:5},
+  {keys:["protein shake","whey shake","protein powder"],cal:200,protein:30,carbs:8,fat:3},
+  {keys:["steak"],cal:320,protein:28,carbs:0,fat:22},
+  {keys:["pasta"],cal:380,protein:13,carbs:72,fat:2},
+  {keys:["broccoli"],cal:55,protein:4,carbs:11,fat:1},
+  {keys:["avocado"],cal:240,protein:3,carbs:13,fat:22},
+  {keys:["greek yogurt","yogurt"],cal:130,protein:12,carbs:9,fat:5},
+  {keys:["banana"],cal:105,protein:1,carbs:27,fat:0},
+  {keys:["brown bread","white bread","bread"],cal:160,protein:5,carbs:30,fat:2},
+];
+function estimateMacros(text){
+  if(!text)return null;
+  const t=text.toLowerCase();
+  const matches=FOOD_DB.filter(f=>f.keys.some(k=>t.includes(k)));
+  if(!matches.length)return null;
+  return matches.reduce((a,f)=>({cal:a.cal+f.cal,protein:a.protein+f.protein,carbs:a.carbs+f.carbs,fat:a.fat+f.fat}),{cal:0,protein:0,carbs:0,fat:0});
+}
+
 // ── Nutrition View ────────────────────────────────────────────
 function NutritionView({foodLogs,macroTargets,onUpsertFoodLog,tasks,settings,onUpdateSettings}){
   const [date,setDate]=useState(todayISO());
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({name:"",cal:"",protein:"",carbs:"",fat:""});
+  const [foodText,setFoodText]=useState("");
+  const [imgData,setImgData]=useState(null);
+  const [analyzing,setAnalyzing]=useState(false);
+  const [aiSource,setAiSource]=useState(false);
+  const [manualMode,setManualMode]=useState(false);
+  const fileRef=useRef(null);
 
   const meals=(foodLogs[date]?.meals)||[];
   const totals=meals.reduce((a,m)=>({
@@ -1622,12 +1654,66 @@ function NutritionView({foodLogs,macroTargets,onUpsertFoodLog,tasks,settings,onU
     {key:"fat",     label:"Fat",      unit:"g",    color:T.blue},
   ];
 
-  const addMeal=()=>{
-    if(!form.name.trim()) return;
-    const newMeals=[...meals,{id:uid(),name:form.name.trim(),cal:+form.cal||0,protein:+form.protein||0,carbs:+form.carbs||0,fat:+form.fat||0}];
-    onUpsertFoodLog(date,newMeals);
+  const resetNutritionForm=()=>{
     setForm({name:"",cal:"",protein:"",carbs:"",fat:""});
+    setFoodText("");setImgData(null);setAnalyzing(false);setAiSource(false);setManualMode(false);
     setShowForm(false);
+  };
+
+  const handleImagePick=e=>{
+    const file=e.target.files?.[0]; if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const dataUrl=ev.target.result;
+      const[header,b64]=dataUrl.split(",");
+      const mime=(header.match(/:(.*?);/)||[])[1]||"image/jpeg";
+      if(file.size>800000){
+        const img=new Image();
+        img.onload=()=>{
+          const canvas=document.createElement("canvas");
+          const scale=Math.min(1,Math.sqrt(800000/file.size));
+          canvas.width=Math.round(img.width*scale); canvas.height=Math.round(img.height*scale);
+          canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
+          const resized=canvas.toDataURL(mime,0.85);
+          const[,rb64]=resized.split(",");
+          setImgData({base64:rb64,mimeType:mime,preview:resized});
+        };
+        img.src=dataUrl;
+      }else{
+        setImgData({base64:b64,mimeType:mime,preview:dataUrl});
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const analyseFood=async()=>{
+    if(!foodText.trim()&&!imgData)return;
+    setAnalyzing(true);
+    try{
+      const body=imgData?{imageBase64:imgData.base64,mimeType:imgData.mimeType}:{foodText:foodText.trim()};
+      const res=await fetch("/api/nutrition",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      if(!res.ok)throw new Error(`HTTP ${res.status}`);
+      const data=await res.json();
+      if(data.error){
+        const est=estimateMacros(foodText);
+        if(est){setForm({name:foodText.trim(),cal:String(est.cal),protein:String(est.protein),carbs:String(est.carbs),fat:String(est.fat)});setAiSource(true);showToast("Offline estimate used");}
+        else{showToast("AI unavailable — enter macros manually");setManualMode(true);}
+        return;
+      }
+      setForm({name:data.name,cal:String(data.cal),protein:String(data.protein),carbs:String(data.carbs),fat:String(data.fat)});
+      setAiSource(true);
+    }catch{
+      const est=estimateMacros(foodText);
+      if(est){setForm({name:foodText.trim(),cal:String(est.cal),protein:String(est.protein),carbs:String(est.carbs),fat:String(est.fat)});setAiSource(true);showToast("Offline estimate used");}
+      else{showToast("AI unavailable — enter macros manually");setManualMode(true);}
+    }finally{setAnalyzing(false);}
+  };
+
+  const addMeal=()=>{
+    const name=(form.name||foodText).trim(); if(!name) return;
+    const newMeals=[...meals,{id:uid(),name,cal:+form.cal||0,protein:+form.protein||0,carbs:+form.carbs||0,fat:+form.fat||0}];
+    onUpsertFoodLog(date,newMeals);
+    resetNutritionForm();
   };
   const deleteMeal=id=>{ onUpsertFoodLog(date,meals.filter(m=>m.id!==id)); };
 
@@ -1731,38 +1817,90 @@ function NutritionView({foodLogs,macroTargets,onUpsertFoodLog,tasks,settings,onU
     </div>
 
     ${showForm?html`<div style=${{...S.card,marginBottom:10}}>
-      <div style=${{fontSize:10,fontWeight:900,color:T.muted,letterSpacing:2,marginBottom:12,textTransform:"uppercase"}}>Add Meal</div>
-      <div style=${{marginBottom:10}}>
-        <input style=${{...S.input}} value=${form.name}
-          onInput=${e=>setForm(f=>({...f,name:e.target.value}))}
-          placeholder="Meal name (e.g. Chicken & rice)" autoFocus/>
-      </div>
-      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
-        <div>
-          <div style=${{fontSize:9,fontWeight:800,color:T.accent,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Calories (kcal)</div>
-          <input type="number" style=${{...S.input}} value=${form.cal}
-            onInput=${e=>setForm(f=>({...f,cal:e.target.value}))} placeholder="0" min="0"/>
+      <div style=${{fontSize:10,fontWeight:900,color:T.muted,letterSpacing:2,marginBottom:12,textTransform:"uppercase"}}>Log Meal</div>
+
+      ${!aiSource&&!manualMode?html`
+        <div style=${{marginBottom:10}}>
+          <textarea style=${{...S.input,resize:"none",height:64,fontFamily:"inherit",lineHeight:1.5}}
+            value=${foodText} onInput=${e=>setFoodText(e.target.value)}
+            placeholder="What did you eat? e.g. sweet potatoes and half a chicken" autoFocus/>
         </div>
-        <div>
-          <div style=${{fontSize:9,fontWeight:800,color:T.green,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Protein (g)</div>
-          <input type="number" style=${{...S.input}} value=${form.protein}
-            onInput=${e=>setForm(f=>({...f,protein:e.target.value}))} placeholder="0" min="0"/>
+
+        ${imgData?html`
+          <div style=${{marginBottom:10,position:"relative",display:"inline-block"}}>
+            <img src=${imgData.preview} style=${{width:80,height:80,objectFit:"cover",borderRadius:10,border:`1px solid ${T.border}`}}/>
+            <button onClick=${()=>setImgData(null)} style=${{
+              position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",
+              background:"rgba(0,0,0,0.8)",border:`1px solid ${T.border}`,
+              color:"#fff",cursor:"pointer",fontSize:11,fontFamily:"inherit",
+              display:"grid",placeItems:"center",
+            }}>×</button>
+          </div>`:null}
+
+        <input ref=${fileRef} type="file" accept="image/*" capture="environment"
+          style=${{display:"none"}} onChange=${handleImagePick}/>
+
+        <div style=${{display:"flex",gap:8,marginBottom:12}}>
+          <button onClick=${()=>fileRef.current?.click()} style=${{
+            flex:1,padding:"10px 0",borderRadius:12,border:`1px solid ${T.border}`,
+            background:"rgba(255,255,255,0.04)",color:T.muted,cursor:"pointer",
+            fontSize:12,fontWeight:700,fontFamily:"inherit",
+          }}>📷 Photo</button>
+          <button onClick=${analyseFood} disabled=${analyzing||(!foodText.trim()&&!imgData)} style=${{
+            flex:2,padding:"10px 0",borderRadius:12,border:`1px solid ${T.accentBorder}`,
+            background:T.accentGlow,color:T.accent,cursor:"pointer",
+            fontSize:13,fontWeight:800,fontFamily:"inherit",
+            opacity:(analyzing||(!foodText.trim()&&!imgData))?0.4:1,
+          }}>${analyzing?"Analysing…":"✨ Analyse"}</button>
         </div>
-        <div>
-          <div style=${{fontSize:9,fontWeight:800,color:T.amber,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Carbs (g)</div>
-          <input type="number" style=${{...S.input}} value=${form.carbs}
-            onInput=${e=>setForm(f=>({...f,carbs:e.target.value}))} placeholder="0" min="0"/>
+
+        <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <button onClick=${()=>setManualMode(true)} style=${{
+            background:"none",border:"none",color:T.muted,fontSize:11,cursor:"pointer",
+            fontFamily:"inherit",textDecoration:"underline",padding:0,
+          }}>Enter macros manually</button>
+          <${Btn} onClick=${resetNutritionForm} variant="ghost">Cancel<//>
         </div>
-        <div>
-          <div style=${{fontSize:9,fontWeight:800,color:T.blue,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Fat (g)</div>
-          <input type="number" style=${{...S.input}} value=${form.fat}
-            onInput=${e=>setForm(f=>({...f,fat:e.target.value}))} placeholder="0" min="0"/>
+      `:""}
+
+      ${aiSource||manualMode?html`
+        ${aiSource?html`
+          <div style=${{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
+            <div style=${{fontSize:10,fontWeight:800,color:T.green,background:T.greenGlow,border:`1px solid ${T.greenBorder}`,borderRadius:6,padding:"2px 8px",letterSpacing:0.4}}>✓ AI estimated</div>
+            <div style=${{fontSize:10,color:T.muted}}>Tap to adjust</div>
+          </div>`:null}
+        <div style=${{marginBottom:10}}>
+          <input style=${{...S.input}} value=${form.name||foodText}
+            onInput=${e=>setForm(f=>({...f,name:e.target.value}))}
+            placeholder="Meal name" autoFocus=${!aiSource}/>
         </div>
-      </div>
-      <div style=${{display:"flex",gap:8,justifyContent:"flex-end"}}>
-        <${Btn} onClick=${()=>{setShowForm(false);setForm({name:"",cal:"",protein:"",carbs:"",fat:""});}} variant="ghost">Cancel<//>
-        <${Btn} onClick=${addMeal} variant="primary">Add meal<//>
-      </div>
+        <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          <div>
+            <div style=${{fontSize:9,fontWeight:800,color:T.accent,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Calories (kcal)</div>
+            <input type="number" style=${{...S.input}} value=${form.cal}
+              onInput=${e=>setForm(f=>({...f,cal:e.target.value}))} placeholder="0" min="0"/>
+          </div>
+          <div>
+            <div style=${{fontSize:9,fontWeight:800,color:T.green,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Protein (g)</div>
+            <input type="number" style=${{...S.input}} value=${form.protein}
+              onInput=${e=>setForm(f=>({...f,protein:e.target.value}))} placeholder="0" min="0"/>
+          </div>
+          <div>
+            <div style=${{fontSize:9,fontWeight:800,color:T.amber,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Carbs (g)</div>
+            <input type="number" style=${{...S.input}} value=${form.carbs}
+              onInput=${e=>setForm(f=>({...f,carbs:e.target.value}))} placeholder="0" min="0"/>
+          </div>
+          <div>
+            <div style=${{fontSize:9,fontWeight:800,color:T.blue,letterSpacing:1,marginBottom:4,textTransform:"uppercase"}}>Fat (g)</div>
+            <input type="number" style=${{...S.input}} value=${form.fat}
+              onInput=${e=>setForm(f=>({...f,fat:e.target.value}))} placeholder="0" min="0"/>
+          </div>
+        </div>
+        <div style=${{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <${Btn} onClick=${resetNutritionForm} variant="ghost">Cancel<//>
+          <${Btn} onClick=${addMeal} variant="primary">Save meal<//>
+        </div>
+      `:""}
     </div>`:""}
   </div>`;
 }
