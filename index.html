@@ -107,6 +107,8 @@ const CATS = {
   football:{icon:"⬡",  color:"#fb923c",glow:"rgba(251,146,60,0.12)", border:"rgba(251,146,60,0.30)", label:"Football",emoji:"⚽"},
   game:    {icon:"◆",  color:"#f9a8d4",glow:"rgba(249,168,212,0.12)",border:"rgba(249,168,212,0.30)",label:"Game",emoji:"🏆"},
   bike:    {icon:"◎",  color:"#38bdf8",glow:"rgba(56,189,248,0.12)",  border:"rgba(56,189,248,0.30)",  label:"Bike",emoji:"🚴"},
+  gym:     {icon:"▲",  color:"#f59e0b",glow:"rgba(245,158,11,0.12)",  border:"rgba(245,158,11,0.30)",  label:"Gym",emoji:"🏋️"},
+  swim:    {icon:"〜", color:"#22d3ee",glow:"rgba(34,211,238,0.11)",  border:"rgba(34,211,238,0.28)",  label:"Swim",emoji:"🏊"},
   pilates: {icon:"◈",  color:"#c084fc",glow:"rgba(192,132,252,0.12)",border:"rgba(192,132,252,0.30)",label:"Pilates",emoji:"🤸"},
   recovery:{icon:"○",  color:"#34d399",glow:"rgba(52,211,153,0.11)",  border:"rgba(52,211,153,0.28)",  label:"Recovery",emoji:"🌿"},
   sauna:   {icon:"≋",  color:"#fda4af",glow:"rgba(253,164,175,0.11)",border:"rgba(253,164,175,0.28)",label:"Sauna",emoji:"♨️"},
@@ -115,20 +117,66 @@ const CATS = {
 };
 
 const BIBLE_QUOTES=[
+  // Discipline & self-control
   {text:"No discipline seems pleasant at the time, but painful. Later on, however, it produces a harvest of righteousness.",ref:"Hebrews 12:11"},
-  {text:"I discipline my body and keep it under control.",ref:"1 Corinthians 9:27"},
-  {text:"Train yourself to be godly. For physical training is of some value.",ref:"1 Timothy 4:7–8"},
-  {text:"The plans of the diligent lead to profit as surely as haste leads to poverty.",ref:"Proverbs 21:5"},
-  {text:"Do you not know that in a race all the runners run, but only one gets the prize? Run in such a way as to get the prize.",ref:"1 Corinthians 9:24"},
-  {text:"Let us not grow weary of doing good, for in due season we will reap if we do not give up.",ref:"Galatians 6:9"},
-  {text:"Whatever you do, work at it with all your heart, as working for the Lord.",ref:"Colossians 3:23"},
-  {text:"The soul of the sluggard craves and gets nothing, while the soul of the diligent is richly supplied.",ref:"Proverbs 13:4"},
-  {text:"I can do all things through Christ who strengthens me.",ref:"Philippians 4:13"},
-  {text:"Be strong and courageous. Do not be afraid; do not be discouraged.",ref:"Joshua 1:9"},
-  {text:"Commit your work to the Lord, and your plans will be established.",ref:"Proverbs 16:3"},
-  {text:"Do not be conformed to this world, but be transformed by the renewing of your mind.",ref:"Romans 12:2"},
+  {text:"I discipline my body and keep it under control, lest after preaching to others I myself should be disqualified.",ref:"1 Corinthians 9:27"},
+  {text:"Train yourself to be godly. For physical training is of some value, but godliness has value for all things.",ref:"1 Timothy 4:7–8"},
+  {text:"Like a city whose walls are broken through is a person who lacks self-control.",ref:"Proverbs 25:28"},
   {text:"For God gave us a spirit not of fear but of power and love and self-control.",ref:"2 Timothy 1:7"},
-  {text:"Run with endurance the race that is set before us.",ref:"Hebrews 12:1"},
+  {text:"Be sober-minded; be watchful. Your adversary the devil prowls around like a roaring lion.",ref:"1 Peter 5:8"},
+  {text:"A slack hand causes poverty, but the hand of the diligent makes rich.",ref:"Proverbs 10:4"},
+  {text:"The soul of the sluggard craves and gets nothing, while the soul of the diligent is richly supplied.",ref:"Proverbs 13:4"},
+  {text:"The plans of the diligent lead to profit as surely as haste leads to poverty.",ref:"Proverbs 21:5"},
+  // Athletic endurance & effort
+  {text:"Do you not know that in a race all the runners run, but only one gets the prize? Run in such a way as to get the prize.",ref:"1 Corinthians 9:24"},
+  {text:"Run with endurance the race that is set before us, looking to Jesus, the founder and perfecter of our faith.",ref:"Hebrews 12:1"},
+  {text:"I have fought the good fight, I have finished the race, I have kept the faith.",ref:"2 Timothy 4:7"},
+  {text:"Forgetting what is behind and straining toward what is ahead, I press on toward the goal.",ref:"Philippians 3:13–14"},
+  {text:"The horse is made ready for the day of battle, but victory belongs to the Lord.",ref:"Proverbs 21:31"},
+  {text:"The race is not to the swift or the battle to the strong, nor does food come to the wise.",ref:"Ecclesiastes 9:11"},
+  // Strength & courage
+  {text:"I can do all things through Christ who strengthens me.",ref:"Philippians 4:13"},
+  {text:"Be strong and courageous. Do not be afraid; do not be discouraged, for the Lord your God will be with you.",ref:"Joshua 1:9"},
+  {text:"Be strong in the Lord and in the strength of his might.",ref:"Ephesians 6:10"},
+  {text:"Be watchful, stand firm in the faith, act like men, be strong.",ref:"1 Corinthians 16:13"},
+  {text:"The Lord is my strength and my shield; in him my heart trusts, and I am helped.",ref:"Psalm 28:7"},
+  {text:"He gives power to the faint, and to him who has no might he increases strength.",ref:"Isaiah 40:29"},
+  {text:"The Lord your God is with you, the Mighty Warrior who saves. He will take great delight in you.",ref:"Zephaniah 3:17"},
+  {text:"Fear not, for I am with you; be not dismayed, for I am your God. I will strengthen you.",ref:"Isaiah 41:10"},
+  // Perseverance in trials
+  {text:"Let us not grow weary of doing good, for in due season we will reap if we do not give up.",ref:"Galatians 6:9"},
+  {text:"Count it all joy when you fall into various trials, for the testing of your faith produces steadfastness.",ref:"James 1:2–3"},
+  {text:"Blessed is the one who perseveres under trial, for having stood the test, they will receive the crown of life.",ref:"James 1:12"},
+  {text:"Suffering produces endurance, and endurance produces character, and character produces hope.",ref:"Romans 5:3–4"},
+  {text:"No testing has overtaken you that is not common to man. God is faithful — he will provide a way out.",ref:"1 Corinthians 10:13"},
+  {text:"He who began a good work in you will carry it on to completion until the day of Christ Jesus.",ref:"Philippians 1:6"},
+  // Recovery, rest & healing
+  {text:"Come to me, all who are weary and burdened, and I will give you rest.",ref:"Matthew 11:28"},
+  {text:"He makes me lie down in green pastures; he leads me beside still waters. He restores my soul.",ref:"Psalm 23:2–3"},
+  {text:"He heals the brokenhearted and binds up their wounds.",ref:"Psalm 147:3"},
+  {text:"Even youths shall faint and be weary, and young men shall fall exhausted — but they who wait on the Lord shall renew their strength.",ref:"Isaiah 40:30–31"},
+  {text:"A joyful heart is good medicine, but a crushed spirit dries up the bones.",ref:"Proverbs 17:22"},
+  // Body as temple & purpose
+  {text:"Do you not know that your bodies are temples of the Holy Spirit? Therefore honour God with your bodies.",ref:"1 Corinthians 6:19–20"},
+  {text:"Whether you eat or drink, or whatever you do, do all to the glory of God.",ref:"1 Corinthians 10:31"},
+  {text:"Offer your bodies as a living sacrifice, holy and pleasing to God — this is your true and proper worship.",ref:"Romans 12:1"},
+  {text:"We are God's handiwork, created in Christ Jesus to do good works, which God prepared in advance for us to do.",ref:"Ephesians 2:10"},
+  {text:"Beloved, I pray that all may go well with you and that you may be in good health, as it goes well with your soul.",ref:"3 John 1:2"},
+  // Hard work & dedication
+  {text:"Whatever you do, work at it with all your heart, as working for the Lord, not for human masters.",ref:"Colossians 3:23"},
+  {text:"Commit your work to the Lord, and your plans will be established.",ref:"Proverbs 16:3"},
+  {text:"Work out your salvation with fear and trembling, for it is God who works in you to will and to act.",ref:"Philippians 2:12–13"},
+  // Faith, trust & transformation
+  {text:"Trust in the Lord with all your heart and lean not on your own understanding; in all your ways submit to him.",ref:"Proverbs 3:5–6"},
+  {text:"Do not be conformed to this world, but be transformed by the renewing of your mind.",ref:"Romans 12:2"},
+  {text:"For I know the plans I have for you, declares the Lord — plans to prosper you and not to harm you.",ref:"Jeremiah 29:11"},
+  {text:"Greater is He who is in me than he who is in the world.",ref:"1 John 4:4"},
+  {text:"Do not be anxious about anything, but in everything by prayer present your requests to God.",ref:"Philippians 4:6"},
+  {text:"Cast all your anxiety on him because he cares for you.",ref:"1 Peter 5:7"},
+  {text:"Humble yourselves under the mighty hand of God, that he may exalt you in due time.",ref:"1 Peter 5:6"},
+  // Wisdom & character
+  {text:"Whoever is slow to anger has great understanding, but he who has a hasty temper exalts folly.",ref:"Proverbs 14:29"},
+  {text:"The Lord is my strength and song, and he has become my salvation.",ref:"Exodus 15:2"},
 ];
 
 // ── Utils ──────────────────────────────────────────────────
@@ -1519,7 +1567,23 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
 }
 
 // ── Health ──────────────────────────────────────────────────
-const STRAIN_WEIGHTS={game:3.5,football:3.5,run:2.5,bike:2.0,pilates:1.5,sauna:0.7,recovery:0.5,work:0,other:0.5};
+const STRAIN_WEIGHTS={game:3.5,football:3.5,run:2.5,bike:2.0,gym:2.5,swim:2.0,pilates:1.5,sauna:0.7,recovery:0.5,work:0,other:0.5};
+// Maps Apple Health / fitness app workout type strings → app category
+function mapAppleWorkout(type){
+  if(!type)return"other";
+  const t=type.toLowerCase().replace(/[\s_-]+/g,"");
+  if(["running","run","trackrun","trailrun","treadmill","indoorrun"].some(k=>t.includes(k)))return"run";
+  if(["cycling","bike","biking","indoorcycling","spinning","rowing","ergometer","rowingmachine"].some(k=>t.includes(k)))return"bike";
+  if(["football","soccer","americanfootball","australianfootball","gaelic"].some(k=>t.includes(k)))return"football";
+  if(["pilates"].some(k=>t.includes(k)))return"pilates";
+  if(["yoga","stretching","flexibility","mindfulness","cooldown","mobility","barre"].some(k=>t.includes(k)))return"recovery";
+  if(["strength","weight","gym","hiit","circuit","crossfit","functional","coretraining","boxing","martialarts","wrestling","kickboxing"].some(k=>t.includes(k)))return"gym";
+  if(["swim","swimming","openwater","waterfit","aqua"].some(k=>t.includes(k)))return"swim";
+  if(["basketball","tennis","volleyball","handball","rugby","hockey","cricket","badminton","squash","lacrosse"].some(k=>t.includes(k)))return"game";
+  if(["sauna","steam","spa"].some(k=>t.includes(k)))return"sauna";
+  if(["hiking","walking","walk","hike","mountainclimbing","stairclimbing"].some(k=>t.includes(k)))return"run";
+  return"other";
+}
 
 function calcSleepMins(bedtime,wakeTime){
   if(!bedtime||!wakeTime)return null;
@@ -2044,14 +2108,15 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
             <div style=${{fontSize:11,color:syncedAt?T.green:T.muted,fontWeight:600,marginTop:2}}>${syncLabel}</div>
           </div>
           <button onClick=${()=>{
-            const info=`Build an iOS Shortcut to auto-fill your health data:\n\n1. Open the Shortcuts app\n2. Create new Shortcut\n3. Add actions:\n   • Get HRV Average (from Health)\n   • Get Resting Heart Rate (from Health)\n   • Get Last Sleep Analysis (from Health)\n4. Open URL:\n${shortcutUrl}\n\nReplace DATE, HRV, RHR, BED, WAKE, QUALITY with variables from the Health actions.\n\nRun the Shortcut each morning after your Apple Watch syncs.`;
+            const origin=window.location.origin;
+            const info=`TWO SHORTCUTS SETUP\n\n──────────────────────────\nSHORTCUT 1 — Morning Health\n──────────────────────────\nRuns each morning after Apple Watch syncs.\n\n1. Open Shortcuts → New Shortcut\n2. Add Health actions:\n   • Get HRV Average\n   • Get Resting Heart Rate\n   • Get Last Sleep Analysis\n3. Open URL:\n${origin}/?hk=1&date=DATE&hrv=HRV&rhr=RHR&sleep=BED-WAKE&sq=QUALITY\n\nReplace DATE/HRV/RHR/BED/WAKE/QUALITY with the Health variables.\n\n──────────────────────────────\nSHORTCUT 2 — Workout Auto-Log\n──────────────────────────────\nWorks with ALL apps (Strava, Garmin, Nike, Apple Fitness+) — they all write to Apple Health.\n\n1. Open Shortcuts → Automation\n2. New Automation → "When Workout ends"\n3. Add action: Get Last Workout (from Health)\n4. Open URL:\n${origin}/?hk=1&date=DATE&wt=TYPE&wd=DURATION&wcal=CALORIES&whr=AVG_HR&wdist=DISTANCE_KM\n\nReplace with workout variables.\nwt = workout type (running, cycling, strength, swimming, football, pilates, yoga, basketball, hiking…)\n\nBoth can be combined in one URL for full sync.`;
             alert(info);
           }} style=${{
             fontSize:11,fontWeight:800,padding:"7px 12px",borderRadius:9,cursor:"pointer",fontFamily:"inherit",
             background:T.accentGlow,border:`1px solid ${T.accentBorder}`,color:T.accent,
           }}>Setup Guide</button>
         </div>
-        <div style=${{fontSize:10,color:T.muted,lineHeight:1.55}}>Use an iOS Shortcut to auto-fill HRV, resting HR, and sleep from your Apple Watch each morning.</div>
+        <div style=${{fontSize:10,color:T.muted,lineHeight:1.55}}>Two iOS Shortcuts: one for morning health data (HRV, HR, sleep), one for workouts. Workouts from any app — Strava, Garmin, Nike, Apple Fitness+ — auto-log as completed tasks and update strain.</div>
       </div>`;
     })()}
 
@@ -2462,6 +2527,26 @@ function App(){
             hkPatch.sleep={bedtime:bed,wakeTime:wake,quality:Number(sp.get("sq")||3)};
           }
           saved.healthLogs={...saved.healthLogs,[hkDate]:{...saved.healthLogs?.[hkDate],...hkPatch}};
+          // Workout auto-logging: ?hk=1&wt=running&wd=45&wcal=480&whr=158&wdist=7.2&wname=Morning+Run
+          if(sp.get("wt")){
+            const wType=sp.get("wt");
+            const wName=sp.get("wname")||(wType.charAt(0).toUpperCase()+wType.slice(1).replace(/[_-]/g," "));
+            const wDur=sp.get("wd")?Number(sp.get("wd")):null;
+            const wCal=sp.get("wcal")?Number(sp.get("wcal")):null;
+            const wHR=sp.get("whr")?Number(sp.get("whr")):null;
+            const wDist=sp.get("wdist")?parseFloat(sp.get("wdist")):null;
+            const wCat=mapAppleWorkout(wType);
+            const noteParts=[wDur&&`${wDur}min`,wCal&&`${wCal} kcal`,wHR&&`${wHR}bpm avg`,wDist&&`${wDist}km`].filter(Boolean);
+            const alreadyLogged=(saved.tasks||[]).some(t=>t.date===hkDate&&t.fromAppleHealth&&t.category===wCat&&t.title===wName);
+            if(!alreadyLogged){
+              saved.tasks=[...(saved.tasks||[]),{
+                id:uid(),date:hkDate,time:"",title:wName,category:wCat,
+                notes:noteParts.join(" · ")+(noteParts.length?" [Apple Health]":"[Apple Health]"),
+                completed:true,completedAt:Date.now(),createdAt:Date.now(),fromAppleHealth:true,
+              }];
+              setTimeout(()=>showToast(`${wName} logged from Apple Health`),600);
+            }
+          }
           window.history.replaceState({},"",window.location.pathname);
           setTimeout(()=>showToast("Apple Health synced"),500);
         }
@@ -2561,6 +2646,15 @@ function App(){
       <div style=${{position:"absolute",bottom:"15%",right:"5%",width:380,height:380,borderRadius:"50%",
         background:"radial-gradient(ellipse,rgba(192,132,252,0.07) 0%,transparent 65%)",
         animation:"opalShift 10s ease-in-out infinite 4s"}}/>
+      <!-- Fading cross — faith symbol -->
+      <div style=${{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-55%)",width:520,height:520,pointerEvents:"none",animation:"opalShift 22s ease-in-out infinite 6s"}}>
+        <div style=${{position:"absolute",left:"50%",top:"6%",transform:"translateX(-50%)",width:22,height:"88%",
+          background:"linear-gradient(180deg,transparent 0%,rgba(255,255,255,0.045) 15%,rgba(255,255,255,0.065) 50%,rgba(255,255,255,0.045) 85%,transparent 100%)",
+          borderRadius:11}}/>
+        <div style=${{position:"absolute",top:"29%",left:"10%",width:"80%",height:22,
+          background:"linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.045) 15%,rgba(255,255,255,0.065) 50%,rgba(255,255,255,0.045) 85%,transparent 100%)",
+          borderRadius:11}}/>
+      </div>
       <!-- Subtle noise texture overlay -->
       <div style=${{position:"absolute",inset:0,opacity:0.025,
         backgroundImage:"url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E\")",
