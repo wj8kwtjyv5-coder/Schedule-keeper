@@ -114,6 +114,23 @@ const CATS = {
   other:   {icon:"◇",  color:"#64748b",glow:"rgba(255,255,255,0.03)",border:"rgba(255,255,255,0.08)",label:"Other",emoji:"◇"},
 };
 
+const BIBLE_QUOTES=[
+  {text:"No discipline seems pleasant at the time, but painful. Later on, however, it produces a harvest of righteousness.",ref:"Hebrews 12:11"},
+  {text:"I discipline my body and keep it under control.",ref:"1 Corinthians 9:27"},
+  {text:"Train yourself to be godly. For physical training is of some value.",ref:"1 Timothy 4:7–8"},
+  {text:"The plans of the diligent lead to profit as surely as haste leads to poverty.",ref:"Proverbs 21:5"},
+  {text:"Do you not know that in a race all the runners run, but only one gets the prize? Run in such a way as to get the prize.",ref:"1 Corinthians 9:24"},
+  {text:"Let us not grow weary of doing good, for in due season we will reap if we do not give up.",ref:"Galatians 6:9"},
+  {text:"Whatever you do, work at it with all your heart, as working for the Lord.",ref:"Colossians 3:23"},
+  {text:"The soul of the sluggard craves and gets nothing, while the soul of the diligent is richly supplied.",ref:"Proverbs 13:4"},
+  {text:"I can do all things through Christ who strengthens me.",ref:"Philippians 4:13"},
+  {text:"Be strong and courageous. Do not be afraid; do not be discouraged.",ref:"Joshua 1:9"},
+  {text:"Commit your work to the Lord, and your plans will be established.",ref:"Proverbs 16:3"},
+  {text:"Do not be conformed to this world, but be transformed by the renewing of your mind.",ref:"Romans 12:2"},
+  {text:"For God gave us a spirit not of fear but of power and love and self-control.",ref:"2 Timothy 1:7"},
+  {text:"Run with endurance the race that is set before us.",ref:"Hebrews 12:1"},
+];
+
 // ── Utils ──────────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2,"0");
 const uid = () => crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -300,7 +317,86 @@ const DEF_SETTINGS={
   constraints:{wake:"05:00",bed:"21:00"},
   notifEnabled:false,
   macroTargets:{cal:2500,protein:160,carbs:220,fat:70},
+  profile:{weight:75,height:178,age:26,sex:"male"},
 };
+
+// ── Health / Macro helpers ──────────────────────────────────────
+function calcTDEE(profile){
+  const{weight=75,height=178,age=26,sex="male"}=profile||{};
+  const bmr=sex==="female"
+    ?447.593+9.247*weight+3.098*height-4.330*age
+    :88.362+13.397*weight+4.799*height-5.677*age;
+  return Math.round(bmr*1.725);
+}
+function calcDailyMacros(profile,tasks,date){
+  const tdee=calcTDEE(profile);
+  const strain=calcStrain(tasks,date);
+  const trainingBonus=Math.round(strain*40);
+  const targetCal=tdee+trainingBonus-300;
+  const weight=profile?.weight||75;
+  const protein=Math.round(weight*2.0);
+  const fat=Math.round(weight*0.9);
+  const highIntensity=tasks.some(t=>t.date===date&&["football","game","run"].includes(t.category));
+  const carbsBase=Math.round((targetCal-protein*4-fat*9)/4);
+  const carbs=highIntensity?Math.round(carbsBase*1.15):carbsBase;
+  return{
+    cal:Math.max(1500,targetCal),
+    protein:Math.max(100,protein),
+    carbs:Math.max(50,carbs),
+    fat:Math.max(30,fat),
+    tdee,trainingBonus,isHighIntensity:highIntensity,
+  };
+}
+
+// ── Binaural / sleep audio ──────────────────────────────────────
+let _audioCtx=null,_audioNodes=[];
+function stopAudio(){
+  _audioNodes.forEach(n=>{try{n.stop();}catch{}});
+  _audioNodes=[];
+  if(_audioCtx){_audioCtx.close();_audioCtx=null;}
+}
+function playAlarm(){
+  const ctx=new(window.AudioContext||window.webkitAudioContext)();
+  [0,0.5,1.0].forEach(t=>{
+    const osc=ctx.createOscillator(),g=ctx.createGain();
+    osc.frequency.value=880;osc.type="sine";
+    g.gain.setValueAtTime(0.4,ctx.currentTime+t);
+    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+t+0.4);
+    osc.connect(g);g.connect(ctx.destination);
+    osc.start(ctx.currentTime+t);osc.stop(ctx.currentTime+t+0.45);
+  });
+}
+function startBinauralAudio(mode){
+  stopAudio();
+  _audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  const ctx=_audioCtx,beatFreq=mode==="nap"?6:2,carrier=200;
+  const oscL=ctx.createOscillator(),gainL=ctx.createGain();
+  const oscR=ctx.createOscillator(),gainR=ctx.createGain();
+  const merger=ctx.createChannelMerger(2);
+  oscL.frequency.value=carrier;oscL.type="sine";gainL.gain.value=0.13;
+  oscR.frequency.value=carrier+beatFreq;oscR.type="sine";gainR.gain.value=0.13;
+  oscL.connect(gainL);gainL.connect(merger,0,0);
+  oscR.connect(gainR);gainR.connect(merger,0,1);
+  // Pink noise
+  const bsz=ctx.sampleRate*10,nb=ctx.createBuffer(1,bsz,ctx.sampleRate),nd=nb.getChannelData(0);
+  let b=[0,0,0,0,0,0,0];
+  for(let i=0;i<bsz;i++){
+    const w=Math.random()*2-1;
+    b[0]=0.99886*b[0]+w*0.0555179;b[1]=0.99332*b[1]+w*0.0750759;
+    b[2]=0.96900*b[2]+w*0.1538520;b[3]=0.86650*b[3]+w*0.3104856;
+    b[4]=0.55000*b[4]+w*0.5329522;b[5]=-0.7616*b[5]-w*0.0168980;
+    nd[i]=(b[0]+b[1]+b[2]+b[3]+b[4]+b[5]+b[6]+w*0.5362)/7;b[6]=w*0.115926;
+  }
+  const ns=ctx.createBufferSource(),ng=ctx.createGain();
+  ns.buffer=nb;ns.loop=true;ng.gain.value=0.035;
+  ns.connect(ng);
+  const master=ctx.createGain();
+  master.gain.setValueAtTime(0,ctx.currentTime);
+  master.gain.linearRampToValueAtTime(1,ctx.currentTime+30);
+  merger.connect(master);ng.connect(master);master.connect(ctx.destination);
+  oscL.start();oscR.start();ns.start();
+  _audioNodes=[oscL,oscR,ns];
+}
 
 // ── Coach (Claude) ────────────────────────────────────────────
 const SYSTEM=`You are Coach — a sharp, adaptive performance coach for a dedicated football player.
@@ -340,12 +436,52 @@ ACTIONS:
 {"type":"deleteTask","taskId":"..."}
 {"type":"completeTask","taskId":"..."}`;
 
-async function callCoach(msg,ctx){
-  const res=await fetch("/api/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
-  const data=await res.json();
-  if(typeof data.reply==="string") return data;
-  return {reply:"Try again.",actions:[]};
+function localCoach(msg,ctx){
+  const m=msg.toLowerCase(),tasks=ctx.tasks||[],today=ctx.today,actions=[];let reply="";
+  if(/match.cancel|game.cancel|game.is.off|game.off|no.game/.test(m)){
+    const g=tasks.find(t=>t.date===today&&["game","football"].includes(t.category)&&!t.completed);
+    if(g){
+      actions.push({type:"deleteTask",taskId:g.id});
+      actions.push({type:"addTask",task:{id:uid(),date:today,time:g.time||"18:00",title:"Run 40min + 4 sprint strides [match cancelled]",category:"run",notes:"Quality session to replace match.",completed:false,createdAt:Date.now()}});
+      reply=`Game removed. Added a quality run session instead.\n\nYou've got a good training window — use it.`;
+    }else{reply="No game on today's schedule. Add a quality session manually.";}
+  }else if(/tired|exhausted|sore|heavy legs|low energy|knackered|drain/.test(m)){
+    reply="Listen to your body today.\n\n• Swap the main session for 20min easy walk + mobility\n• Keep the session but drop intensity — Zone 1 only\n• Sauna + full rest if you're genuinely run-down\n\nRecovery is part of the plan.";
+  }else if(/game.tomorrow|match.tomorrow/.test(m)){
+    const tm=msg.match(/(\d{1,2})[:.h](\d{2})?\s*(am|pm)?/i);
+    let t2="17:00";
+    if(tm){let h=parseInt(tm[1]),mn=tm[2]?parseInt(tm[2]):0;if(tm[3]?.toLowerCase()==="pm"&&h<12)h+=12;t2=`${String(h).padStart(2,"0")}:${String(mn).padStart(2,"0")}`;}
+    const tmrw=isoDate(addDays(new Date(),1));
+    actions.push({type:"addTask",task:{id:uid(),date:tmrw,time:t2,title:"Game",category:"game",notes:"Match day.",completed:false,createdAt:Date.now()}});
+    reply=`Game added for tomorrow at ${fmtTime(t2)}. Go light in the morning — no intense session.`;
+  }else if(/^add\s+/i.test(msg.trim())){
+    const title=msg.replace(/^add\s+/i,"").trim();
+    actions.push({type:"addTask",task:{id:uid(),date:today,time:"",title,category:detectCat(title),notes:"",completed:false,createdAt:Date.now()}});
+    reply=`Added "${title}" to today.`;
+  }else if(/^(delete|remove)\s+/i.test(msg.trim())){
+    const title=msg.replace(/^(delete|remove)\s+/i,"").trim().toLowerCase();
+    const t=tasks.find(t=>t.date===today&&t.title.toLowerCase().includes(title));
+    if(t){actions.push({type:"deleteTask",taskId:t.id});reply=`Deleted "${t.title}".`;}
+    else reply=`Couldn't find a task matching "${title}" today.`;
+  }else if(/what.should|next session|what.do|plan/.test(m)){
+    const up=tasks.filter(t=>t.date===today&&!t.completed&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+    reply=up.length?`Next up today:\n\n${up.slice(0,3).map(t=>`• ${t.time?fmtTime(t.time)+" — ":""}${t.title}`).join("\n")}\n\nStay on schedule.`:"Nothing left today. Good work or rest day — make it count.";
+  }else{
+    reply="I'm in offline mode — no AI connection.\n\nI can handle:\n• Match cancelled\n• Game tomorrow at 7pm\n• Add [session]\n• Delete [session]\n• What should I do\n• Feeling tired";
+  }
+  return{reply:reply+"\n\n_[offline mode]_",actions};
+}
 
+async function callCoach(msg,ctx){
+  try{
+    const res=await fetch("/api/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
+    if(!res.ok)throw new Error(`HTTP ${res.status}`);
+    const data=await res.json();
+    if(typeof data.reply==="string")return data;
+    throw new Error("bad response");
+  }catch{
+    return localCoach(msg,ctx);
+  }
 }
 
 // ── Base components ───────────────────────────────────────────
@@ -485,8 +621,132 @@ function TaskItem({task,onToggle,onEdit,highlight=false}){
   </div>`;
 }
 
+function SleepModePanel({onClose}){
+  const[mode,setMode]=useState("nap");
+  const[napMins,setNapMins]=useState(20);
+  const[running,setRunning]=useState(false);
+  const[secsLeft,setSecsLeft]=useState(0);
+  const[alarmFired,setAlarmFired]=useState(false);
+  const intervalRef=useRef(null);
+
+  const stop=useCallback(()=>{
+    stopAudio();
+    clearInterval(intervalRef.current);
+    setRunning(false);
+  },[]);
+
+  useEffect(()=>{ return()=>{ stopAudio(); clearInterval(intervalRef.current); }; },[]);
+
+  useEffect(()=>{
+    if(!running)return;
+    if(secsLeft<=0){
+      stopAudio(); playAlarm(); setRunning(false); setAlarmFired(true);
+      clearInterval(intervalRef.current);
+      return;
+    }
+    intervalRef.current=setInterval(()=>setSecsLeft(s=>{ if(s<=1){clearInterval(intervalRef.current);return 0;} return s-1;}),1000);
+    return()=>clearInterval(intervalRef.current);
+  },[running]);
+
+  const start=()=>{
+    startBinauralAudio(mode);
+    setAlarmFired(false);
+    if(mode==="nap"){setSecsLeft(napMins*60);}else{setSecsLeft(0);}
+    setRunning(true);
+  };
+
+  const mins=Math.floor(secsLeft/60),secs=secsLeft%60;
+  const beatHz=mode==="nap"?"6Hz Theta":"2Hz Delta";
+  const modeLabel=mode==="nap"?"Nap":"Wind Down";
+
+  return html`<div style=${{
+    position:"fixed",inset:0,zIndex:70,
+    background:"rgba(7,8,15,0.96)",
+    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+    padding:"24px 20px",
+  }}>
+    <!-- Mode toggle -->
+    <div style=${{display:"flex",gap:6,marginBottom:32,padding:"4px",background:"rgba(255,255,255,0.03)",borderRadius:14,border:`1px solid ${T.border}`,width:"100%",maxWidth:320}}>
+      ${[{id:"nap",label:"Nap"},{id:"sleep",label:"Wind Down"}].map(m=>html`
+        <button key=${m.id} onClick=${()=>{if(!running){setMode(m.id);setAlarmFired(false);setSecsLeft(0);}}} style=${{
+          flex:1,padding:"10px 4px",borderRadius:10,cursor:running?"not-allowed":"pointer",fontFamily:"inherit",
+          fontWeight:800,fontSize:13,letterSpacing:0.2,
+          border:`1px solid ${mode===m.id?T.accentBorder:"transparent"}`,
+          background:mode===m.id?T.accentGlow:"transparent",
+          color:mode===m.id?T.accent:T.muted,
+          transition:"all 0.18s",
+        }}>${m.label}</button>`)}
+    </div>
+
+    <!-- Timer -->
+    <div style=${{textAlign:"center",marginBottom:28}}>
+      ${running||alarmFired?html`
+        <div style=${{fontSize:64,fontWeight:900,color:alarmFired?T.green:T.accent,fontVariantNumeric:"tabular-nums",letterSpacing:-2,lineHeight:1}}>
+          ${String(mins).padStart(2,"0")}:${String(secs).padStart(2,"0")}
+        </div>
+        <div style=${{fontSize:12,color:T.muted,marginTop:6,fontWeight:600}}>
+          ${alarmFired?"Time's up — well rested!":modeLabel+" in progress"}
+        </div>
+      `:html`
+        <div style=${{fontSize:64,fontWeight:900,color:"rgba(255,255,255,0.12)",fontVariantNumeric:"tabular-nums",letterSpacing:-2,lineHeight:1}}>
+          ${mode==="nap"?String(Math.floor(napMins/1)).padStart(2,"0")+":00":"∞"}
+        </div>
+        <div style=${{fontSize:12,color:T.muted,marginTop:6,fontWeight:600}}>ready</div>
+      `}
+    </div>
+
+    <!-- Nap duration presets (nap mode only) -->
+    ${mode==="nap"&&!running?html`
+      <div style=${{marginBottom:20,width:"100%",maxWidth:320}}>
+        <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.2,marginBottom:10,textAlign:"center"}}>NAP DURATION</div>
+        <div style=${{display:"flex",gap:8,justifyContent:"center"}}>
+          ${[10,20,30,45].map(m=>html`<button key=${m} onClick=${()=>setNapMins(m)} style=${{
+            padding:"10px 16px",borderRadius:11,cursor:"pointer",fontFamily:"inherit",
+            fontWeight:800,fontSize:13,
+            border:`1px solid ${napMins===m?T.accentBorder:T.border}`,
+            background:napMins===m?T.accentGlow:T.surface,
+            color:napMins===m?T.accent:T.muted,
+          }}>${m}m</button>`)}
+        </div>
+      </div>
+    `:""}
+
+    <!-- Info label -->
+    <div style=${{textAlign:"center",marginBottom:24,color:T.muted,fontSize:11,lineHeight:1.6}}>
+      Binaural beats · ${beatHz} · Pink noise<br/>
+      <span style=${{fontSize:10,opacity:0.7}}>Use headphones for best effect</span>
+    </div>
+
+    <!-- Controls -->
+    <div style=${{display:"flex",flexDirection:"column",gap:10,width:"100%",maxWidth:320}}>
+      ${!running&&!alarmFired?html`
+        <${Btn} onClick=${start} variant="primary" style=${{fontSize:15,padding:"14px 0"}}>Start ${modeLabel}<//>
+      `:!alarmFired?html`
+        <${Btn} onClick=${stop} variant="danger" style=${{fontSize:15,padding:"14px 0"}}>Stop<//>
+      `:html`
+        <${Btn} onClick=${()=>{setAlarmFired(false);setSecsLeft(0);}} variant="primary" style=${{fontSize:15,padding:"14px 0"}}>Done<//>
+      `}
+      <${Btn} onClick=${()=>{stop();onClose();}} variant="ghost" style=${{fontSize:13}}>Close<//>
+    </div>
+  </div>`;
+}
+
+function DailyQuote(){
+  const {text,ref}=BIBLE_QUOTES[Math.floor(Date.now()/86_400_000)%BIBLE_QUOTES.length];
+  return html`<div style=${{
+    ...S.card,marginBottom:14,textAlign:"center",
+    background:"linear-gradient(135deg,rgba(167,139,250,0.07) 0%,rgba(52,211,153,0.04) 100%)",
+    border:"1px solid rgba(167,139,250,0.15)",padding:"16px 18px",
+  }}>
+    <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Today's Word</div>
+    <div style=${{fontSize:13,color:T.textSoft,lineHeight:1.65,fontStyle:"italic"}}>"${text}"</div>
+    <div style=${{fontSize:10,fontWeight:800,color:T.accent,marginTop:8,letterSpacing:0.5}}>${ref}</div>
+  </div>`;
+}
+
 // ── Today View ────────────────────────────────────────────────
 function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenCoach}){
+  const[sleepMode,setSleepMode]=useState(null);
   const todayStr=todayISO(),now=new Date(),curTime=`${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
   const todayTasks=useMemo(()=>tasks.filter(t=>t.date===todayStr&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")),[tasks,todayStr]);
   const nextTask=todayTasks.find(t=>!t.completed&&t.time&&t.time>curTime);
@@ -504,6 +764,7 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
 
   const pctColor=pct>=80?T.green:pct>=50?T.accent:T.amber;
   return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
+    <${DailyQuote}/>
     <!-- hero card — WHOOP-style -->
     <div className="sk-card" style=${{
       background:"linear-gradient(145deg,rgba(167,139,250,0.10) 0%,rgba(109,40,217,0.05) 30%,rgba(52,211,153,0.05) 70%,rgba(56,189,248,0.04) 100%)",
@@ -582,6 +843,31 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
           </div>`;
         })}
       </div>`:""}
+
+    <!-- Nap / Wind-down buttons -->
+    ${sleepMode?html`<${SleepModePanel} onClose=${()=>setSleepMode(null)}/>`:null}
+    <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:14}}>
+      <button onClick=${()=>setSleepMode("nap")} style=${{
+        display:"flex",flexDirection:"column",alignItems:"center",gap:4,
+        padding:"14px 8px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",
+        background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",
+        transition:"background 0.15s",
+      }}>
+        <span style=${{fontSize:22}}>🌙</span>
+        <span style=${{fontSize:11,fontWeight:800,color:T.blue,letterSpacing:0.3}}>Nap Mode</span>
+        <span style=${{fontSize:10,color:T.muted,fontWeight:600}}>Theta · binaural</span>
+      </button>
+      <button onClick=${()=>setSleepMode("sleep")} style=${{
+        display:"flex",flexDirection:"column",alignItems:"center",gap:4,
+        padding:"14px 8px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",
+        background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.2)",
+        transition:"background 0.15s",
+      }}>
+        <span style=${{fontSize:22}}>😴</span>
+        <span style=${{fontSize:11,fontWeight:800,color:T.accent,letterSpacing:0.3}}>Wind Down</span>
+        <span style=${{fontSize:10,color:T.muted,fontWeight:600}}>Delta · sleep induction</span>
+      </button>
+    </div>
   </div>`;
 }
 
@@ -924,6 +1210,7 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit}){
 function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
   const [wt,setWt]=useState({...settings.weekTargets});
   const [mt,setMt]=useState({...( settings.macroTargets||{cal:2500,protein:160,carbs:220,fat:70})});
+  const [prof,setProf]=useState({weight:75,height:178,age:26,sex:"male",...(settings.profile||{})});
 
   // Notification toggle handler
   const toggleNotif=async()=>{
@@ -989,6 +1276,37 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPla
             <button onClick=${()=>{const nv=mt[key]+step;const nm={...mt,[key]:nv};setMt(nm);onUpdate({macroTargets:nm});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>+</button>
           </div>
         </div>`)}
+    </div>
+
+    <!-- Body Profile card -->
+    <div style=${{...S.card,marginBottom:10}}>
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:12}}>BODY PROFILE</div>
+      <div style=${{fontSize:11,color:T.muted,marginBottom:12,lineHeight:1.5}}>Used to calculate your daily TDEE and recommended macros.</div>
+      <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+        ${[{key:"weight",label:"Weight",unit:"kg",step:0.5,min:30},{key:"height",label:"Height",unit:"cm",step:1,min:100},{key:"age",label:"Age",unit:"yrs",step:1,min:10}].map(f=>html`
+          <div key=${f.key}>
+            <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:0.8,marginBottom:5,textTransform:"uppercase"}}>${f.label} (${f.unit})</div>
+            <input type="number" value=${prof[f.key]} step=${f.step} min=${f.min}
+              onInput=${e=>{const v=parseFloat(e.target.value)||prof[f.key];const np={...prof,[f.key]:v};setProf(np);onUpdate({profile:np});}}
+              style=${{width:"100%",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px",color:T.text,fontSize:15,fontFamily:"inherit"}}/>
+          </div>`)}
+        <div>
+          <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:0.8,marginBottom:5,textTransform:"uppercase"}}>Sex</div>
+          <div style=${{display:"flex",gap:6}}>
+            ${["male","female"].map(s=>html`<button key=${s} onClick=${()=>{const np={...prof,sex:s};setProf(np);onUpdate({profile:np});}} style=${{
+              flex:1,padding:"10px 4px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,
+              border:`1px solid ${prof.sex===s?T.accentBorder:T.border}`,
+              background:prof.sex===s?T.accentGlow:T.surface,
+              color:prof.sex===s?T.accent:T.muted,
+            }}>${s.charAt(0).toUpperCase()+s.slice(1)}</button>`)}
+          </div>
+        </div>
+      </div>
+      <div style=${{textAlign:"center",padding:"8px 0",background:"rgba(255,255,255,0.03)",borderRadius:10}}>
+        <div style=${{fontSize:11,color:T.muted,fontWeight:700}}>TDEE estimate</div>
+        <div style=${{fontSize:20,fontWeight:900,color:T.accent,marginTop:2}}>${calcTDEE(prof).toLocaleString()} <span style=${{fontSize:11,fontWeight:600,color:T.muted}}>kcal/day</span></div>
+        <div style=${{fontSize:10,color:T.muted,marginTop:2}}>Based on very active athlete multiplier (1.725)</div>
+      </div>
     </div>
 
     <div style=${{...S.card,marginBottom:10}}>
@@ -1169,8 +1487,11 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
           border:`1px solid ${m.role==="user"?"rgba(139,92,246,0.28)":"rgba(255,255,255,0.07)"}`,
           color:T.text,fontSize:14,lineHeight:1.55,whiteSpace:"pre-wrap",
         }}>
-          ${m.role==="assistant"?html`<div style=${{fontSize:9,fontWeight:800,color:T.accent,marginBottom:5,letterSpacing:1.2}}>COACH</div>`:""}
-          ${m.content}
+          ${m.role==="assistant"?html`<div style=${{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
+            <span style=${{fontSize:9,fontWeight:800,color:T.accent,letterSpacing:1.2}}>COACH</span>
+            ${m.content.includes("[offline mode]")?html`<span style=${{fontSize:9,fontWeight:800,color:"#f59e0b",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.25)",borderRadius:5,padding:"1px 6px",letterSpacing:0.5}}>OFFLINE</span>`:""}
+          </div>`:""}
+          ${m.content.replace(/\n\n_\[offline mode\]_$/,"")}
         </div>`)}
         ${busy?html`<div style=${{alignSelf:"flex-start",padding:"12px 16px",borderRadius:"14px 14px 14px 4px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",color:T.muted,fontSize:18,letterSpacing:4}}>···</div>`:""}
       </div>
@@ -1280,7 +1601,7 @@ function WellnessModal({log,onSave,onClose}){
 }
 
 // ── Nutrition View ────────────────────────────────────────────
-function NutritionView({foodLogs,macroTargets,onUpsertFoodLog}){
+function NutritionView({foodLogs,macroTargets,onUpsertFoodLog,tasks,settings,onUpdateSettings}){
   const [date,setDate]=useState(todayISO());
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({name:"",cal:"",protein:"",carbs:"",fat:""});
@@ -1291,6 +1612,7 @@ function NutritionView({foodLogs,macroTargets,onUpsertFoodLog}){
     carbs:a.carbs+(+m.carbs||0),fat:a.fat+(+m.fat||0),
   }),{cal:0,protein:0,carbs:0,fat:0});
 
+  const rec=calcDailyMacros(settings?.profile,tasks||[],date);
   const tgt=macroTargets||{cal:2500,protein:160,carbs:220,fat:70};
 
   const macroFields=[
@@ -1323,6 +1645,33 @@ function NutritionView({foodLogs,macroTargets,onUpsertFoodLog}){
         background:"none",border:"none",color:date>=todayISO()?T.border:T.muted,fontSize:18,cursor:"pointer",padding:"4px 8px",fontFamily:"inherit"
       }}>›</button>
     </div>
+
+    <!-- Recommended macros banner -->
+    ${settings?.profile?.weight?html`<div style=${{
+      ...S.card,marginBottom:10,
+      background:rec.isHighIntensity?"linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.04))":"linear-gradient(135deg,rgba(52,211,153,0.08),rgba(52,211,153,0.03))",
+      border:`1px solid ${rec.isHighIntensity?"rgba(245,158,11,0.22)":T.greenBorder}`,
+    }}>
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+        <div>
+          <div style=${{fontSize:11,fontWeight:900,color:rec.isHighIntensity?"#f59e0b":T.green,letterSpacing:0.5}}>${rec.isHighIntensity?"⚡ Hard training day":"◎ Rest / recovery day"}</div>
+          <div style=${{fontSize:10,color:T.muted,marginTop:2}}>TDEE ${rec.tdee}${rec.trainingBonus>0?` + ${rec.trainingBonus} training`:""} − 300 deficit</div>
+        </div>
+        <button onClick=${()=>onUpdateSettings&&onUpdateSettings({macroTargets:{cal:rec.cal,protein:rec.protein,carbs:rec.carbs,fat:rec.fat}})} style=${{
+          fontSize:10,fontWeight:800,padding:"5px 10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",
+          background:rec.isHighIntensity?"rgba(245,158,11,0.13)":T.greenGlow,
+          border:`1px solid ${rec.isHighIntensity?"rgba(245,158,11,0.28)":T.greenBorder}`,
+          color:rec.isHighIntensity?"#f59e0b":T.green,
+        }}>Use</button>
+      </div>
+      <div style=${{display:"flex",gap:6}}>
+        ${[{l:"Cal",v:rec.cal,u:"kcal",c:T.accent},{l:"P",v:rec.protein,u:"g",c:T.green},{l:"C",v:rec.carbs,u:"g",c:"#f59e0b"},{l:"F",v:rec.fat,u:"g",c:T.blue}].map(m=>html`
+          <div style=${{flex:1,textAlign:"center",background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"6px 2px"}}>
+            <div style=${{fontSize:12,fontWeight:900,color:m.c}}>${m.v}</div>
+            <div style=${{fontSize:9,color:T.muted,fontWeight:700}}>${m.l}</div>
+          </div>`)}
+      </div>
+    </div>`:null}
 
     <!-- Macro rings -->
     <div style=${{...S.card,marginBottom:14}}>
@@ -1418,7 +1767,7 @@ function NutritionView({foodLogs,macroTargets,onUpsertFoodLog}){
   </div>`;
 }
 
-function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFoodLog}){
+function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFoodLog,onUpdateSettings}){
   const[healthTab,setHealthTab]=useState("health");
   const today=todayISO();
   const log=healthLogs[today]||{};
@@ -1444,8 +1793,31 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
           transition:"background 0.18s,color 0.18s,border-color 0.18s",
         }}>${tab.label}</button>`)}
     </div>
-    ${healthTab==="nutrition"?html`<${NutritionView} foodLogs=${foodLogs||{}} macroTargets=${settings?.macroTargets} onUpsertFoodLog=${onUpsertFoodLog}/>`:null}
+    ${healthTab==="nutrition"?html`<${NutritionView} foodLogs=${foodLogs||{}} macroTargets=${settings?.macroTargets} onUpsertFoodLog=${onUpsertFoodLog} tasks=${tasks} settings=${settings} onUpdateSettings=${onUpdateSettings}/>`:null}
     ${healthTab==="health"?html`<div style=${{display:"contents"}}>
+
+    <!-- Apple Health sync card -->
+    ${(()=>{
+      const syncedAt=log.syncedAt;
+      const syncLabel=syncedAt?`Last synced: ${new Date(syncedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})} today`:"Not synced yet";
+      const shortcutUrl=`${window.location.origin}/?hk=1&date=DATE&hrv=HRV&rhr=RHR&sleep=BED-WAKE&sq=QUALITY`;
+      return html`<div style=${{...S.card,marginBottom:10,padding:"14px 16px"}}>
+        <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <div>
+            <div style=${{fontSize:11,fontWeight:900,color:T.muted,letterSpacing:1}}>APPLE HEALTH SYNC</div>
+            <div style=${{fontSize:11,color:syncedAt?T.green:T.muted,fontWeight:600,marginTop:2}}>${syncLabel}</div>
+          </div>
+          <button onClick=${()=>{
+            const info=`Build an iOS Shortcut to auto-fill your health data:\n\n1. Open the Shortcuts app\n2. Create new Shortcut\n3. Add actions:\n   • Get HRV Average (from Health)\n   • Get Resting Heart Rate (from Health)\n   • Get Last Sleep Analysis (from Health)\n4. Open URL:\n${shortcutUrl}\n\nReplace DATE, HRV, RHR, BED, WAKE, QUALITY with variables from the Health actions.\n\nRun the Shortcut each morning after your Apple Watch syncs.`;
+            alert(info);
+          }} style=${{
+            fontSize:11,fontWeight:800,padding:"7px 12px",borderRadius:9,cursor:"pointer",fontFamily:"inherit",
+            background:T.accentGlow,border:`1px solid ${T.accentBorder}`,color:T.accent,
+          }}>Setup Guide</button>
+        </div>
+        <div style=${{fontSize:10,color:T.muted,lineHeight:1.55}}>Use an iOS Shortcut to auto-fill HRV, resting HR, and sleep from your Apple Watch each morning.</div>
+      </div>`;
+    })()}
 
     <!-- 3 metric rings -->
     <div style=${{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
@@ -1842,6 +2214,21 @@ function App(){
           setTimeout(()=>showToast("Habit updated ✓"),400);
         }
         if(action) window.history.replaceState({},"",window.location.pathname);
+        // Apple Health iOS Shortcut sync: ?hk=1&hrv=65&rhr=52&date=2026-03-14&sleep=22:00-06:30&sq=4
+        if(sp.get("hk")==="1"){
+          const hkDate=sp.get("date")||todayISO();
+          const hkPatch={syncedAt:Date.now()};
+          if(sp.get("hrv"))hkPatch.hrv=Number(sp.get("hrv"));
+          if(sp.get("rhr"))hkPatch.restingHR=Number(sp.get("rhr"));
+          if(sp.get("hr"))hkPatch.liveHR=Number(sp.get("hr"));
+          if(sp.get("sleep")){
+            const[bed,wake]=sp.get("sleep").split("-");
+            hkPatch.sleep={bedtime:bed,wakeTime:wake,quality:Number(sp.get("sq")||3)};
+          }
+          saved.healthLogs={...saved.healthLogs,[hkDate]:{...saved.healthLogs?.[hkDate],...hkPatch}};
+          window.history.replaceState({},"",window.location.pathname);
+          setTimeout(()=>showToast("Apple Health synced"),500);
+        }
         setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],settings:DEF_SETTINGS,...saved,foodLogs:saved.foodLogs||{},notes:saved.notes||{},settings:{...DEF_SETTINGS,...saved?.settings}});
       } else {
         setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});
@@ -1983,8 +2370,7 @@ function App(){
       ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)}/>`:""}
       ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
       ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
-      ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog}/>`:""}
-      ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
+      ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog} onUpdateSettings=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}/>`:""}      ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
         trainingPlans=${state.trainingPlans||[]} tasks=${state.tasks}
         onUpsertPlan=${upsertPlan} onDeletePlan=${deletePlan}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
