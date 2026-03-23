@@ -94,7 +94,7 @@ function detectCat(title=""){
 
 // ── Sync ────────────────────────────────────────────────────
 const SK_KEY="sk2";
-const SYNC_URL="/.netlify/functions/sync";
+const SYNC_URL="/api/sync";
 
 async function loadState(){
   try{ const r=await window.storage?.get(SK_KEY); if(r?.value)return JSON.parse(r.value); }catch{}
@@ -106,7 +106,7 @@ function saveState(state){
   const j=JSON.stringify(state);
   try{ window.storage?.set(SK_KEY,j); }catch{}
   try{ localStorage.setItem(SK_KEY,j); }catch{}
-  // Debounced sync to Netlify (for widget)
+  // Debounced sync to Vercel KV (for widget)
   clearTimeout(_saveBuf.timer);
   _saveBuf.timer=setTimeout(()=>{
     fetch(SYNC_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:j}).catch(()=>{});
@@ -451,7 +451,7 @@ async function callCoach(msg,ctx){
 
   // Fall back to cloud Coach
   try{
-    const res=await fetch("/.netlify/functions/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
+    const res=await fetch("/api/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
     const data=await res.json();
     if(typeof data.reply==="string") return data;
   }catch{}
@@ -1069,7 +1069,7 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus}){
         Your schedule syncs automatically to the Scriptable lock screen widget whenever you make a change.
         ${syncStatus?html`<br/><span style=${{color:syncStatus==="ok"?T.green:T.red}}>${syncStatus==="ok"?"✓ Synced":"⚠ Sync unavailable (local mode)"}</span>`:""}
       </div>
-      <${Btn} onClick=${()=>{fetch(SYNC_URL).then(r=>r.json()).then(()=>showToast("Widget sync working ✅")).catch(()=>showToast("Not syncing — deploy to Netlify first"));}} variant="ghost" style=${{fontSize:12}}>
+      <${Btn} onClick=${()=>{fetch(SYNC_URL).then(r=>r.json()).then(()=>showToast("Widget sync working ✅")).catch(()=>showToast("Not syncing — deploy to Vercel + add KV store first"));}} variant="ghost" style=${{fontSize:12}}>
         Test widget sync
       <//>
     </div>
@@ -1262,7 +1262,7 @@ function App(){
       // Check sync
       fetch(SYNC_URL).then(()=>setSyncStatus("ok")).catch(()=>setSyncStatus("offline"));
       // Load latest Watch health snapshot and auto-complete matching workout tasks
-      fetch("/.netlify/functions/health").then(r=>r.ok?r.json():null).then(d=>{
+      fetch("/api/health").then(r=>r.ok?r.json():null).then(d=>{
         if(!d)return;
         if(d.resting_hr||d.hrv||d.sleep_hours)setHealthData(d);
         // Auto-complete tasks for workouts Watch recorded today
