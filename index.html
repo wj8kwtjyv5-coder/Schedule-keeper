@@ -303,8 +303,10 @@ function TaskItem({task,onToggle,onEdit,highlight=false}){
 // ── Today View ────────────────────────────────────────────────
 function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenCoach}){
   const todayStr=todayISO(),now=new Date(),curTime=`${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  const [searchQ,setSearchQ]=useState("");
   const todayTasks=useMemo(()=>tasks.filter(t=>t.date===todayStr&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")),[tasks,todayStr]);
-  const nextTask=todayTasks.find(t=>!t.completed&&t.time&&t.time>curTime);
+  const visibleTasks=useMemo(()=>searchQ.trim()?todayTasks.filter(t=>t.title.toLowerCase().includes(searchQ.toLowerCase())):todayTasks,[todayTasks,searchQ]);
+  const nextTask=visibleTasks.find(t=>!t.completed&&t.time&&t.time>curTime);
   const done=todayTasks.filter(t=>t.completed).length,total=todayTasks.length,pct=total>0?Math.round((done/total)*100):0;
   const weekDates=getWeekDates();
   const weekCats=useMemo(()=>{
@@ -347,12 +349,23 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
       </div>`:""}
 
     ${total>0?html`
-      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1}}>TODAY'S PLAN</div>
         <div style=${{fontSize:12,color:T.muted,fontWeight:700}}>${done} of ${total} done</div>
       </div>
+      <div style=${{position:"relative",marginBottom:10}}>
+        <input style=${{...S.input,paddingLeft:32,fontSize:13}} value=${searchQ}
+          onInput=${e=>setSearchQ(e.target.value)} placeholder="Search tasks…"/>
+        <span style=${{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",
+          fontSize:13,color:T.muted,pointerEvents:"none"}}>🔍</span>
+        ${searchQ?html`<button onClick=${()=>setSearchQ("")} style=${{
+          position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",
+          background:"none",border:"none",color:T.muted,cursor:"pointer",fontSize:14,padding:2
+        }}>✕</button>`:""}
+      </div>
       <div style=${{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-        ${todayTasks.map(t=>html`<${TaskItem} key=${t.id} task=${t} onToggle=${onToggleTask} onEdit=${onEditTask} highlight=${t.id===nextTask?.id}/>`)}
+        ${visibleTasks.map(t=>html`<${TaskItem} key=${t.id} task=${t} onToggle=${onToggleTask} onEdit=${onEditTask} highlight=${t.id===nextTask?.id}/>`)}
+        ${searchQ&&visibleTasks.length===0?html`<div style=${{color:T.muted,fontSize:13,fontWeight:700,textAlign:"center",padding:"16px 0"}}>No tasks match "${searchQ}"</div>`:""}
       </div>`:""}
 
     ${todayHabits.length>0?html`
@@ -380,11 +393,25 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
 // ── Week View ─────────────────────────────────────────────────
 function WeekView({tasks,onToggleTask,onEditTask,onAddForDate}){
   const weekDates=getWeekDates(),todayStr=todayISO();
+  const [weekCat,setWeekCat]=useState("all");
+  const weekCatsPresent=useMemo(()=>{
+    const s=new Set();
+    tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").forEach(t=>s.add(t.category));
+    return [...s];
+  },[tasks,weekDates]);
+
   return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
-    <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:14}}>THIS WEEK</div>
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1}}>THIS WEEK</div>
+    </div>
+    <div style=${{display:"flex",gap:6,overflowX:"auto",marginBottom:14,scrollbarWidth:"none",paddingBottom:2}}>
+      <${Chip} active=${weekCat==="all"} onClick=${()=>setWeekCat("all")}>All<//>
+      ${weekCatsPresent.map(k=>html`<${Chip} key=${k} active=${weekCat===k} onClick=${()=>setWeekCat(k)}>${CATS[k]?.emoji} ${CATS[k]?.label||k}<//>` )}
+    </div>
     ${weekDates.map(date=>{
-      const dt=tasks.filter(t=>t.date===date&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
-      const isToday=date===todayStr,isPast=date<todayStr,done=dt.filter(t=>t.completed).length;
+      const allDt=tasks.filter(t=>t.date===date&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+      const dt=weekCat==="all"?allDt:allDt.filter(t=>t.category===weekCat);
+      const isToday=date===todayStr,isPast=date<todayStr,done=allDt.filter(t=>t.completed).length;
       return html`<div key=${date} style=${{marginBottom:14}}>
         <div style=${{display:"flex",alignItems:"center",gap:10,marginBottom:7}}>
           <div style=${{fontSize:12,fontWeight:900,letterSpacing:0.5,
@@ -394,14 +421,16 @@ function WeekView({tasks,onToggleTask,onEditTask,onAddForDate}){
             padding:isToday?"3px 9px":"3px 4px",borderRadius:8}}>
             ${fmtDayShort(date).toUpperCase()} ${fmtDateNum(date)}
           </div>
-          ${dt.length>0?html`<span style=${{fontSize:11,color:T.muted,fontWeight:700}}>${done}/${dt.length}</span>`:""}
+          ${allDt.length>0?html`<span style=${{fontSize:11,color:T.muted,fontWeight:700}}>${done}/${allDt.length}</span>`:""}
           <div style=${{flex:1,height:1,background:T.border}}/>
           <button onClick=${()=>onAddForDate(date)} style=${{width:26,height:26,borderRadius:9,
             border:`1px solid ${T.border}`,background:T.surface,color:T.muted,
             fontSize:14,cursor:"pointer",display:"grid",placeItems:"center",fontWeight:900}}>+</button>
         </div>
-        ${dt.length===0
+        ${allDt.length===0
           ?html`<div style=${{color:T.muted,fontSize:12,fontWeight:700,paddingLeft:4,opacity:0.5}}>Rest day</div>`
+          :dt.length===0
+          ?html`<div style=${{color:T.muted,fontSize:12,fontWeight:700,paddingLeft:4,opacity:0.5}}>No ${CATS[weekCat]?.label||""} tasks</div>`
           :html`<div style=${{display:"flex",flexDirection:"column",gap:6}}>
             ${dt.map(t=>html`<${TaskItem} key=${t.id} task=${t} onToggle=${onToggleTask} onEdit=${onEditTask}/>`)}
           </div>`}
@@ -426,15 +455,17 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit}){
       </div>`
     :habits.map(h=>{
       const weekDone=weekDates.filter(d=>!!habitLogs[`${h.id}_${d}`]).length;
-      let streak=0;const ti=weekDates.indexOf(todayStr);
-      for(let i=ti>=0?ti:weekDates.length-1;i>=0;i--){if(habitLogs[`${h.id}_${weekDates[i]}`])streak++;else break;}
+      let streak=0;
+      {const todayDone=!!habitLogs[`${h.id}_${todayStr}`];
+       const start=todayDone?0:1;
+       for(let i=start;i<90;i++){const d=isoDate(addDays(new Date(),-i));if(habitLogs[`${h.id}_${d}`])streak++;else break;}}
       return html`<div key=${h.id} style=${{...S.card,marginBottom:10}}>
         <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
           <div style=${{display:"flex",alignItems:"center",gap:10}}>
             <span style=${{fontSize:22}}>${h.emoji}</span>
             <div>
               <div style=${{fontWeight:800,fontSize:14,color:T.text}}>${h.title}</div>
-              <div style=${{fontSize:11,color:T.muted,marginTop:2}}>${weekDone}/7 this week · ${streak}d streak</div>
+              <div style=${{fontSize:11,color:T.muted,marginTop:2}}>${weekDone}/7 this week · <span style=${{color:streak>=3?T.green:T.muted}}>${streak>=3?"🔥":""} ${streak}d streak</span></div>
             </div>
           </div>
           <${IconBtn} onClick=${()=>onEditHabit(h)}>✎<//>
@@ -457,6 +488,102 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit}){
         </div>
       </div>`;
     })}
+  </div>`;
+}
+
+// ── Stats View ────────────────────────────────────────────────
+function StatsView({tasks,habits,habitLogs,settings}){
+  const weekDates=getWeekDates(),todayStr=todayISO();
+  const targets=settings.weekTargets;
+
+  // Weekly category progress vs targets
+  const weekCats={};
+  tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").forEach(t=>{
+    if(!weekCats[t.category])weekCats[t.category]={done:0,total:0};
+    weekCats[t.category].total++;if(t.completed)weekCats[t.category].done++;
+  });
+
+  // Last 7 days task completion trend
+  const last7=Array.from({length:7},(_,i)=>{
+    const d=isoDate(addDays(new Date(),i-6));
+    const dt=tasks.filter(t=>t.date===d&&t.category!=="work");
+    return{date:d,done:dt.filter(t=>t.completed).length,total:dt.length};
+  });
+
+  // Last 28 days (4 rows × 7) for habit heatmap
+  const last28=Array.from({length:28},(_,i)=>isoDate(addDays(new Date(),i-27)));
+
+  return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
+    <div style=${{fontSize:22,fontWeight:900,color:T.text,marginBottom:16}}>Stats</div>
+
+    <!-- Weekly Targets -->
+    <div style=${{...S.card,marginBottom:14}}>
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:14}}>WEEKLY TARGETS</div>
+      ${Object.entries(targets).map(([k,target])=>{
+        const s=weekCats[k]||{done:0,total:0};
+        const pct=target>0?Math.min(100,Math.round((s.done/target)*100)):0;
+        const cat=CATS[k];
+        return html`<div key=${k} style=${{marginBottom:12}}>
+          <div style=${{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+            <span style=${{fontSize:13,fontWeight:800,color:T.text}}>${cat?.emoji} ${cat?.label||k}</span>
+            <span style=${{fontSize:12,fontWeight:700,color:pct>=100?T.green:T.muted}}>${s.done}/${target}</span>
+          </div>
+          <div style=${{height:7,borderRadius:99,background:"rgba(255,255,255,0.06)"}}>
+            <div style=${{height:"100%",borderRadius:99,width:pct+"%",
+              background:pct>=100?T.green:cat?.color||T.blue,transition:"width 0.5s"}}/>
+          </div>
+        </div>`;
+      })}
+    </div>
+
+    <!-- 7-day Completion Trend -->
+    <div style=${{...S.card,marginBottom:14}}>
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:14}}>LAST 7 DAYS</div>
+      <div style=${{display:"flex",gap:6,alignItems:"flex-end",height:72}}>
+        ${last7.map(({date,done,total})=>{
+          const pct=total>0?done/total:0;
+          const isToday=date===todayStr;
+          const barH=total===0?4:Math.max(8,Math.round(pct*56));
+          const barColor=isToday?T.accent:pct>=0.8?T.green:pct>0?T.blue:"rgba(255,255,255,0.07)";
+          return html`<div key=${date} style=${{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+            <span style=${{fontSize:10,fontWeight:700,color:isToday?T.accent:T.muted}}>${total>0?done+"/"+ total:""}</span>
+            <div style=${{flex:1,width:"100%",display:"flex",alignItems:"flex-end"}}>
+              <div style=${{width:"100%",borderRadius:"4px 4px 0 0",height:barH+"px",
+                background:barColor,transition:"height 0.4s"}}/>
+            </div>
+            <span style=${{fontSize:9,fontWeight:800,color:isToday?T.accent:T.muted}}>
+              ${fmtDayShort(date).slice(0,2).toUpperCase()}
+            </span>
+          </div>`;
+        })}
+      </div>
+    </div>
+
+    <!-- Habit Heatmap -->
+    ${habits.length>0?html`<div style=${{...S.card,marginBottom:14}}>
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:14}}>HABIT HEATMAP · 28 DAYS</div>
+      <div style=${{display:"flex",gap:5,marginBottom:8}}>
+        ${["M","T","W","T","F","S","S"].map((d,i)=>html`<div key=${i} style=${{flex:1,textAlign:"center",fontSize:9,fontWeight:800,color:T.muted}}>${d}</div>`)}
+      </div>
+      ${habits.map(h=>html`<div key=${h.id} style=${{marginBottom:14}}>
+        <div style=${{fontSize:12,fontWeight:800,color:T.text,marginBottom:5}}>${h.emoji} ${h.title}</div>
+        <div style=${{display:"flex",flexDirection:"column",gap:3}}>
+          ${[0,1,2,3].map(w=>html`<div key=${w} style=${{display:"flex",gap:5}}>
+            ${last28.slice(w*7,w*7+7).map(date=>{
+              const done=!!habitLogs[`${h.id}_${date}`];
+              const isFuture=date>todayStr;
+              const isToday=date===todayStr;
+              return html`<div key=${date} title=${date} style=${{
+                flex:1,height:16,borderRadius:4,
+                background:isFuture?"rgba(255,255,255,0.02)":(done?"rgba(110,231,183,0.30)":"rgba(255,255,255,0.04)"),
+                border:`1px solid ${isFuture?"transparent":(done?T.greenBorder:(isToday?T.borderActive:T.border))}`,
+                transition:"background 0.2s",
+              }}/>`;
+            })}
+          </div>`)}
+        </div>
+      </div>`)}
+    </div>`:""}
   </div>`;
 }
 
@@ -702,7 +829,7 @@ function App(){
     <div style=${{textAlign:"center"}}><div style=${{fontSize:32,marginBottom:8}}>⚡</div><div style=${{fontWeight:700}}>Loading…</div></div>
   </div>`;
 
-  const NAV=[{id:"today",icon:"☀",label:"Today"},{id:"week",icon:"▦",label:"Week"},{id:"habits",icon:"✓",label:"Habits"},{id:"settings",icon:"⚙",label:"Settings"}];
+  const NAV=[{id:"today",icon:"☀",label:"Today"},{id:"week",icon:"▦",label:"Week"},{id:"habits",icon:"✓",label:"Habits"},{id:"stats",icon:"📈",label:"Stats"},{id:"settings",icon:"⚙",label:"Settings"}];
   const weekDates=getWeekDates();
   const wTotal=state.tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").length;
   const wDone=state.tasks.filter(t=>weekDates.includes(t.date)&&t.completed&&t.category!=="work").length;
@@ -735,6 +862,7 @@ function App(){
       ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)}/>`:""}
       ${view==="week"?html`<${WeekView} tasks=${state.tasks} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
       ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
+      ${view==="stats"?html`<${StatsView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} settings=${state.settings}/>`:""}
       ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
         onExport=${()=>{const b=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`sk-backup-${todayISO()}.json`;a.click();}}
