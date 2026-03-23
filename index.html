@@ -151,7 +151,116 @@ function seedHabits(){ return [
   {id:uid(),title:"Eat clean",emoji:"🥗",days:[0,1,2,3,4,5,6]},
   {id:uid(),title:"Bed by 9pm",emoji:"🌙",days:[0,1,2,3,4,5,6]},
 ];}
-const DEF_SETTINGS={weekTargets:{run:5,football:5,bike:3,pilates:2,recovery:2,sauna:5},constraints:{wake:"05:00",bed:"21:00"}};
+const DEF_SCHEDULE={
+  work:{
+    0:{enabled:true,start:"08:00",end:"17:00"},
+    1:{enabled:true,start:"08:00",end:"16:00"},
+    2:{enabled:true,start:"08:00",end:"17:00"},
+    3:{enabled:true,start:"08:00",end:"16:00"},
+    4:{enabled:true,start:"08:00",end:"14:00"},
+    5:{enabled:false,start:"",end:""},
+    6:{enabled:false,start:"",end:""},
+  },
+  morningSlots:{
+    0:{enabled:true,time:"06:00",category:"run"},
+    1:{enabled:true,time:"06:00",category:"run"},
+    2:{enabled:true,time:"06:00",category:"bike"},
+    3:{enabled:true,time:"06:00",category:"run"},
+    4:{enabled:true,time:"06:00",category:"run"},
+    5:{enabled:true,time:"06:10",category:"recovery"},
+    6:{enabled:true,time:"06:10",category:"recovery"},
+  },
+  teamEvents:{
+    3:{enabled:true,time:"18:30",type:"training"},
+    5:{enabled:true,time:"10:30",type:"match"},
+  }
+};
+const DEF_SETTINGS={weekTargets:{run:5,football:5,bike:3,pilates:2,recovery:2,sauna:5},constraints:{wake:"05:00",bed:"21:00"},schedule:{...DEF_SCHEDULE}};
+
+// ── Load weights ──────────────────────────────────────────────
+const LOAD={game:10,football:7,run:6,bike:5,pilates:3,recovery:1,sauna:1,work:2,other:1};
+const HIGH_LOAD=13;
+
+// ── Session titles ────────────────────────────────────────────
+const SESSION_TITLES={
+  run:{normal:"Run 30min + 3 sprints (10–12s)",taper:"Run 25min easy + 4 strides (pre-event prep)",recovery:"Active recovery: walk + mobility 30min [post-match]",notes:{normal:"Easy pace. Full walk between.",taper:"Relaxed — save legs for tomorrow.",recovery:"Gentle movement only."}},
+  bike:{normal:"Bike 35min Zone 2 + 6×10s spin-ups",taper:"Bike 25min Zone 1–2 (pre-event taper)",recovery:"Easy bike 20min Zone 1 [post-match]",notes:{normal:"Fast legs, low resistance.",taper:"Keep it easy — event tomorrow.",recovery:"Legs only, minimal effort."}},
+  pilates:{normal:"Pilates 20min",taper:"Pilates 15min — core only",recovery:"Mobility + stretch 15min",notes:{normal:"Core + control.",taper:"Gentle.",recovery:"Full body release."}},
+  recovery:{normal:"Active recovery: walk + mobility 45min",taper:"Active recovery: walk + mobility 45min",recovery:"Full rest day — walk only if feeling good",notes:{normal:"",taper:"",recovery:""}},
+};
+
+// ── Smart week generator ──────────────────────────────────────
+function generateWeek(settings,weekDates,eventOverrides={}){
+  const sched=settings.schedule||DEF_SCHEDULE;
+  const tasks=[];
+  const push=(date,time,title,category,notes="",planKey="")=>
+    tasks.push({id:uid(),date,time,title,category,notes,completed:false,planKey,createdAt:Date.now()});
+
+  // Build a map: dow → event config (merged with any one-time overrides)
+  const events={};
+  Object.entries(sched.teamEvents||{}).forEach(([d,e])=>{
+    const dow=parseInt(d);
+    const ov=eventOverrides[dow];
+    events[dow]={...e,...(ov||{})};
+  });
+
+  // Pass 1 — Team events
+  weekDates.forEach((date,dow)=>{
+    const ev=events[dow];
+    if(!ev?.enabled) return;
+    if(ev.type==="none") return;
+    const isMatch=ev.type==="match";
+    push(date,ev.time,isMatch?"Match day":"Team training",isMatch?"game":"football","",`team_${dow}`);
+  });
+
+  // Pass 2 — Work blocks
+  weekDates.forEach((date,dow)=>{
+    const w=(sched.work||{})[dow];
+    if(!w?.enabled) return;
+    push(date,w.start,"Work","work","",`work_${dow}`);
+    push(date,w.end,"Work ends","work","Free window",`wend_${dow}`);
+  });
+
+  // Helper: was yesterday a match?
+  const wasPrevMatch=dow=>{
+    const prevDow=(dow+6)%7;
+    const prevEv=events[prevDow];
+    return prevEv?.enabled&&prevEv.type==="match";
+  };
+  // Helper: is tomorrow a team event?
+  const isTomorrowEvent=dow=>{
+    const nextDow=(dow+1)%7;
+    const nextEv=events[nextDow];
+    return nextEv?.enabled&&nextEv.type!=="none";
+  };
+
+  // Pass 3 — Morning sessions with taper/recovery
+  weekDates.forEach((date,dow)=>{
+    const slot=(sched.morningSlots||{})[dow];
+    if(!slot?.enabled) return;
+    const cat=slot.category;
+    const prevMatch=wasPrevMatch(dow);
+    const tmrEvent=isTomorrowEvent(dow);
+    const mode=prevMatch?"recovery":tmrEvent?"taper":"normal";
+    const st=SESSION_TITLES[cat]||SESSION_TITLES.recovery;
+    push(date,slot.time,st[mode]||st.normal,prevMatch?"recovery":cat,st.notes?.[mode]||"",`morning_${dow}`);
+  });
+
+  // Post-pass: load check — if day load > HIGH_LOAD, downgrade hard morning session
+  weekDates.forEach((date,dow)=>{
+    const dayLoad=tasks.filter(t=>t.date===date).reduce((s,t)=>s+(LOAD[t.category]||1),0);
+    if(dayLoad>HIGH_LOAD){
+      const morn=tasks.find(t=>t.date===date&&t.planKey===`morning_${dow}`&&["run","bike"].includes(t.category));
+      if(morn){
+        morn.title="Active recovery: walk + mobility 30min [auto — high load]";
+        morn.category="recovery";
+        morn.notes="Load too high today — body needs recovery.";
+      }
+    }
+  });
+
+  return tasks;
+}
 
 // ── Coach (Claude) ────────────────────────────────────────────
 const SYSTEM=`You are Coach — a sharp, adaptive performance coach for a dedicated football player.
@@ -191,12 +300,97 @@ ACTIONS:
 {"type":"deleteTask","taskId":"..."}
 {"type":"completeTask","taskId":"..."}`;
 
-async function callCoach(msg,ctx){
-  const res=await fetch("/.netlify/functions/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
-  const data=await res.json();
-  if(typeof data.reply==="string") return data;
-  return {reply:"Try again.",actions:[]};
+// ── Local (offline) Coach ─────────────────────────────────────
+function localCoach(msg,ctx){
+  const m=msg.toLowerCase();
+  const actions=[];
+  let reply="";
 
+  // Find nearest upcoming game/team event
+  const nextGame=ctx.upcomingTasks.find(t=>["game","football"].includes(t.category)&&t.date>=ctx.today);
+  // Today's hard tasks
+  const todayHard=ctx.upcomingTasks.filter(t=>t.date===ctx.today&&["run","bike","football","game"].includes(t.category)&&!t.completed);
+
+  // ① Match cancelled
+  if(/cancelled|canceled|game.{0,6}off|match.{0,6}off/.test(m)){
+    if(nextGame){
+      actions.push({type:"deleteTask",taskId:nextGame.id});
+      actions.push({type:"addTask",task:{title:"Run 40min + 4 sprint strides [match cancelled]",date:nextGame.date,time:"06:00",category:"run",notes:"Match cancelled — quality session instead."}});
+      actions.push({type:"addTask",task:{title:"Football technique + fitness 50min [match cancelled]",date:nextGame.date,time:nextGame.time||"18:00",category:"football",notes:"Good session to replace the match."}});
+      reply=`Got it — match cancelled. Removed the ${nextGame.category==="game"?"game":"team session"} and added a quality run + technique session. Nothing wasted.`;
+    }else{reply="I couldn't find an upcoming match or team session to cancel. Check the Week view.";}
+    return{handled:true,reply,actions};
+  }
+
+  // ② Tired / sore / heavy legs
+  if(/tired|sore|heavy.{0,6}leg|exhausted|fatigued/.test(m)){
+    if(todayHard.length>0){
+      todayHard.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:"Easy walk + mobility 30min [recovery]",category:"recovery",notes:"Listening to the body — rest is training too."}}));
+      reply=`Smart call. Swapped ${todayHard.length} hard session${todayHard.length>1?"s":""} to easy recovery today. Come back stronger tomorrow.`;
+    }else{reply="No hard sessions left today — you're already in good shape. Rest up and go again tomorrow.";}
+    return{handled:true,reply,actions};
+  }
+
+  // ③ Rest day
+  if(/rest.{0,5}day|make.{0,10}rest|day.{0,5}off/.test(m)){
+    const todayTraining=ctx.upcomingTasks.filter(t=>t.date===ctx.today&&!["work","other"].includes(t.category)&&!t.completed);
+    todayTraining.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:"Rest day — walk only if feeling good",category:"recovery",notes:"Full rest. Body repairs during downtime."}}));
+    reply=todayTraining.length>0?`Done — converted ${todayTraining.length} session${todayTraining.length>1?"s":""} to rest. Recovery is part of the plan.`:"Today already looks like a light day. Enjoy the rest!";
+    return{handled:true,reply,actions};
+  }
+
+  // ④ What's next
+  if(/what.{0,10}next|what should|next session|next task/.test(m)){
+    const now=`${String(new Date().getHours()).padStart(2,"0")}:${String(new Date().getMinutes()).padStart(2,"0")}`;
+    const next=ctx.upcomingTasks.find(t=>t.date===ctx.today&&!t.completed&&t.time&&t.time>now&&t.category!=="work");
+    if(next){reply=`Your next session is **${next.title}** at ${next.time}${next.notes?` — ${next.notes}`:""}. Go get it! 💪`;}
+    else{const tomorrow=ctx.upcomingTasks.find(t=>t.date>ctx.today&&!t.completed&&t.category!=="work");if(tomorrow)reply=`Nothing more today — great work! Tomorrow: **${tomorrow.title}** at ${tomorrow.time||"morning"}.`;else reply="You're all clear for today. Rest up and check the Week view to plan ahead.";}
+    return{handled:true,reply,actions};
+  }
+
+  // ⑤ Week check
+  if(/week.{0,10}check|how.{0,10}week|week.{0,10}going|progress/.test(m)){
+    const stats=ctx.weekStats||{};const targets=ctx.weekTargets||{};
+    const lines=Object.entries(targets).filter(([k])=>k!=="work").map(([k,t])=>{const s=stats[k]||{done:0,total:0};return`${CATS[k]?.emoji||""} ${CATS[k]?.label||k}: ${s.done}/${t}`;});
+    reply=`Week check:\n${lines.join("\n")}\n\nKeep going — consistency beats perfection.`;
+    return{handled:true,reply,actions};
+  }
+
+  // ⑥ Game / match scheduled
+  if(/i have a (game|match)|game (on|tomorrow|saturday|thursday)|match (on|tomorrow|saturday|thursday)/.test(m)){
+    // Parse which day from message, default to tomorrow
+    const now=new Date();
+    let targetDate=isoDate(addDays(now,1));
+    if(/saturday/.test(m)){const d=new Date();d.setDate(d.getDate()+((6-d.getDay()+7)%7||7));targetDate=isoDate(d);}
+    if(/thursday/.test(m)){const d=new Date();d.setDate(d.getDate()+((4-d.getDay()+7)%7||7));targetDate=isoDate(d);}
+    const prevDate=isoDate(addDays(parseDate(targetDate),-1));
+    const afterDate=isoDate(addDays(parseDate(targetDate),1));
+    actions.push({type:"addTask",task:{title:"Match day",date:targetDate,time:"10:00",category:"game",notes:"Game day — fuel well, warm up properly."}});
+    actions.push({type:"addTask",task:{title:"Fuel + hydration check",date:targetDate,time:"08:00",category:"other",notes:"Pre-match nutrition."}});
+    actions.push({type:"addTask",task:{title:"Active recovery: walk + mobility 30min [post-match]",date:afterDate,time:"06:10",category:"recovery",notes:"Essential after a game."}});
+    // Taper the day before — find hard morning tasks
+    const prevHard=ctx.upcomingTasks.filter(t=>t.date===prevDate&&["run","bike"].includes(t.category));
+    prevHard.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:t.title.replace(/\d+min/,"25min").replace(/sprint.*$/,"strides (pre-match taper)"),notes:"Easy day — big game tomorrow."}}));
+    reply=`Match added for ${targetDate}. I've tapered ${prevHard.length>0?`your ${prevDate} session and added`:"and added"} post-match recovery. Good luck! 🏟️`;
+    return{handled:true,reply,actions};
+  }
+
+  return{handled:false};
+}
+
+async function callCoach(msg,ctx){
+  // Try local engine first (instant, no network needed)
+  const local=localCoach(msg,ctx);
+  if(local.handled) return local;
+
+  // Fall back to cloud Coach
+  try{
+    const res=await fetch("/.netlify/functions/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
+    const data=await res.json();
+    if(typeof data.reply==="string") return data;
+  }catch{}
+
+  return{reply:"I'm offline right now. Try: \"match cancelled\", \"tired today\", \"rest day\", \"what's next\", or \"week check\" — I can handle those without a connection.",actions:[]};
 }
 
 // ── Base components ───────────────────────────────────────────
@@ -391,9 +585,21 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
 }
 
 // ── Week View ─────────────────────────────────────────────────
-function WeekView({tasks,onToggleTask,onEditTask,onAddForDate}){
+function WeekView({tasks,onToggleTask,onEditTask,onAddForDate,onPlanWeek,settings}){
   const weekDates=getWeekDates(),todayStr=todayISO();
   const [weekCat,setWeekCat]=useState("all");
+  const [planOpen,setPlanOpen]=useState(false);
+  // Event overrides for this week's plan: dow→{type,time}
+  const defaultOverrides=useMemo(()=>{
+    const ev=settings?.schedule?.teamEvents||{};
+    const ov={};
+    Object.entries(ev).forEach(([d,e])=>{if(e.enabled)ov[parseInt(d)]={...e};});
+    return ov;
+  },[settings]);
+  const [eventOv,setEventOv]=useState({});
+  // Initialize overrides when panel opens
+  const openPlan=()=>{setEventOv({...defaultOverrides});setPlanOpen(true);};
+
   const weekCatsPresent=useMemo(()=>{
     const s=new Set();
     tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").forEach(t=>s.add(t.category));
@@ -403,6 +609,7 @@ function WeekView({tasks,onToggleTask,onEditTask,onAddForDate}){
   return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
       <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1}}>THIS WEEK</div>
+      <${Btn} onClick=${openPlan} variant="accent" style=${{fontSize:11,padding:"6px 12px"}}>⚡ Plan Week<//>
     </div>
     <div style=${{display:"flex",gap:6,overflowX:"auto",marginBottom:14,scrollbarWidth:"none",paddingBottom:2}}>
       <${Chip} active=${weekCat==="all"} onClick=${()=>setWeekCat("all")}>All<//>
@@ -436,7 +643,50 @@ function WeekView({tasks,onToggleTask,onEditTask,onAddForDate}){
           </div>`}
       </div>`;
     })}
-  </div>`;
+  </div>
+
+  ${planOpen?html`<div style=${{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(8px)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick=${()=>setPlanOpen(false)}>
+    <div style=${{background:"#0b0d1c",borderRadius:"22px 22px 0 0",border:`1px solid ${T.border}`,
+      padding:"16px 16px calc(16px + env(safe-area-inset-bottom))",
+      width:"100%",maxWidth:580,maxHeight:"85vh",overflowY:"auto",
+      boxShadow:"0 -20px 60px rgba(0,0,0,0.6)"}} onClick=${e=>e.stopPropagation()}>
+      <div style=${{width:40,height:4,background:T.border,borderRadius:99,margin:"0 auto 14px"}}/>
+      <div style=${{fontWeight:900,fontSize:18,color:T.text,marginBottom:6}}>⚡ Plan This Week</div>
+      <div style=${{fontSize:12,color:T.muted,marginBottom:16,lineHeight:1.55}}>
+        Confirm your events for this week. The schedule will automatically taper the day before and add recovery after matches.
+      </div>
+
+      ${Object.entries(eventOv).map(([d,ev])=>{
+        const dow=parseInt(d);
+        return html`<div key=${dow} style=${{...S.card,marginBottom:10}}>
+          <div style=${{fontSize:12,fontWeight:900,color:T.text,marginBottom:8}}>${DOW_LABELS[dow]}</div>
+          <div style=${{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+            ${["training","match","none"].map(t=>html`<${Chip} key=${t}
+              active=${ev.type===t||(t==="none"&&!ev.enabled)}
+              onClick=${()=>setEventOv(p=>({...p,[dow]:{...ev,type:t,enabled:t!=="none"}}))}
+            >${t==="match"?"🏟️ Match":t==="training"?"⚽ Training":"😴 Rest/Skip"}<//>` )}
+          </div>
+          ${ev.enabled?html`<div style=${{display:"flex",alignItems:"center",gap:8}}>
+            <span style=${{fontSize:11,color:T.muted,fontWeight:700}}>Time</span>
+            <input type="time" value=${ev.time||"18:00"} onInput=${e=>setEventOv(p=>({...p,[dow]:{...ev,time:e.target.value}}))}
+              style=${{...S.input,width:110,padding:"5px 8px",fontSize:12}}/>
+          </div>`:""}
+        </div>`;
+      })}
+
+      ${Object.keys(eventOv).length===0?html`
+        <div style=${{color:T.muted,fontSize:13,textAlign:"center",padding:"16px 0"}}>
+          No team events configured. Set them in Settings → My Schedule → Team Events.
+        </div>`:""}
+
+      <div style=${{display:"flex",gap:10,marginTop:8}}>
+        <${Btn} onClick=${()=>setPlanOpen(false)} variant="ghost" style=${{flex:1}}>Cancel<//>
+        <${Btn} onClick=${()=>{onPlanWeek(eventOv);setPlanOpen(false);}} variant="accent" style=${{flex:2}}>
+          Generate Week 🗓
+        <//>
+      </div>
+    </div>
+  </div>`:""}`;
 }
 
 // ── Habits View ───────────────────────────────────────────────
@@ -588,22 +838,125 @@ function StatsView({tasks,habits,habitLogs,settings}){
 }
 
 // ── Settings View ─────────────────────────────────────────────
+const DOW_LABELS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const TRAINING_CATS=["run","bike","pilates","recovery","football"];
+
 function SettingsView({settings,onUpdate,onExport,onReset,syncStatus}){
   const [wt,setWt]=useState({...settings.weekTargets});
+  const [sched,setSched]=useState({...DEF_SCHEDULE,...(settings.schedule||{})});
+  const [openSection,setOpenSection]=useState(null);
+
+  const updateSched=ns=>{setSched(ns);onUpdate({schedule:ns});};
+
+  const updateWork=(dow,field,val)=>{
+    const ns={...sched,work:{...sched.work,[dow]:{...sched.work[dow],[field]:val}}};
+    updateSched(ns);
+  };
+  const updateMorn=(dow,field,val)=>{
+    const ns={...sched,morningSlots:{...sched.morningSlots,[dow]:{...sched.morningSlots[dow],[field]:val}}};
+    updateSched(ns);
+  };
+  const updateTeam=(dow,field,val)=>{
+    const cur=sched.teamEvents[dow]||{enabled:false,time:"18:00",type:"training"};
+    const ns={...sched,teamEvents:{...sched.teamEvents,[dow]:{...cur,[field]:val}}};
+    updateSched(ns);
+  };
+
+  const SectionHeader=({id,label,icon})=>html`
+    <div onClick=${()=>setOpenSection(p=>p===id?null:id)} style=${{
+      display:"flex",alignItems:"center",justifyContent:"space-between",
+      padding:"10px 0",cursor:"pointer",userSelect:"none"
+    }}>
+      <span style=${{fontSize:13,fontWeight:800,color:T.text}}>${icon} ${label}</span>
+      <span style=${{color:T.muted,fontSize:14,transition:"transform 0.2s",
+        transform:openSection===id?"rotate(90deg)":"none"}}>›</span>
+    </div>`;
+
   return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
     <div style=${{fontSize:22,fontWeight:900,color:T.text,marginBottom:16}}>Settings</div>
 
+    <!-- My Schedule card -->
     <div style=${{...S.card,marginBottom:10}}>
-      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:4}}>LOCK SCREEN WIDGET SYNC</div>
-      <div style=${{fontSize:12,color:T.muted,marginBottom:10,lineHeight:1.55}}>
-        Your schedule syncs automatically to the Scriptable lock screen widget whenever you make a change.
-        ${syncStatus?html`<br/><span style=${{color:syncStatus==="ok"?T.green:T.red}}>${syncStatus==="ok"?"✓ Synced":"⚠ Sync unavailable (local mode)"}</span>`:""}
-      </div>
-      <${Btn} onClick=${()=>{fetch(SYNC_URL).then(r=>r.json()).then(()=>showToast("Widget sync working ✅")).catch(()=>showToast("Not syncing — deploy to Netlify first"));}} variant="ghost" style=${{fontSize:12}}>
-        Test widget sync
-      <//>
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:2}}>MY SCHEDULE</div>
+
+      <!-- Work Hours -->
+      <${SectionHeader} id="work" label="Work Hours" icon="💼"/>
+      ${openSection==="work"?html`<div style=${{marginBottom:8}}>
+        ${[0,1,2,3,4,5,6].map(dow=>html`
+          <div key=${dow} style=${{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>
+            <div style=${{width:32,fontSize:11,fontWeight:800,color:T.muted}}>${DOW_LABELS[dow]}</div>
+            <button onClick=${()=>updateWork(dow,"enabled",!(sched.work[dow]?.enabled))} style=${{
+              width:36,height:20,borderRadius:99,border:"none",cursor:"pointer",flexShrink:0,
+              background:sched.work[dow]?.enabled?T.green:"rgba(255,255,255,0.12)",
+              transition:"background 0.2s"
+            }}/>
+            ${sched.work[dow]?.enabled?html`
+              <input type="time" value=${sched.work[dow]?.start||""} onInput=${e=>updateWork(dow,"start",e.target.value)}
+                style=${{...S.input,width:90,padding:"5px 8px",fontSize:12}}/>
+              <span style=${{color:T.muted,fontSize:11}}>→</span>
+              <input type="time" value=${sched.work[dow]?.end||""} onInput=${e=>updateWork(dow,"end",e.target.value)}
+                style=${{...S.input,width:90,padding:"5px 8px",fontSize:12}}/>`
+            :html`<span style=${{fontSize:11,color:T.muted}}>Off</span>`}
+          </div>`)}
+      </div>`:""}
+
+      <div style=${{height:1,background:T.border,margin:"2px 0"}}/>
+
+      <!-- Morning Activities -->
+      <${SectionHeader} id="morning" label="Morning Activities" icon="🌅"/>
+      ${openSection==="morning"?html`<div style=${{marginBottom:8}}>
+        ${[0,1,2,3,4,5,6].map(dow=>{
+          const slot=sched.morningSlots[dow]||{enabled:false,time:"06:00",category:"run"};
+          return html`<div key=${dow} style=${{padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+            <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:slot.enabled?6:0}}>
+              <div style=${{width:32,fontSize:11,fontWeight:800,color:T.muted}}>${DOW_LABELS[dow]}</div>
+              <button onClick=${()=>updateMorn(dow,"enabled",!slot.enabled)} style=${{
+                width:36,height:20,borderRadius:99,border:"none",cursor:"pointer",flexShrink:0,
+                background:slot.enabled?T.green:"rgba(255,255,255,0.12)",transition:"background 0.2s"
+              }}/>
+              ${slot.enabled?html`<input type="time" value=${slot.time||"06:00"} onInput=${e=>updateMorn(dow,"time",e.target.value)}
+                style=${{...S.input,width:90,padding:"5px 8px",fontSize:12}}/>`
+              :html`<span style=${{fontSize:11,color:T.muted}}>No session</span>`}
+            </div>
+            ${slot.enabled?html`<div style=${{display:"flex",gap:5,flexWrap:"wrap",paddingLeft:40}}>
+              ${TRAINING_CATS.map(k=>html`<${Chip} key=${k} active=${slot.category===k}
+                onClick=${()=>updateMorn(dow,"category",k)}>${CATS[k]?.emoji} ${CATS[k]?.label}<//>` )}
+            </div>`:""}
+          </div>`;
+        })}
+      </div>`:""}
+
+      <div style=${{height:1,background:T.border,margin:"2px 0"}}/>
+
+      <!-- Team Events -->
+      <${SectionHeader} id="team" label="Team Training & Matches" icon="⚽"/>
+      ${openSection==="team"?html`<div style=${{marginBottom:8}}>
+        <div style=${{fontSize:11,color:T.muted,marginBottom:8,lineHeight:1.5}}>
+          Set the days you normally have team training or matches. The scheduler will automatically taper the day before and add recovery after matches.
+        </div>
+        ${[0,1,2,3,4,5,6].map(dow=>{
+          const ev=sched.teamEvents[dow]||{enabled:false,time:"18:00",type:"training"};
+          return html`<div key=${dow} style=${{padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+            <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:ev.enabled?6:0}}>
+              <div style=${{width:32,fontSize:11,fontWeight:800,color:T.muted}}>${DOW_LABELS[dow]}</div>
+              <button onClick=${()=>updateTeam(dow,"enabled",!ev.enabled)} style=${{
+                width:36,height:20,borderRadius:99,border:"none",cursor:"pointer",flexShrink:0,
+                background:ev.enabled?T.accent:"rgba(255,255,255,0.12)",transition:"background 0.2s"
+              }}/>
+              ${ev.enabled?html`<input type="time" value=${ev.time||"18:00"} onInput=${e=>updateTeam(dow,"time",e.target.value)}
+                style=${{...S.input,width:90,padding:"5px 8px",fontSize:12}}/>`
+              :html`<span style=${{fontSize:11,color:T.muted}}>No event</span>`}
+            </div>
+            ${ev.enabled?html`<div style=${{display:"flex",gap:6,paddingLeft:40}}>
+              ${["training","match"].map(t=>html`<${Chip} key=${t} active=${ev.type===t}
+                onClick=${()=>updateTeam(dow,"type",t)}>${t==="match"?"🏟️ Match":"⚽ Training"}<//>` )}
+            </div>`:""}
+          </div>`;
+        })}
+      </div>`:""}
     </div>
 
+    <!-- Weekly Targets -->
     <div style=${{...S.card,marginBottom:10}}>
       <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:12}}>WEEKLY TARGETS</div>
       ${Object.entries(wt).map(([k,v])=>html`
@@ -615,6 +968,18 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus}){
             <button onClick=${()=>{const nv=v+1;const nwt={...wt,[k]:nv};setWt(nwt);onUpdate({weekTargets:nwt});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>+</button>
           </div>
         </div>`)}
+    </div>
+
+    <!-- Widget sync -->
+    <div style=${{...S.card,marginBottom:10}}>
+      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:4}}>LOCK SCREEN WIDGET SYNC</div>
+      <div style=${{fontSize:12,color:T.muted,marginBottom:10,lineHeight:1.55}}>
+        Your schedule syncs automatically to the Scriptable lock screen widget whenever you make a change.
+        ${syncStatus?html`<br/><span style=${{color:syncStatus==="ok"?T.green:T.red}}>${syncStatus==="ok"?"✓ Synced":"⚠ Sync unavailable (local mode)"}</span>`:""}
+      </div>
+      <${Btn} onClick=${()=>{fetch(SYNC_URL).then(r=>r.json()).then(()=>showToast("Widget sync working ✅")).catch(()=>showToast("Not syncing — deploy to Netlify first"));}} variant="ghost" style=${{fontSize:12}}>
+        Test widget sync
+      <//>
     </div>
 
     <div style=${{display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -797,8 +1162,8 @@ function App(){
 
   useEffect(()=>{
     loadState().then(saved=>{
-      if(saved) setState({tasks:[],habits:[],habitLogs:{},goals:[],settings:DEF_SETTINGS,...saved,settings:{...DEF_SETTINGS,...saved?.settings}});
-      else setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});
+      if(saved) setState({tasks:[],habits:[],habitLogs:{},goals:[],settings:DEF_SETTINGS,...saved,settings:{...DEF_SETTINGS,...saved?.settings,schedule:{...DEF_SCHEDULE,...saved?.settings?.schedule}}});
+      else setState({tasks:generateWeek(DEF_SETTINGS,getWeekDates()),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});
       setReady(true);
       // Check sync
       fetch(SYNC_URL).then(()=>setSyncStatus("ok")).catch(()=>setSyncStatus("offline"));
@@ -860,13 +1225,19 @@ function App(){
       </header>
 
       ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)}/>`:""}
-      ${view==="week"?html`<${WeekView} tasks=${state.tasks} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
+      ${view==="week"?html`<${WeekView} tasks=${state.tasks} settings=${state.settings} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}
+        onPlanWeek=${eventOv=>{
+          const week=getWeekDates();
+          const newTasks=generateWeek(state.settings,week,eventOv);
+          mut(s=>({tasks:[...s.tasks.filter(t=>!week.includes(t.date)),...newTasks]}));
+          showToast(`✅ ${newTasks.length} tasks generated for this week`);
+        }}/>`:""}
       ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
       ${view==="stats"?html`<${StatsView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} settings=${state.settings}/>`:""}
       ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
         onExport=${()=>{const b=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`sk-backup-${todayISO()}.json`;a.click();}}
-        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});}}/>`:""}
+        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:generateWeek(DEF_SETTINGS,getWeekDates()),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});}}/>`:""}
 
       <!-- Bottom nav -->
       <nav style=${{position:"fixed",left:0,right:0,bottom:0,zIndex:25,display:"flex",gap:4,
