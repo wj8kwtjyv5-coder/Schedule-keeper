@@ -48,6 +48,7 @@ const T = {
   green:"#6ee7b7",greenGlow:"rgba(110,231,183,0.10)",greenBorder:"rgba(110,231,183,0.22)",
   red:"#ff6a7a",redGlow:"rgba(255,106,122,0.10)",redBorder:"rgba(255,106,122,0.22)",
   purple:"#c4b5fd",
+  yellow:"#fbbf24",
 };
 const CATS = {
   run:     {emoji:"🏃",color:T.blue,  glow:T.blueGlow,  border:T.blueBorder,  label:"Run"},
@@ -375,6 +376,71 @@ function localCoach(msg,ctx){
     return{handled:true,reply,actions};
   }
 
+  // ⑦ Plan my week
+  if(/plan.{0,10}week|generate.{0,5}week|build.{0,5}week|create.{0,5}week|schedule.{0,5}week/.test(m)){
+    const wDates=ctx.weekDates||getWeekDates();
+    const stgs=ctx.settings||{};
+    // Remove existing unfinished non-work week tasks
+    const weekTaskIds=ctx.upcomingTasks.filter(t=>wDates.includes(t.date)&&t.category!=="work"&&!t.completed).map(t=>t.id);
+    weekTaskIds.forEach(id=>actions.push({type:"deleteTask",taskId:id}));
+    // Generate fresh week from schedule template
+    const newTasks=generateWeek(stgs,wDates);
+    newTasks.forEach(task=>actions.push({type:"addTask",task}));
+    reply=`Week planned! Cleared ${weekTaskIds.length} old sessions and generated ${newTasks.length} fresh ones from your schedule template. Review in the Week view and adjust anything.`;
+    return{handled:true,reply,actions};
+  }
+
+  // ⑧ Auto-adjust (load + health aware)
+  if(/auto.{0,6}adjust|adjust.{0,5}schedule|optimize.{0,5}week|rebalance|fix.{0,5}week/.test(m)){
+    const wDates=ctx.weekDates||getWeekDates();
+    let adjusted=0;
+    const h=ctx.health||{};
+    const hrElevated=h.resting_hr&&h.baseline_hr&&h.resting_hr>h.baseline_hr+7;
+    const hrvLow=h.hrv&&h.hrv<40;
+    const poorSleep=h.sleep_hours&&h.sleep_hours<6;
+    // If health signals recovery needed, downgrade today's hard sessions
+    if(hrElevated||hrvLow||poorSleep){
+      const flags=[(hrElevated?"elevated HR":null),(hrvLow?"low HRV":null),(poorSleep?"poor sleep":null)].filter(Boolean).join(", ");
+      const todayHardH=ctx.upcomingTasks.filter(t=>t.date===ctx.today&&["run","bike"].includes(t.category)&&!t.completed);
+      todayHardH.forEach(t=>{
+        actions.push({type:"updateTask",taskId:t.id,changes:{title:"Active recovery: 30min easy walk [auto]",category:"recovery",notes:`Health data flagged: ${flags}. Body first.`}});
+        adjusted++;
+      });
+    }
+    // Load-balance rest of week
+    wDates.filter(d=>d>ctx.today).forEach(date=>{
+      const dayTasks=ctx.upcomingTasks.filter(t=>t.date===date);
+      const dayLoad=dayTasks.reduce((s,t)=>s+(LOAD[t.category]||1),0);
+      if(dayLoad>HIGH_LOAD){
+        const hard=dayTasks.find(t=>["run","bike"].includes(t.category));
+        if(hard){
+          actions.push({type:"updateTask",taskId:hard.id,changes:{title:hard.title.replace(/\d+min/,"25min")+" [auto-adjusted]",notes:"High load day — reduced duration."}});
+          adjusted++;
+        }
+      }
+    });
+    reply=adjusted>0
+      ?`Auto-adjusted ${adjusted} session${adjusted>1?"s":""} based on load balance${(hrElevated||hrvLow||poorSleep)?" and Watch health data":""}.`
+      :"Your week looks well-balanced — no changes needed. Keep that consistency!";
+    return{handled:true,reply,actions};
+  }
+
+  // ⑨ Health check via Watch data
+  if(/health.{0,10}check|how.{0,5}recover|recovery.{0,5}score|hrv|resting.{0,5}hr|heart.{0,5}rate/.test(m)){
+    const h=ctx.health||{};
+    if(!h.resting_hr&&!h.hrv&&!h.sleep_hours){
+      reply="No Watch health data yet. Install the healthSync.js Scriptable script and set it as a morning Personal Automation — then your Apple Watch data will flow in automatically.";
+    }else{
+      const hrStatus=h.resting_hr?(h.resting_hr<55?"low (great)":h.resting_hr<65?"normal":"elevated ⚠️"):"—";
+      const hrvStatus=h.hrv?(h.hrv>60?"excellent":h.hrv>45?"good":h.hrv>30?"moderate":"low ⚠️"):"—";
+      const sleepStatus=h.sleep_hours?(h.sleep_hours>=7.5?"great":h.sleep_hours>=6?"ok":"short ⚠️"):"—";
+      const readyScore=((h.hrv||50)/80*40)+((h.sleep_hours||7)/9*35)+((Math.max(0,70-(h.resting_hr||65)))/20*25);
+      const rdy=Math.min(100,Math.round(readyScore));
+      reply=`Watch data (${h.date||"today"}):\n❤️ Resting HR: ${h.resting_hr||"—"}bpm (${hrStatus})\n🧠 HRV: ${h.hrv||"—"}ms (${hrvStatus})\n😴 Sleep: ${h.sleep_hours||"—"}h (${sleepStatus})\n\n⚡ Readiness: ${rdy}%\n\n${rdy>=75?"Green light — train hard today.":rdy>=50?"Moderate readiness — keep intensity manageable.":"Body needs recovery — consider an easy day."}`;
+    }
+    return{handled:true,reply,actions};
+  }
+
   return{handled:false};
 }
 
@@ -390,7 +456,7 @@ async function callCoach(msg,ctx){
     if(typeof data.reply==="string") return data;
   }catch{}
 
-  return{reply:"I'm offline right now. Try: \"match cancelled\", \"tired today\", \"rest day\", \"what's next\", or \"week check\" — I can handle those without a connection.",actions:[]};
+  return{reply:"I'm offline. Local commands: \"plan my week\", \"auto-adjust\", \"match cancelled\", \"tired today\", \"rest day\", \"what's next\", \"week check\", \"health check\"",actions:[]};
 }
 
 // ── Base components ───────────────────────────────────────────
@@ -495,7 +561,7 @@ function TaskItem({task,onToggle,onEdit,highlight=false}){
 }
 
 // ── Today View ────────────────────────────────────────────────
-function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenCoach}){
+function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenCoach,healthData}){
   const todayStr=todayISO(),now=new Date(),curTime=`${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
   const [searchQ,setSearchQ]=useState("");
   const todayTasks=useMemo(()=>tasks.filter(t=>t.date===todayStr&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")),[tasks,todayStr]);
@@ -534,6 +600,32 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
         </div>
       </div>
     </div>
+
+    ${healthData?html`
+      <div style=${{background:T.surface,border:`1px solid ${T.border}`,borderRadius:16,padding:"10px 14px",marginBottom:12,display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+        <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1,flexBasis:"100%",marginBottom:2}}>APPLE WATCH · ${healthData.date||"today"}</div>
+        ${healthData.resting_hr?html`<div style=${{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+          <div style=${{fontSize:16}}>❤️</div>
+          <div style=${{fontSize:13,fontWeight:900,color:healthData.resting_hr>65?T.accent:T.green}}>${healthData.resting_hr}</div>
+          <div style=${{fontSize:9,color:T.muted,fontWeight:700}}>BPM</div>
+        </div>`:""}
+        ${healthData.hrv?html`<div style=${{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+          <div style=${{fontSize:16}}>🧠</div>
+          <div style=${{fontSize:13,fontWeight:900,color:healthData.hrv<35?T.accent:healthData.hrv<50?T.yellow:T.green}}>${healthData.hrv}</div>
+          <div style=${{fontSize:9,color:T.muted,fontWeight:700}}>HRV ms</div>
+        </div>`:""}
+        ${healthData.sleep_hours?html`<div style=${{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+          <div style=${{fontSize:16}}>😴</div>
+          <div style=${{fontSize:13,fontWeight:900,color:healthData.sleep_hours<6?T.accent:healthData.sleep_hours<7?T.yellow:T.green}}>${healthData.sleep_hours}h</div>
+          <div style=${{fontSize:9,color:T.muted,fontWeight:700}}>SLEEP</div>
+        </div>`:""}
+        ${(healthData.workouts||[]).slice(0,2).map((w,i)=>html`<div key=${i} style=${{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+          <div style=${{fontSize:16}}>${w.type==="Running"?"🏃":w.type==="Cycling"?"🚴":w.type==="Soccer"||w.type==="Football"?"⚽":"🏋️"}</div>
+          <div style=${{fontSize:13,fontWeight:900,color:T.blue}}>${w.duration_min}m</div>
+          <div style=${{fontSize:9,color:T.muted,fontWeight:700}}>${(w.type||"").toUpperCase().slice(0,6)}</div>
+        </div>`)}
+        <div style=${{marginLeft:"auto",cursor:"pointer",fontSize:11,color:T.blue,fontWeight:700}} onClick=${onOpenCoach}>Ask Coach →</div>
+      </div>`:""}
 
     ${total===0?html`
       <div style=${{border:`1px dashed ${T.border}`,borderRadius:16,padding:24,textAlign:"center",marginBottom:14,background:T.surface,cursor:"pointer"}} onClick=${onOpenCoach}>
@@ -1075,8 +1167,8 @@ function HabitModal({habit,onSave,onDelete,onClose}){
 }
 
 // ── Coach Panel ───────────────────────────────────────────────
-function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActions}){
-  const [msgs,setMsgs]=useState([{role:"assistant",content:"Hey! I'm Coach 🤖\n\nTell me what's changed:\n• \"Match cancelled\" — I'll swap it for quality training\n• \"I have a game tomorrow at 7pm\"\n• \"I feel tired today\"\n• \"What should I do next?\""}]);
+function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,healthData,onApplyActions}){
+  const [msgs,setMsgs]=useState([{role:"assistant",content:"Hey! I'm Coach 🤖\n\nWhat I can do:\n• \"Plan my week\" — generate a full week from your template\n• \"Auto-adjust\" — rebalance load + Watch health data\n• \"Match cancelled\" — swap for quality training\n• \"Health check\" — see your Watch recovery data\n• \"Tired today\", \"Rest day\", \"What's next?\""}]);
   const [input,setInput]=useState(""); const [busy,setBusy]=useState(false);
   const bodyRef=useRef(null); const inputRef=useRef(null);
   useEffect(()=>{ if(isOpen) setTimeout(()=>inputRef.current?.focus(),100); },[isOpen]);
@@ -1086,17 +1178,18 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
     const now=new Date(),todayStr=todayISO(),weekDates=getWeekDates();
     const upcoming=tasks.filter(t=>t.date>=todayStr).sort((a,b)=>(`${a.date}${a.time||""}`).localeCompare(`${b.date}${b.time||""}`)).slice(0,60).map(t=>({id:t.id,title:t.title,date:t.date,time:t.time||null,category:t.category,completed:t.completed,planKey:t.planKey||null,notes:t.notes||""}));
     const weekStats={};tasks.filter(t=>weekDates.includes(t.date)).forEach(t=>{if(!weekStats[t.category])weekStats[t.category]={done:0,total:0};weekStats[t.category].total++;if(t.completed)weekStats[t.category].done++;});
-    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habits.filter(h=>h.days.includes(now.getDay())).map(h=>({id:h.id,title:h.title,done:!!habitLogs[`${h.id}_${todayStr}`]}))};
-  },[tasks,habits,habitLogs,settings]);
+    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habits.filter(h=>h.days.includes(now.getDay())).map(h=>({id:h.id,title:h.title,done:!!habitLogs[`${h.id}_${todayStr}`]})),weekDates,settings,health:healthData||null};
+  },[tasks,habits,habitLogs,settings,healthData]);
 
   const QUICK=[
+    {l:"Plan week 📅",p:"Plan my week"},
+    {l:"Auto-adjust ⚡",p:"Auto-adjust my schedule"},
+    {l:"Health check 💓",p:"Health check"},
     {l:"Match cancelled ❌",p:"Match cancelled"},
-    {l:"Game tomorrow 🏟️",p:"I have a game tomorrow evening"},
     {l:"Tired today 😴",p:"I feel tired and heavy legged today"},
-    {l:"What's next? ⚡",p:"What should I do next?"},
+    {l:"What's next?",p:"What should I do next?"},
     {l:"Week check 📊",p:"How is my week going so far?"},
     {l:"Rest day 🌙",p:"Make today a rest day"},
-    {l:"Add sprints 💨",p:"Add a sprint session today at 6am"},
   ];
   const send=async(text)=>{
     const t=text.trim(); if(!t||busy) return;
@@ -1158,6 +1251,7 @@ function App(){
   const [view,setView]=useState("today"); const [coachOpen,setCoachOpen]=useState(false);
   const [taskModal,setTaskModal]=useState(null); const [habitModal,setHabitModal]=useState(null);
   const [syncStatus,setSyncStatus]=useState(null);
+  const [healthData,setHealthData]=useState(null);
   const toastReady=useCallback(fn=>{ _toast.fn=fn; },[]);
 
   useEffect(()=>{
@@ -1167,6 +1261,21 @@ function App(){
       setReady(true);
       // Check sync
       fetch(SYNC_URL).then(()=>setSyncStatus("ok")).catch(()=>setSyncStatus("offline"));
+      // Load latest Watch health snapshot and auto-complete matching workout tasks
+      fetch("/.netlify/functions/health").then(r=>r.ok?r.json():null).then(d=>{
+        if(!d)return;
+        if(d.resting_hr||d.hrv||d.sleep_hours)setHealthData(d);
+        // Auto-complete tasks for workouts Watch recorded today
+        if(Array.isArray(d.autoCompleteActions)&&d.autoCompleteActions.length>0&&d.date===new Date().toISOString().slice(0,10)){
+          setState(p=>{
+            let tasks=[...p.tasks];
+            for(const a of d.autoCompleteActions){
+              if(a.type==="completeByCategory"){const t=tasks.find(x=>x.date===a.date&&x.category===a.category&&!x.completed);if(t)tasks=tasks.map(x=>x.id===t.id?{...x,completed:true,completedAt:Date.now(),notes:(x.notes?x.notes+"\n":"")+`Auto-completed from Apple Watch (${a.duration_min}min)`}:x);}
+            }
+            return{...p,tasks};
+          });
+        }
+      }).catch(()=>{});
     });
   },[]);
 
@@ -1186,6 +1295,7 @@ function App(){
       else if(a.type==="updateTask"&&a.taskId) tasks=tasks.map(t=>t.id===a.taskId?{...t,...a.changes}:t);
       else if(a.type==="deleteTask"&&a.taskId) tasks=tasks.filter(t=>t.id!==a.taskId);
       else if(a.type==="completeTask"&&a.taskId) tasks=tasks.map(t=>t.id===a.taskId?{...t,completed:true,completedAt:Date.now()}:t);
+      else if(a.type==="completeByCategory"&&a.date&&a.category){const t=tasks.find(x=>x.date===a.date&&x.category===a.category&&!x.completed);if(t)tasks=tasks.map(x=>x.id===t.id?{...x,completed:true,completedAt:Date.now(),notes:(x.notes?x.notes+"\n":"")+`Auto-completed from Apple Watch (${a.duration_min}min)`}:x);}
     }
     return{tasks};
   }),[mut]);
@@ -1224,7 +1334,7 @@ function App(){
         </div>
       </header>
 
-      ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)}/>`:""}
+      ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenCoach=${()=>setCoachOpen(true)} healthData=${healthData}/>`:""}
       ${view==="week"?html`<${WeekView} tasks=${state.tasks} settings=${state.settings} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}
         onPlanWeek=${eventOv=>{
           const week=getWeekDates();
@@ -1269,7 +1379,7 @@ function App(){
 
     <${CoachPanel} isOpen=${coachOpen} onClose=${()=>setCoachOpen(false)}
       tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs}
-      settings=${state.settings} onApplyActions=${applyActions}/>
+      settings=${state.settings} healthData=${healthData} onApplyActions=${applyActions}/>
 
     <${Toast} onReady=${toastReady}/>
   </div>`;
