@@ -586,87 +586,112 @@ ACTIONS:
 
 // ── Local (offline) Coach ─────────────────────────────────────
 function localCoach(msg,ctx){
-  const m=msg.toLowerCase();
+  const m=msg.toLowerCase().trim();
   const actions=[];
-  let reply="";
-  const nextGame=ctx.upcomingTasks.find(t=>["game","football"].includes(t.category)&&t.date>=ctx.today);
-  const todayHard=ctx.upcomingTasks.filter(t=>t.date===ctx.today&&["run","bike","football","game"].includes(t.category)&&!t.completed);
+  const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+  const rot=arr=>arr[Math.floor(Date.now()/86400000)%arr.length];
+  const today=ctx.today;
+  const upcoming=ctx.upcomingTasks||[];
+  const todayTasks=upcoming.filter(t=>t.date===today);
+  const todayHard=todayTasks.filter(t=>["run","bike","football","game"].includes(t.category)&&!t.completed);
+  const todayTraining=todayTasks.filter(t=>!["work","other"].includes(t.category)&&!t.completed);
+  const weekDates=ctx.weekDates||getWeekDates();
+  const nextGame=upcoming.find(t=>["game","football"].includes(t.category)&&t.date>=today);
+  const hl=ctx.healthLog||{};
+  const recovery=calcRecovery(hl);
+  const macros=ctx.macroTargets;
+  const consumed=ctx.todayMacros||{cal:0,protein:0,carbs:0,fat:0};
+  const profile=ctx.profile||{};
+  const callouts=ctx.callouts||[];
+  const habitStreaks=ctx.habitStreaks||{};
+  const todayHabits=ctx.todayHabits||[];
+  const bodyZones=ctx.bodyZones||{};
+  const quote=rot(BIBLE_QUOTES);
+  const pod=rot(PODCASTS);
 
-  if(/cancelled|canceled|game.{0,6}off|match.{0,6}off/.test(m)){
+  // ① Match cancelled
+  if(/cancell?ed|game.{0,6}off|match.{0,6}off|game.{0,10}cancel/.test(m)){
     if(nextGame){
       actions.push({type:"deleteTask",taskId:nextGame.id});
-      actions.push({type:"addTask",task:{title:"Run 40min + 4 sprint strides [match cancelled]",date:nextGame.date,time:"06:00",category:"run",notes:"Match cancelled — quality session instead."}});
-      actions.push({type:"addTask",task:{title:"Football technique + fitness 50min [match cancelled]",date:nextGame.date,time:nextGame.time||"18:00",category:"football",notes:"Good session to replace the match."}});
-      reply=`Got it — match cancelled. Removed the ${nextGame.category==="game"?"game":"team session"} and added a quality run + technique session. Nothing wasted.`;
-    }else{reply="I couldn't find an upcoming match or team session to cancel. Check the Review tab.";}
-    return{handled:true,reply,actions};
+      actions.push({type:"addTask",task:{title:"Quality run 40min + 4 sprint strides",date:nextGame.date,time:"06:00",category:"run",notes:"Match cancelled — quality session instead."}});
+      actions.push({type:"addTask",task:{title:"Football technique + fitness 50min",date:nextGame.date,time:nextGame.time||"18:00",category:"football",notes:"Technical work + fitness. Use the time well."}});
+      return{handled:true,reply:pick([
+        `Match cancelled — sorted. Removed the ${nextGame.date} ${nextGame.category==="game"?"game":"session"} and scheduled a quality run at 6am + technique session at ${nextGame.time||"18:00"}. Nothing wasted.`,
+        `Got it. ${nextGame.date} game is gone. Replaced with a run + technical football session — best use of a freed-up slot.`,
+        `Noted. Cancelled and flipped to run + football technique. Champions train when the games disappear.`,
+      ]),actions};
+    }
+    return{handled:true,reply:"No upcoming match found. Go to Review, add a game task — then I can cancel it and replace it with quality training.",actions:[]};
   }
-  if(/tired|sore|heavy.{0,6}leg|exhausted|fatigued/.test(m)){
+
+  // ② Tired / sore / heavy legs
+  if(/\b(tired|sore|heavy.{0,6}leg|exhausted|fatigued|beat.{0,4}up|drained|wrecked|no energy|run down)\b/.test(m)){
+    const lowRec=recovery!=null&&recovery<40;
     if(todayHard.length>0){
-      todayHard.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:"Easy walk + mobility 30min [recovery]",category:"recovery",notes:"Listening to the body — rest is training too."}}));
-      reply=`Smart call. Swapped ${todayHard.length} hard session${todayHard.length>1?"s":""} to easy recovery today. Come back stronger tomorrow.`;
-    }else{reply="No hard sessions left today — you're already in good shape. Rest up and go again tomorrow.";}
-    return{handled:true,reply,actions};
+      todayHard.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:"Easy walk + mobility 30min [listening to body]",category:"recovery",notes:"Recovery is training. Come back stronger."}}));
+      return{handled:true,reply:pick([
+        `Smart decision.${lowRec?` Recovery at ${recovery}% — your data backs you up.`:""} Swapped ${todayHard.length} session${todayHard.length>1?"s":""} to recovery. Hit ${macros?.protein||150}g protein and sleep 8hrs.`,
+        `Your body is talking — good that you're listening.${lowRec?` ${recovery}% recovery confirms it.`:""} ${todayHard.length} session${todayHard.length>1?"s":""} converted to easy movement. This is the smart play.`,
+        `Rest IS the workout today.${lowRec?` ${recovery}% recovery — your system needs this.`:""} Fuelled, recovered, and back stronger tomorrow.`,
+      ]),actions};
+    }
+    return{handled:true,reply:pick([
+      `No hard sessions today — you're already in the clear.${recovery!=null?` Recovery: ${recovery}%.`:""} Focus on sleep, hydration, ${macros?.protein||150}g protein.`,
+      `Schedule's already light today.${recovery!=null?` Recovery: ${recovery}%.`:""} Prioritise sleep tonight and you'll bounce back.`,
+    ]),actions:[]};
   }
-  if(/rest.{0,5}day|make.{0,10}rest|day.{0,5}off/.test(m)){
-    const todayTraining=ctx.upcomingTasks.filter(t=>t.date===ctx.today&&!["work","other"].includes(t.category)&&!t.completed);
-    todayTraining.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:"Rest day — walk only if feeling good",category:"recovery",notes:"Full rest. Body repairs during downtime."}}));
-    reply=todayTraining.length>0?`Done — converted ${todayTraining.length} session${todayTraining.length>1?"s":""} to rest. Recovery is part of the plan.`:"Today already looks like a light day. Enjoy the rest!";
-    return{handled:true,reply,actions};
+
+  // ③ Rest day
+  if(/\brest.{0,5}day\b|make.{0,10}rest|full.{0,5}rest|take.{0,5}(a\s)?day.{0,5}off|day off today/.test(m)){
+    todayTraining.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:"Rest day — gentle walk only",category:"recovery",notes:"Full rest. Adaptation happens during recovery."}}));
+    const qRest=BIBLE_QUOTES.find(q=>q.text.includes("rest")||q.text.includes("restore"))||quote;
+    return{handled:true,reply:pick([
+      `${todayTraining.length>0?`Converted ${todayTraining.length} session${todayTraining.length>1?"s":""} to rest. `:"Today already looks light. "}"${qRest.text}" — ${qRest.ref}`,
+      `Done.${todayTraining.length>0?` ${todayTraining.length} session${todayTraining.length>1?"s":""} → rest.`:""} Recovery is where you get faster. Eat well, sleep 9hrs.`,
+    ]),actions};
   }
-  if(/what.{0,10}next|what should|next session|next task/.test(m)){
-    const now=`${String(new Date().getHours()).padStart(2,"0")}:${String(new Date().getMinutes()).padStart(2,"0")}`;
-    const next=ctx.upcomingTasks.find(t=>t.date===ctx.today&&!t.completed&&t.time&&t.time>now&&t.category!=="work");
-    if(next){reply=`Your next session is **${next.title}** at ${next.time}${next.notes?` — ${next.notes}`:""}. Go get it! 💪`;}
-    else{const tomorrow=ctx.upcomingTasks.find(t=>t.date>ctx.today&&!t.completed&&t.category!=="work");if(tomorrow)reply=`Nothing more today — great work! Tomorrow: **${tomorrow.title}** at ${tomorrow.time||"morning"}.`;else reply="You're all clear for today. Rest up and check the Review tab to plan ahead.";}
-    return{handled:true,reply,actions};
+
+  // ④ What's next
+  if(/what.{0,10}next|what should\s+i|next session|next task|up next|coming up|what.{0,8}do.{0,6}(now|today)/.test(m)){
+    const now2=`${pad2(new Date().getHours())}:${pad2(new Date().getMinutes())}`;
+    const next=upcoming.find(t=>t.date===today&&!t.completed&&t.category!=="work"&&(!t.time||t.time>=now2));
+    if(next){
+      return{handled:true,reply:pick([
+        `Next up: **${next.title}**${next.time?` at ${next.time}`:""}${next.notes?`\n📝 ${next.notes}`:""}\n\n${macros?`Fuel target: ${macros.protein}g protein today.`:"Go make it count."}`,
+        `**${next.title}** is next${next.time?` — ${next.time}`:""}. ${recovery!=null?`Recovery: ${recovery}%. `:""}Go earn it.`,
+      ]),actions:[]};
+    }
+    const tmr=upcoming.find(t=>t.date>today&&!t.completed&&t.category!=="work");
+    return{handled:true,reply:tmr?pick([
+      `You're done for today! 🎉 Tomorrow: **${tmr.title}** ${tmr.time?`at ${tmr.time}`:""}.\n\nRest, hit your protein, sleep by 10pm.`,
+      `All clear today. Next session: **${tmr.title}** on ${tmr.date}. Well done today.`,
+    ]):"Schedule's clear. Ask me to plan your week or head to the Review tab.",actions:[]};
   }
-  if(/week.{0,10}check|how.{0,10}week|week.{0,10}going|progress/.test(m)){
+
+  // ⑤ Week check / progress
+  if(/week.{0,10}check|how.{0,10}(is\s)?my\s+week|week.{0,10}going|on.{0,5}track|week.{0,8}progress|how.{0,8}am.{0,4}i.{0,6}doing/.test(m)){
     const stats=ctx.weekStats||{};const targets=ctx.weekTargets||{};
-    const lines=Object.entries(targets).filter(([k])=>k!=="work").map(([k,t])=>{const s=stats[k]||{done:0,total:0};return`${CATS[k]?.emoji||""} ${CATS[k]?.label||k}: ${s.done}/${t}`;});
-    reply=`Week check:\n${lines.join("\n")}\n\nKeep going — consistency beats perfection.`;
-    return{handled:true,reply,actions};
-  }
-  if(/i have a (game|match)|game (on|tomorrow|saturday|thursday)|match (on|tomorrow|saturday|thursday)/.test(m)){
-    const now=new Date();
-    let targetDate=isoDate(addDays(now,1));
-    if(/saturday/.test(m)){const d=new Date();d.setDate(d.getDate()+((6-d.getDay()+7)%7||7));targetDate=isoDate(d);}
-    if(/thursday/.test(m)){const d=new Date();d.setDate(d.getDate()+((4-d.getDay()+7)%7||7));targetDate=isoDate(d);}
-    const prevDate=isoDate(addDays(parseDate(targetDate),-1));
-    const afterDate=isoDate(addDays(parseDate(targetDate),1));
-    actions.push({type:"addTask",task:{title:"Match day",date:targetDate,time:"10:00",category:"game",notes:"Game day — fuel well, warm up properly."}});
-    actions.push({type:"addTask",task:{title:"Fuel + hydration check",date:targetDate,time:"08:00",category:"other",notes:"Pre-match nutrition."}});
-    actions.push({type:"addTask",task:{title:"Active recovery: walk + mobility 30min [post-match]",date:afterDate,time:"06:10",category:"recovery",notes:"Essential after a game."}});
-    const prevHard=ctx.upcomingTasks.filter(t=>t.date===prevDate&&["run","bike"].includes(t.category));
-    prevHard.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:t.title.replace(/\d+min/,"25min").replace(/sprint.*$/,"strides (pre-match taper)"),notes:"Easy day — big game tomorrow."}}));
-    reply=`Match added for ${targetDate}. I've tapered ${prevHard.length>0?`your ${prevDate} session and added`:"and added"} post-match recovery. Good luck! 🏟️`;
-    return{handled:true,reply,actions};
-  }
-  if(/plan.{0,10}week|generate.{0,5}week|build.{0,5}week|create.{0,5}week|schedule.{0,5}week/.test(m)){
-    const wDates=ctx.weekDates||getWeekDates();
-    const stgs=ctx.settings||{};
-    const weekTaskIds=ctx.upcomingTasks.filter(t=>wDates.includes(t.date)&&t.category!=="work"&&!t.completed).map(t=>t.id);
-    weekTaskIds.forEach(id=>actions.push({type:"deleteTask",taskId:id}));
-    const newTasks=generateWeek(stgs,wDates);
-    newTasks.forEach(task=>actions.push({type:"addTask",task}));
-    reply=`Week planned! Cleared ${weekTaskIds.length} old sessions and generated ${newTasks.length} fresh ones from your schedule template. Review in the Week tab.`;
-    return{handled:true,reply,actions};
-  }
-  if(/auto.{0,6}adjust|adjust.{0,5}schedule|optimize.{0,5}week|rebalance|fix.{0,5}week/.test(m)){
-    const wDates=ctx.weekDates||getWeekDates();
-    let adjusted=0;
-    wDates.filter(d=>d>=ctx.today).forEach(date=>{
-      const dayTasks=ctx.upcomingTasks.filter(t=>t.date===date);
-      const dayLoad=dayTasks.reduce((s,t)=>s+(LOAD[t.category]||1),0);
-      if(dayLoad>HIGH_LOAD){
-        const hard=dayTasks.find(t=>["run","bike"].includes(t.category));
-        if(hard){actions.push({type:"updateTask",taskId:hard.id,changes:{title:hard.title.replace(/\d+min/,"25min")+" [auto-adjusted]",notes:"High load day — reduced duration."}});adjusted++;}
-      }
+    const daysLeft=weekDates.filter(d=>d>=today).length;
+    const lines=Object.entries(targets).filter(([k,v])=>k!=="work"&&v>0).map(([k,t])=>{
+      const s=stats[k]||{done:0,total:0};const pct=Math.round(s.done/t*100);
+      return`${pct>=100?"✅":pct>=50?"🔄":"⬜"} ${CATS[k]?.label||k}: ${s.done}/${t}`;
     });
-    reply=adjusted>0?`Auto-adjusted ${adjusted} session${adjusted>1?"s":""} based on load balance.`:"Your week looks well-balanced — no changes needed. Keep that consistency!";
-    return{handled:true,reply,actions};
+    const totalDone=Object.values(stats).reduce((a,s)=>a+(s.done||0),0);
+    const clLine=callouts.length>0?`\n\n💡 ${callouts[0]?.cat?`Needs attention: ${callouts[0].cat} sessions`:callouts[0]?.habit?.title||"Stay consistent"}`:""
+    return{handled:true,reply:pick([
+      `**Week overview** — ${daysLeft} day${daysLeft!==1?"s":""} left:\n${lines.join("\n")}\n\n${totalDone} sessions complete.${clLine}\n\nConsistency wins.`,
+      `Here's your week:\n${lines.join("\n")}\n\n${daysLeft} day${daysLeft!==1?"s":""} remaining. ${totalDone} sessions in the bank.${clLine}`,
+    ]),actions:[]};
   }
-  return{handled:false};
+
+  // [CHUNK_B]
+  // Fallback — always handled, never "I'm offline"
+  const nextAny=upcoming.find(t=>t.date>=today&&!t.completed&&t.category!=="work");
+  return{handled:true,isFallback:true,reply:pick([
+    `${recovery!=null?`Recovery: **${recovery}%**. `:""}${nextAny?`Next: **${nextAny.title}** on ${nextAny.date}.`:""}\n\n"${quote.text}" — ${quote.ref}\n\nTry: health check, macros, habits, match day prep, plan my week, warmup protocol, pace zones — or just tell me how you're feeling.`,
+    `${nextAny?`**${nextAny.title}** is coming up on ${nextAny.date}. `:""}${recovery!=null?`You're at ${recovery}% recovery. `:""}Ready to help with anything — training, nutrition, scheduling, motivation, or recovery.`,
+    `I'm your personal coach, here for anything.\n\n"${quote.text}" — ${quote.ref}\n\n${nextAny?`Next session: **${nextAny.title}**.`:"Looks clear — want me to plan your week?"}`,
+  ]),actions:[]};
 }
 
 async function callCoach(msg,ctx){
