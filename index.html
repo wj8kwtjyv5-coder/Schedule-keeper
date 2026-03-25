@@ -763,7 +763,77 @@ function localCoach(msg,ctx){
     return{handled:true,reply:"No sleep logged. Go to Health tab → log bedtime + wake time. I'll calculate duration, quality, and factor it into your readiness score.",actions:[]};
   }
 
-  // [CHUNK_C]
+  // ⑪ Nutrition / macros / fuelling
+  if(/\b(nutrition|macro|calorie|calori|protein|carb|fat|fuel|food|eat|meal|diet|pre.{0,5}(workout|match|run)|post.{0,5}(workout|match|run))\b/.test(m)){
+    const mt=macros||calcDailyMacros(profile,upcoming,today);
+    if(mt){
+      const hasGame=todayTasks.some(t=>["game","football"].includes(t.category));
+      const hasHard=todayTasks.some(t=>["run","bike"].includes(t.category));
+      const tip=hasGame?"Game day — carb load 3hrs before kick-off. Eat within 30min after. Aim 2L water by kick-off.":hasHard?"Training day — hit carbs 90min before, protein within 30min after.":"Rest/light day — protein is king. Fewer carbs, good fats.";
+      const consCal=consumed.cal||0;const remCal=Math.max(0,mt.cal-consCal);
+      return{handled:true,reply:`**Today's targets:**\n🔥 ${mt.cal} kcal  💪 ${mt.protein}g protein  🌾 ${mt.carbs}g carbs  🥑 ${mt.fat}g fat\n${consCal>0?`\nLogged so far: ${consCal} kcal — **${remCal} kcal remaining**\n`:"\n"}${tip}\n\nTDEE: ~${mt.tdee} kcal. Training adds ~${mt.trainingBonus||0} kcal.`,actions:[]};
+    }
+    return{handled:true,reply:"Set your profile (weight, height, age) in Settings → Profile. I'll calculate exact macro targets based on your body and today's training load.",actions:[]};
+  }
+
+  // ⑫ Habit coaching / streaks
+  if(/\b(habit|streak|consistency|routine|discipline|missing.{0,8}habit|habit.{0,6}going|build.{0,6}habit)\b/.test(m)){
+    const streakArr=Object.values(habitStreaks);
+    const best=streakArr.sort((a,b)=>b.streak-a.streak)[0];
+    const dueHabits=todayHabits.filter(h=>!h.done);
+    const doneHabits=todayHabits.filter(h=>h.done);
+    if(dueHabits.length>0){
+      const lines=dueHabits.map(h=>`• ${h.emoji||"▸"} ${h.title}${habitStreaks[h.id]?.streak>0?` (🔥${habitStreaks[h.id].streak} day streak)`:""}`).join("\n");
+      return{handled:true,reply:`${dueHabits.length} habit${dueHabits.length>1?"s":""} still to do today:\n${lines}\n\n${best&&best.streak>2?`Best streak: ${best.emoji||"▸"} **${best.title}** — ${best.streak} days. Protect it.`:"Small daily actions compound into big results. Tick them off."}\n\n${doneHabits.length>0?`(${doneHabits.length} already done ✅)`:""}`,actions:[]};
+    }
+    if(todayHabits.length>0){
+      return{handled:true,reply:pick([
+        `All ${todayHabits.length} habits complete today! 🔥${best&&best.streak>2?` Best streak: **${best.title}** — ${best.streak} days.`:""} That discipline is the foundation of everything.`,
+        `Clean sweep today — ${todayHabits.length}/${todayHabits.length} habits done.${best?` ${best.streak} day streak on ${best.title}.`:""} Keep it going.`,
+      ]),actions:[]};
+    }
+    return{handled:true,reply:"No habits scheduled for today. Add your key habits in the Habits tab — sleep, protein, cold shower, mobility. Build your foundation.",actions:[]};
+  }
+
+  // ⑬ Motivation / Bible verse / faith
+  if(/\b(motivat|inspire|pump.{0,5}up|hype|bible|scripture|verse|word.{0,5}(today|for me)|faith|prayer|encourage|lift me)\b/.test(m)){
+    const hasGame=upcoming.some(t=>t.date===today&&["game","football"].includes(t.category));
+    const context=hasGame?"Game day — give it everything.":recovery!=null&&recovery<40?"Recovery day — rest is an act of courage.":"Build something today.";
+    return{handled:true,reply:pick([
+      `"${quote.text}"\n— ${quote.ref}\n\n${context}`,
+      `"${BIBLE_QUOTES[Math.floor(Math.random()*BIBLE_QUOTES.length)].text}"\n— ${BIBLE_QUOTES[Math.floor(Math.random()*BIBLE_QUOTES.length)].ref}\n\n${context}`,
+    ]),actions:[]};
+  }
+
+  // ⑭ Podcast suggestion
+  if(/\b(podcast|listen|episode|show.{0,8}(recommend|suggest)|something.{0,8}listen|audio.{0,6}(for|to))\b/.test(m)){
+    return{handled:true,reply:`${pod.emoji} **${pod.show}**\n"${pod.episode}"\n\n${pod.description}\n\n🎧 ${pod.tag}`,actions:[]};
+  }
+
+  // ⑮ Body pain / injury by zone
+  if(/\b(knee|hamstring|calf|shoulder|back|hip|ankle|groin|quad|glute|shin|neck|achilles|heel)\b|body.{0,8}(pain|sore|tight|map)|pain.{0,5}(in|my)|sore.{0,5}(my|the)/.test(m)){
+    const areaMatch=m.match(/\b(knee|hamstring|calf|shoulder|back|hip|ankle|groin|quad|glute|shin|neck|achilles|heel)\b/);
+    const area=areaMatch?.[1]||"that area";
+    const advice={
+      knee:"Avoid high-impact. Bike or swim instead. Ice 20min, elevate. Strengthen: glute bridges, terminal knee extensions.",
+      hamstring:"No sprinting or high-speed work. Easy jog at most. No ballistic stretching. Eccentric loading (Nordic curls) long-term.",
+      calf:"Skip running. Walk/bike only. Calf raises in pain-free range. Watch for Achilles involvement.",
+      achilles:"No running. Bike only. Eccentric heel drops on a step. See physio if >3 days.",
+      shoulder:"Upper body rest. Core and lower body fine. Ice + gentle rotation. Physio if >48hrs.",
+      back:"Avoid heavy lifting/sprinting. Walking good. Cat-cow, dead bugs, hip flexor stretches.",
+      hip:"Avoid lateral cuts. Easy straight-line jog if <4/10 pain. Glute + hip flexor work.",
+      ankle:"No running. RICE. Resistance band eversion/inversion for rehab.",
+      groin:"No lateral movements. Copenhagen adductors when settled. Straight running if <3/10.",
+      quad:"Reduce knee flexion. No hill running or heavy squats. Straight leg raises ok.",
+      glute:"Piriformis stretch, foam roll. Easy running ok. Avoid hill sprints.",
+      shin:"Could be shin splints — reduce mileage 50%. Ice. Check footwear.",
+    };
+    const tip=advice[area]||`Take it easy on ${area}. Ice if acute, heat if chronic. See physio if >3 days.`;
+    if(todayHard.length>0) todayHard.slice(0,1).forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:t.title+" [modified — injury caution]",notes:`${area} issue — adapt intensity.`}}));
+    return{handled:true,reply:`**${area.charAt(0).toUpperCase()+area.slice(1)} issue noted.**\n\n${tip}\n\n${todayHard.length>0?"Flagged today's session — modify or swap to recovery if pain is >4/10.":"No hard sessions today — good timing to rest it."}`,actions};
+  }
+
+  // [CHUNK_D]
   // Fallback — always handled, never "I'm offline"
   const nextAny=upcoming.find(t=>t.date>=today&&!t.completed&&t.category!=="work");
   return{handled:true,isFallback:true,reply:pick([
