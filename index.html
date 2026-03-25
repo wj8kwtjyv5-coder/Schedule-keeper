@@ -684,7 +684,86 @@ function localCoach(msg,ctx){
     ]),actions:[]};
   }
 
-  // [CHUNK_B]
+  // ⑥ Game scheduled / I have a match
+  if(/i have (a\s)?(game|match)|game (on|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|match (on|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/.test(m)){
+    const dayNames=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+    let targetDate=isoDate(addDays(new Date(),1));
+    const dMatch=m.match(/monday|tuesday|wednesday|thursday|friday|saturday|sunday/);
+    if(dMatch){const td=dayNames.indexOf(dMatch[0]);const d=new Date();const diff=(td-d.getDay()+7)%7||7;targetDate=isoDate(addDays(d,diff));}
+    const prevDate=isoDate(addDays(parseDate(targetDate),-1));
+    const afterDate=isoDate(addDays(parseDate(targetDate),1));
+    actions.push({type:"addTask",task:{title:"Match day",date:targetDate,time:"10:00",category:"game",notes:"Fuel well. Warm up properly. Trust the prep."}});
+    actions.push({type:"addTask",task:{title:"Pre-match nutrition — complex carbs + hydration",date:targetDate,time:"07:30",category:"other",notes:"Pasta/rice + lean protein 3hrs before. 2L water by kick-off."}});
+    actions.push({type:"addTask",task:{title:"Post-match recovery: walk + mobility 30min",date:afterDate,time:"06:00",category:"recovery",notes:"Essential after a game. Ice hot spots, eat protein within 30min."}});
+    const prevHard=upcoming.filter(t=>t.date===prevDate&&["run","bike"].includes(t.category));
+    prevHard.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:t.title.replace(/\d+min/,"20min").replace(/sprint.*$/,"easy strides (pre-match taper)"),notes:"Taper day — big game tomorrow. Legs fresh."}}) );
+    return{handled:true,reply:pick([
+      `Match added for ${targetDate}. ${prevHard.length>0?`Tapered your ${prevDate} session.`:" "} Pre-match nutrition + post-match recovery both scheduled. Good luck. 🏟️`,
+      `Done — game on ${targetDate} is in. ${prevHard.length>0?`${prevDate} session tapered.`:""}Recovery day after, and pre-match fuel reminder the morning of.`,
+    ]),actions};
+  }
+
+  // ⑦ Plan week
+  if(/plan.{0,10}week|generate.{0,5}week|build.{0,5}week|create.{0,5}week|set.{0,5}up.{0,5}week/.test(m)){
+    const wDates=ctx.weekDates||getWeekDates();
+    const stgs=ctx.settings||{};
+    const oldIds=upcoming.filter(t=>wDates.includes(t.date)&&t.category!=="work"&&!t.completed).map(t=>t.id);
+    oldIds.forEach(id=>actions.push({type:"deleteTask",taskId:id}));
+    const newT=generateWeek(stgs,wDates);
+    newT.forEach(task=>actions.push({type:"addTask",task}));
+    return{handled:true,reply:pick([
+      `Week planned. Cleared ${oldIds.length} old sessions, generated ${newT.length} new ones from your template. Check Review tab.`,
+      `Done — ${newT.length} sessions built for the week. Taper days and recovery are already baked in. See Review tab.`,
+    ]),actions};
+  }
+
+  // ⑧ Auto-adjust
+  if(/auto.{0,6}adjust|adjust.{0,5}schedule|optimize.{0,5}week|rebalance|fix.{0,5}week|balance.{0,5}week/.test(m)){
+    const wDates2=ctx.weekDates||getWeekDates();let adjusted=0;
+    wDates2.filter(d=>d>=today).forEach(date=>{
+      const dt=upcoming.filter(t=>t.date===date);
+      const dl=dt.reduce((s,t)=>s+(LOAD[t.category]||1),0);
+      if(dl>HIGH_LOAD){const hard=dt.find(t=>["run","bike"].includes(t.category));if(hard){actions.push({type:"updateTask",taskId:hard.id,changes:{title:hard.title.replace(/\d+min/,"25min")+" [load-managed]",notes:"High load day — volume reduced."}});adjusted++;}}
+    });
+    const weekLoad=upcoming.filter(t=>weekDates.includes(t.date)).reduce((s,t)=>s+(LOAD[t.category]||1),0);
+    return{handled:true,reply:pick([
+      adjusted>0?`Auto-adjusted ${adjusted} session${adjusted>1?"s":""}. Week load: ${weekLoad}. Check Review tab.`:`Week load: ${weekLoad} — well-balanced. No changes needed. That consistency is building something.`,
+      adjusted>0?`Dialled back ${adjusted} overloaded day${adjusted>1?"s":""}. Your week load sits at ${weekLoad}.`:`Already balanced at load ${weekLoad}. Keep the structure.`,
+    ]),actions};
+  }
+
+  // ⑨ Readiness / health check / HRV
+  if(/health.{0,10}check|readiness|how.{0,8}recover|am\s+i\s+ready|hrv|resting.{0,5}hr|heart.{0,5}rate|feel.{0,6}(physically|today)/.test(m)){
+    if(recovery!=null){
+      const r=recovery;
+      const light=r>=70?"🟢 Green light — push it today. High-intensity sessions are a go.":r>=40?"🟡 Amber — train smart, not hard. Skip max efforts today.":"🔴 Red zone. Easy movement or full rest only.";
+      const hrvLine=hl.hrv?`\nHRV: **${hl.hrv}ms** (${hl.hrv>=60?"excellent":hl.hrv>=45?"good":hl.hrv>=30?"moderate":"low"})`:"";
+      const hrLine=hl.restingHR?`\nResting HR: **${hl.restingHR}bpm** (${hl.restingHR<55?"excellent":hl.restingHR<65?"good":"elevated"})`:"";
+      const slpMins=hl.sleep?.bedtime&&hl.sleep?.wakeTime?calcSleepMins(hl.sleep.bedtime,hl.sleep.wakeTime):null;
+      const slpLine=slpMins?`\nSleep: **${(slpMins/60).toFixed(1)}hrs**`:""
+      return{handled:true,reply:`**Recovery: ${r}%**${hrvLine}${hrLine}${slpLine}\n\n${light}`,actions:[]};
+    }
+    return{handled:true,reply:pick([
+      "No health data yet. Log sleep and HRV in the Health tab — or sync via Apple Health shortcut. Once data is in, I'll give you a full readiness score.",
+      "Health data not logged. Head to Health tab → log sleep. Add your HRV if you have a wearable. I'll calculate your readiness score immediately.",
+    ]),actions:[]};
+  }
+
+  // ⑩ Sleep check
+  if(/how.{0,8}(did\s+i\s+)?sleep|sleep.{0,8}(check|last night|quality|score)|last night.{0,5}sleep/.test(m)){
+    const sl=hl.sleep;
+    if(sl?.bedtime&&sl?.wakeTime){
+      const mins=calcSleepMins(sl.bedtime,sl.wakeTime)||0;
+      const hrs=(mins/60).toFixed(1);
+      const qLabels=["Poor 😴","Fair 😐","Good 🙂","Great 😊","Optimal 🌟"];
+      const qual=sl.quality?qLabels[sl.quality-1]||"Good":"Unrated";
+      const advice=mins>=420?pick(["Solid night — your recovery should be strong today.","Good sleep. Your body had time to adapt."]):"Under 7hrs. Reduce intensity today if possible. Target bed by 10pm tonight.";
+      return{handled:true,reply:`Sleep last night: **${hrs}hrs** | Quality: **${qual}**\n\n${advice}`,actions:[]};
+    }
+    return{handled:true,reply:"No sleep logged. Go to Health tab → log bedtime + wake time. I'll calculate duration, quality, and factor it into your readiness score.",actions:[]};
+  }
+
+  // [CHUNK_C]
   // Fallback — always handled, never "I'm offline"
   const nextAny=upcoming.find(t=>t.date>=today&&!t.completed&&t.category!=="work");
   return{handled:true,isFallback:true,reply:pick([
