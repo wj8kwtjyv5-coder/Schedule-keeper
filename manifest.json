@@ -1,11 +1,11 @@
 {
-  "name": "ScheduleKeeper",
-  "short_name": "SK",
-  "description": "Your AI-powered training schedule",
+  "name": "Feliz Dias",
+  "short_name": "FD",
+  "description": "O teu treinador pessoal com IA — dias felizes começam aqui",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#07080f",
-  "theme_color": "#07080f",
+  "theme_color": "#ff8c42",
   "orientation": "portrait",
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
