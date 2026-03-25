@@ -191,12 +191,317 @@ ACTIONS:
 {"type":"deleteTask","taskId":"..."}
 {"type":"completeTask","taskId":"..."}`;
 
-async function callCoach(msg,ctx){
-  const res=await fetch("/.netlify/functions/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
-  const data=await res.json();
-  if(typeof data.reply==="string") return data;
-  return {reply:"Try again.",actions:[]};
+// ── Jarvis local coach ────────────────────────────────────────
+function localCoach(msg,ctx){
+  const m=msg.toLowerCase().replace(/['']/g,"'").trim();
+  const today=ctx.today;
+  const tomorrow=(()=>{const d=new Date(today);d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);})();
+  const tasks=ctx.upcomingTasks||[];
+  const weekStats=ctx.weekStats||{};
+  const targets=ctx.weekTargets||{};
+  const callouts=ctx.callouts||[];
+  const habitHistory=ctx.habitHistory||[];
+  const loadToday=ctx.loadToday||0;
+  const missedTasks=ctx.missedTasks||[];
+  const timeNow=ctx.timeNow||"00:00";
+  const [curH]=timeNow.split(":").map(Number);
 
+  // Entity helpers
+  const DAY_MAP={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:6,
+    mon:0,tue:1,wed:2,thu:3,fri:4,sat:5,sun:6,
+    today:null,tomorrow:1};
+  function parseTime(s){
+    const m12=/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(s);
+    if(m12){let h=+m12[1],min=+(m12[2]||0);if(m12[3].toLowerCase()==="pm"&&h!==12)h+=12;if(m12[3].toLowerCase()==="am"&&h===12)h=0;return`${String(h).padStart(2,"0")}:${String(min).padStart(2,"0")}`;}
+    const m24=/\b(\d{1,2}):(\d{2})\b/.exec(s);
+    if(m24)return`${String(+m24[1]).padStart(2,"0")}:${m24[2]}`;
+    return null;
+  }
+  function dateForDay(dayWord){
+    if(dayWord==="today"||dayWord===null)return today;
+    if(dayWord==="tomorrow")return tomorrow;
+    const targetDow=DAY_MAP[dayWord];
+    if(targetDow===undefined)return today;
+    const now=new Date(today);
+    const curDow=(now.getDay()+6)%7; // Mon=0
+    let diff=(targetDow-curDow+7)%7||7;
+    const d=new Date(now);d.setDate(d.getDate()+diff);
+    return d.toISOString().slice(0,10);
+  }
+  function extractDay(s){
+    const keys=Object.keys(DAY_MAP);for(const k of keys){if(s.includes(k))return k;}return null;
+  }
+  function extractTime(s){return parseTime(s)||null;}
+  function findTask(date,cats){
+    return tasks.find(t=>t.date===date&&cats.includes(t.category)&&!t.completed)||null;
+  }
+  function findTasks(date,cats){
+    return tasks.filter(t=>t.date===date&&(cats?cats.includes(t.category):true)&&!t.completed);
+  }
+  function delTask(t){return t?{type:"deleteTask",taskId:t.id}:null;}
+  function addTask(title,date,time,category,notes=""){return{type:"addTask",task:{title,date,time,category,notes}};}
+  function updateTask(t,changes){return t?{type:"updateTask",taskId:t.id,changes}:null;}
+
+  // Proactive callout note (appended to any reply if game tomorrow)
+  const gameTomorrow=callouts.find(c=>c.date===tomorrow);
+  const proactiveNote=gameTomorrow?`\n\nHeads up — you have a game tomorrow (${gameTomorrow.time?gameTomorrow.title+" at "+gameTomorrow.time:gameTomorrow.title}). Keeping today sharp but not heavy.`:"";
+
+  // ── SCENARIO GROUPS ──────────────────────────────────────────
+
+  // 1. Match / game cancelled
+  if(/match\s*cancel|game\s*(cancel|off|called\s*off|not\s*on)|no\s*(game|match)\s*(today|tonight)/i.test(m)){
+    const gameTask=findTask(today,["game"]);
+    const todayRunTask=findTask(today,["run"]);
+    const acts=[];
+    if(gameTask)acts.push(delTask(gameTask));
+    // Remove any pre-match prep tasks added today
+    findTasks(today,["other"]).forEach(t=>{if(/wind.?down|fuel|hydration|taper/i.test(t.title))acts.push(delTask(t));});
+    // Restore quality training
+    const mornTime=todayRunTask?"06:30":"06:00";
+    acts.push(addTask("Run 40min + 4 sprint strides [match cancelled]",today,mornTime,"run","High quality. Nothing wasted."));
+    acts.push(addTask("Football technique + fitness 50min [match cancelled]",today,"18:00","football","Full intensity. Treat it like a performance day."));
+    acts.push(addTask("Pilates 20min",today,"19:15","pilates","Core. Control."));
+    return{handled:true,reply:"Match off — quality day it is. Run at "+mornTime+", football technique at 6pm, pilates after. Nothing wasted.",actions:acts.filter(Boolean)};
+  }
+
+  // 2. Game / match added
+  const gameAddMatch=/(?:game|match|fixture)\s*(is\s*)?(on\s+|tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)?(?:\s*at\s*)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?/i.exec(m);
+  if(gameAddMatch&&/\b(game|match|fixture)\b/.test(m)&&!/cancel|off|called/.test(m)&&!/cancelled|cancell/.test(m)){
+    const dayWord=extractDay(m)||"today";
+    const gameDate=dateForDay(dayWord);
+    const gameTime=extractTime(m)||"15:00";
+    const prevDay=(()=>{const d=new Date(gameDate);d.setDate(d.getDate()-1);return d.toISOString().slice(0,10);})();
+    const nextDay=(()=>{const d=new Date(gameDate);d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);})();
+    const acts=[];
+    acts.push(addTask("Match",gameDate,gameTime,"game","Performance day. Trust the prep."));
+    acts.push(addTask("Fuel + hydration check",gameDate,"12:00","other","Eat well. Stay hydrated."));
+    acts.push(addTask("Early wind-down",prevDay,"20:30","other","Lights out by 9pm."));
+    acts.push(addTask("Active recovery: walk + mobility 30min",nextDay,"06:10","recovery","Flush the legs."));
+    const label=gameDate===today?"today":gameDate===tomorrow?"tomorrow":dayWord;
+    return{handled:true,reply:`Game locked in ${label} at ${gameTime}. I've added fuel check, an early wind-down the night before, and recovery the morning after.`,actions:acts};
+  }
+
+  // 3. Tired / fatigued / heavy legs / sore
+  if(/\b(tired|fatigued|heavy\s*legs?|sore|exhausted|wrecked|dead\s*legs?|drained|no\s*energy)\b/.test(m)){
+    const hardCats=["run","football","bike"];
+    const hardToday=findTasks(today,hardCats);
+    const acts=hardToday.map(t=>delTask(t));
+    acts.push(addTask("Easy walk + mobility 30min",today,"06:10","recovery","Flush the legs. No intensity."));
+    const reply=loadToday>3
+      ?"You've had a heavy day. Wiping the hard sessions — easy walk and mobility only. Let the body speak."+proactiveNote
+      :"Noted. Swapping today's hard work for easy recovery. Rest is training too."+proactiveNote;
+    return{handled:true,reply,actions:acts.filter(Boolean)};
+  }
+
+  // 4. Rest day / day off
+  if(/\b(rest\s*day|day\s*off|take\s*(the\s*)?day\s*off|no\s*training\s*today|nothing\s*today)\b/.test(m)){
+    const hardToday=findTasks(today,["run","football","bike","pilates"]);
+    const acts=hardToday.map(t=>delTask(t));
+    acts.push(addTask("Active recovery: walk + mobility 45min",today,"06:10","recovery","Easy movement. Recharge."));
+    return{handled:true,reply:"Rest day sorted. Cleared the hard sessions, added easy mobility. You'll come back sharper.",actions:acts.filter(Boolean)};
+  }
+
+  // 5. Feeling good / fresh / energised
+  if(/\b(feeling\s*(good|great|fresh|strong|energised|energized|brilliant)|legs?\s*(feel|are)\s*(good|great|fresh)|ready\s*to\s*go)\b/.test(m)){
+    const acts=[];
+    if(weekStats.run&&(weekStats.run.total||0)<(targets.run||5)){
+      acts.push(addTask("Extra sprint drills 20min",today,"06:30","run","You're feeling it — push on."));
+    }
+    return{handled:true,reply:"Good to hear — energy like that doesn't come every day. I've added a short sprint drill to capitalise on it."+(acts.length===0?" Keep the plan as is, everything looks good.":""),actions:acts};
+  }
+
+  // 6. Injury / pain
+  if(/\b(injur|pain|hurt|strain|pull|tweak|ankle|knee|hamstring|groin|calf|back)\b/.test(m)){
+    const hardToday=findTasks(today,["run","football","bike"]);
+    const acts=hardToday.map(t=>delTask(t));
+    acts.push(addTask("Mobility + gentle walk 20min",today,"06:10","recovery","No load. Listen to the body."));
+    acts.push(addTask("Physio / self-massage 15min",today,"19:00","recovery","Focus on the affected area."));
+    return{handled:true,reply:"Injury flag noted. Hard sessions cleared for today. Easy mobility and self-care only — don't rush back. If it persists, see a physio.",actions:acts.filter(Boolean)};
+  }
+
+  // 7. What's next / what should I do
+  if(/\b(what'?s?\s*(next|should\s*i\s*do|do\s*i\s*do)|next\s*task|what\s*now|what\s*do\s*i\s*do)\b/.test(m)){
+    const remaining=tasks.filter(t=>t.date===today&&!t.completed&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+    if(remaining.length===0)return{handled:true,reply:"Nothing left on today's list — you're done! Rest up, eat well, sleep early.",actions:[]};
+    const next=remaining[0];
+    const cat=next.category;
+    const tips={run:"Keep the pace honest. Form over speed.",football:"Focus on touch and positioning.",bike:"Stay in Zone 2 unless it's a sprint day.",pilates:"Control over rush.",recovery:"Easy is exactly right.",sauna:"Hydrate well before and after.",other:""};
+    return{handled:true,reply:`Next up: ${next.title}${next.time?" at "+next.time:""} (${cat}). ${tips[cat]||""}`.trim()+proactiveNote,actions:[]};
+  }
+
+  // 8. Week check / how's my week / am I on track
+  if(/\b(how'?s?\s*(my\s*)?week|week\s*(check|going|look|stat)|am\s*i\s*on\s*track|week\s*progress|how\s*am\s*i\s*doing)\b/.test(m)){
+    const lines=[];
+    let onTrack=true;
+    Object.entries(targets).forEach(([cat,target])=>{
+      const stat=weekStats[cat]||{done:0,total:0};
+      const done=stat.done||0;
+      const pct=target>0?Math.round((done/target)*100):100;
+      if(pct<60)onTrack=false;
+      lines.push(`${CATS[cat]?.emoji||"•"} ${cat}: ${done}/${target} (${pct}%)`);
+    });
+    const verdict=onTrack?"You're on track.":"A few gaps to close.";
+    return{handled:true,reply:`${verdict}\n${lines.join(" | ")}`,actions:[]};
+  }
+
+  // 9. What did I miss / missed sessions
+  if(/\b(what\s*(did\s*i\s*)?miss|missed\s*(session|training|workout)|sessions?\s*missed)\b/.test(m)){
+    if(missedTasks.length===0)return{handled:true,reply:"Nothing missed from the last 3 days. Consistent work.",actions:[]};
+    const list=missedTasks.slice(0,4).map(t=>`${t.title} (${t.date})`).join(", ");
+    return{handled:true,reply:`Missed in the last 3 days: ${list}. Don't chase them — just stay consistent from here.`,actions:[]};
+  }
+
+  // 10. What's tomorrow like / plan for [day]
+  const planForMatch=/\b(what'?s?\s*(tomorrow|the plan for|plan\s*for|schedule\s*for))\b/.exec(m)||/\bplan\s*for\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow)\b/.exec(m);
+  if(planForMatch){
+    const dayWord=extractDay(m)||"tomorrow";
+    const targetDate=dateForDay(dayWord==="tomorrow"?"tomorrow":dayWord);
+    const dayTasks=tasks.filter(t=>t.date===targetDate&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+    if(dayTasks.length===0)return{handled:true,reply:`Nothing scheduled for ${dayWord} yet. Want me to build a session?`,actions:[]};
+    const list=dayTasks.slice(0,5).map(t=>`${CATS[t.category]?.emoji||"•"} ${t.title}${t.time?" at "+t.time:""}`).join(", ");
+    return{handled:true,reply:`${dayWord.charAt(0).toUpperCase()+dayWord.slice(1)}: ${list}.`,actions:[]};
+  }
+
+  // 11. Skip / cancel a specific session
+  const skipMatch=/\b(skip|cancel|drop|remove|delete)\s+(the\s+)?(morning|evening|run|football|bike|pilates|recovery|sauna)\b/.exec(m);
+  if(skipMatch){
+    const catWord=skipMatch[3];
+    const catMap={morning:["run","bike","pilates"],evening:["football"],run:["run"],football:["football"],bike:["bike"],pilates:["pilates"],recovery:["recovery"],sauna:["sauna"]};
+    const cats=catMap[catWord]||["other"];
+    const task=findTask(today,cats);
+    if(task)return{handled:true,reply:`${task.title} removed from today.`,actions:[delTask(task)]};
+    return{handled:true,reply:`No ${catWord} session found for today.`,actions:[]};
+  }
+
+  // 12. Add a specific session type
+  const addMatch=/\b(add|schedule|put\s*in|book)\s+(a\s+|an\s+)?(run|jog|sprint|football|soccer|bike|cycle|pilates|yoga|recovery|walk|sauna|pool|mobility|gym|swim)\b/.exec(m);
+  if(addMatch){
+    const word=addMatch[3];
+    const catMap={run:"run",jog:"run",sprint:"run",football:"football",soccer:"football",bike:"bike",cycle:"bike",pilates:"pilates",yoga:"pilates",recovery:"recovery",walk:"recovery",sauna:"sauna",pool:"sauna",mobility:"recovery",gym:"other",swim:"recovery"};
+    const cat=catMap[word]||"other";
+    const t=extractTime(m)||(curH<12?"06:00":"18:00");
+    const dayWord=extractDay(m)||"today";
+    const date=dateForDay(dayWord);
+    const titleMap={run:"Run 30min",jog:"Easy jog 25min",sprint:"Sprint drills 20min",football:"Football session",soccer:"Football session",bike:"Bike 35min Zone 2",cycle:"Bike 35min Zone 2",pilates:"Pilates 20min",yoga:"Pilates / yoga 20min",recovery:"Active recovery: walk + mobility 30min",walk:"Easy walk 20min",sauna:"Sauna + pool",pool:"Sauna + pool",mobility:"Mobility 15min",gym:"Gym session",swim:"Swimming 30min"};
+    return{handled:true,reply:`Added: ${titleMap[word]||word} at ${t}${date!==today?" on "+date:""}.`,actions:[addTask(titleMap[word]||word,date,t,cat)]};
+  }
+
+  // 13. Move / reschedule a session
+  const moveMatch=/\b(move|shift|reschedule|change)\s+(the\s+)?(run|football|bike|pilates|recovery|sauna|session|morning|evening)\s+(to\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i.exec(m);
+  if(moveMatch){
+    const catWord=moveMatch[3];
+    const newTime=parseTime(moveMatch[5]);
+    if(newTime){
+      const catMap={run:["run"],football:["football"],bike:["bike"],pilates:["pilates"],recovery:["recovery"],sauna:["sauna"],morning:["run","bike","pilates"],evening:["football"],session:["run","football","bike","pilates"]};
+      const cats=catMap[catWord.toLowerCase()]||["run"];
+      const task=findTask(today,cats);
+      if(task)return{handled:true,reply:`Moved ${task.title} to ${newTime}.`,actions:[updateTask(task,{time:newTime})]};
+    }
+  }
+
+  // 14. Bed early / wind-down
+  if(/\b(bed\s*early|early\s*(bed|night)|wind.?down|sleep\s*early|lights?\s*out\s*early)\b/.test(m)){
+    return{handled:true,reply:"Wind-down added for 8:30pm. Lights out by 9. Good sleep is the best recovery.",actions:[addTask("Early wind-down",today,"20:30","other","Off screens. Prep kit. Breathe.")]};
+  }
+
+  // 15. Add sauna / pool
+  if(/\b(sauna|steam|cold\s*plunge|ice\s*bath|pool\s*(session)?)\b/.test(m)&&!/add|schedule/.test(m)){
+    return{handled:true,reply:"Sauna added. Hydrate before, cold finish if you can.",actions:[addTask("Sauna + pool",today,"19:00","sauna","")]};
+  }
+
+  // 16. Double session / extra training
+  if(/\b(double\s*session|two\s*sessions?|extra\s*training|extra\s*session|second\s*session)\b/.test(m)){
+    const t=curH<12?"18:00":"07:00";
+    return{handled:true,reply:`Extra session added at ${t}. Big day — fuel up and sleep well tonight.`,actions:[addTask("Extra training session",today,t,"football","Double day. Stay focused.")]};
+  }
+
+  // 17. Pre-match taper check (game in 1-2 days)
+  if(/\b(taper|pre.?match|before\s*the\s*game|day\s*before|light\s*day)\b/.test(m)){
+    const hardToday=findTasks(today,["run","football","bike"]);
+    const acts=hardToday.map(t=>updateTask(t,{notes:"Pre-match: reduce intensity by 30%. No sprints."}));
+    return{handled:true,reply:"Taper mode. Softening today's sessions — reduce intensity, no sprints, sharp touches only.",actions:acts.filter(Boolean)};
+  }
+
+  // 18. No football today / skip football
+  if(/\bno\s*football\s*(today|tonight)?\b|\bskip\s*(the\s*)?football\b/.test(m)){
+    const task=findTask(today,["football"]);
+    if(task)return{handled:true,reply:"Football session removed from today.",actions:[delTask(task)]};
+    return{handled:true,reply:"No football session found for today.",actions:[]};
+  }
+
+  // 19. How many [cat] this week
+  const countMatch=/\bhow\s*many\s*(runs?|football|sessions?|bikes?|pilates|sauna)\s*(this\s*week|done)?\b/.exec(m);
+  if(countMatch){
+    const word=countMatch[1].replace(/s$/,"");
+    const catMap={run:"run",football:"football",session:"run",bike:"bike",pilates:"pilates",sauna:"sauna"};
+    const cat=catMap[word];
+    if(cat){const s=weekStats[cat]||{done:0,total:0};return{handled:true,reply:`${CATS[cat]?.emoji||""} ${cat}: ${s.done||0} done this week, ${s.total||0} total scheduled. Target: ${targets[cat]||"?"}.`,actions:[]};}
+  }
+
+  // 20. Habit check
+  if(/\b(habit|habits|habit\s*check|how\s*(are\s*)?my\s*habits?)\b/.test(m)){
+    if(habitHistory.length===0)return{handled:true,reply:"No habits tracked yet. Add some in the Habits tab.",actions:[]};
+    const lines=habitHistory.map(h=>`${h.emoji||"•"} ${h.title}: ${h.doneToday?"✓":"✗"} today${h.streak>1?`, ${h.streak}-day streak`:""}`);
+    return{handled:true,reply:"Habits today:\n"+lines.join("\n"),actions:[]};
+  }
+
+  // 21. Morning session reminder
+  if(/\b(morning\s*session|early\s*session|6am|5am|am\s*session)\b/.test(m)&&/add|schedule|remind|book/.test(m)){
+    const t=extractTime(m)||"06:00";
+    return{handled:true,reply:`Morning session added at ${t}. Early work compounds.`,actions:[addTask("Morning session",today,t,"run","")]};
+  }
+
+  // 22. Football session added specifically
+  if(/\b(football\s*tonight|evening\s*football|football\s*at\s*\d|add\s*football)\b/.test(m)){
+    const t=extractTime(m)||"18:00";
+    const dayWord=extractDay(m)||"today";
+    return{handled:true,reply:`Football session added at ${t}.`,actions:[addTask("Football session",dateForDay(dayWord),t,"football","")]};
+  }
+
+  // 23. Free day / nothing today
+  if(/\b(free\s*day|nothing\s*planned|empty\s*day|no\s*sessions?\s*today)\b/.test(m)){
+    return{handled:true,reply:"Today's clean. Good time for quality rest, mobility, or an easy walk if you want to move.",actions:[]};
+  }
+
+  // 24. Eat clean / meal prep
+  if(/\b(eat\s*clean|clean\s*eating|meal\s*prep|nutrition\s*today|fuel\s*(up|today))\b/.test(m)){
+    return{handled:true,reply:"Eat clean reminder added. Performance starts in the kitchen.",actions:[addTask("Eat clean today",today,"12:00","other","High protein. No junk.")]};
+  }
+
+  // 25. Sleep / recovery tonight
+  if(/\b(sleep\s*(well|tonight|early)|recover\s*(tonight|well)|prioritise\s*sleep)\b/.test(m)){
+    return{handled:true,reply:"Good call. Added a 9pm wind-down. Sleep is the #1 recovery tool.",actions:[addTask("Wind-down + sleep by 9pm",today,"20:30","other","No screens. Legs up.")]};
+  }
+
+  // 26. Proactive check if 0 tasks done and it's past noon
+  if(curH>=14&&/^\s*(hi|hey|hello|what'?s?\s*up|yo)\s*[!.?]?\s*$/.test(m)){
+    const done=tasks.filter(t=>t.date===today&&t.completed).length;
+    const total=tasks.filter(t=>t.date===today&&t.category!=="work").length;
+    if(done===0&&total>0)return{handled:true,reply:`Hey. It's ${timeNow} and none of today's ${total} sessions are done yet. Still time — what's the situation?`,actions:[]};
+    if(total===0)return{handled:true,reply:"Hey. Nothing scheduled today — want me to build a session?",actions:[]};
+    return{handled:true,reply:`Hey. ${done}/${total} sessions done. ${done===total?"Solid day.":"Keep going — you've got this."}`,actions:[]};
+  }
+
+  // 27. Streak acknowledgement
+  const longestStreak=habitHistory.reduce((max,h)=>Math.max(max,h.streak||0),0);
+  if(longestStreak>=5&&/\b(streak|habits?\s*going|how\s*consistent)\b/.test(m)){
+    return{handled:true,reply:`You're on a ${longestStreak}-day streak on your best habit. That's elite consistency — don't break it.`,actions:[]};
+  }
+
+  return{handled:false};
+}
+
+async function callCoach(msg,ctx){
+  // Try Jarvis local first — no API cost, instant, works offline
+  const local=localCoach(msg,ctx);
+  if(local.handled)return local;
+  // Fall back to Claude API for novel/complex requests
+  try{
+    const res=await fetch("/.netlify/functions/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
+    const data=await res.json();
+    if(typeof data.reply==="string")return data;
+  }catch{}
+  return{reply:"Can't reach the server right now. Try rephrasing or check your connection.",actions:[]};
 }
 
 // ── Base components ───────────────────────────────────────────
@@ -594,7 +899,26 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
     const now=new Date(),todayStr=todayISO(),weekDates=getWeekDates();
     const upcoming=tasks.filter(t=>t.date>=todayStr).sort((a,b)=>(`${a.date}${a.time||""}`).localeCompare(`${b.date}${b.time||""}`)).slice(0,60).map(t=>({id:t.id,title:t.title,date:t.date,time:t.time||null,category:t.category,completed:t.completed,planKey:t.planKey||null,notes:t.notes||""}));
     const weekStats={};tasks.filter(t=>weekDates.includes(t.date)).forEach(t=>{if(!weekStats[t.category])weekStats[t.category]={done:0,total:0};weekStats[t.category].total++;if(t.completed)weekStats[t.category].done++;});
-    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habits.filter(h=>h.days.includes(now.getDay())).map(h=>({id:h.id,title:h.title,done:!!habitLogs[`${h.id}_${todayStr}`]}))};
+    // Habit history with streaks
+    const habitHistory=habits.filter(h=>h.days.includes(now.getDay())).map(h=>{
+      let streak=0;
+      for(let i=1;i<=30;i++){const d=new Date(now);d.setDate(d.getDate()-i);const k=`${h.id}_${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;if(habitLogs[k])streak++;else break;}
+      return{id:h.id,title:h.title,emoji:h.emoji||"",doneToday:!!habitLogs[`${h.id}_${todayStr}`],streak};
+    });
+    // Callouts: games within next 3 days
+    const in3=(()=>{const d=new Date(now);d.setDate(d.getDate()+3);return d.toISOString().slice(0,10);})();
+    const callouts=tasks.filter(t=>t.category==="game"&&t.date>=todayStr&&t.date<=in3&&!t.completed).sort((a,b)=>a.date.localeCompare(b.date)).map(t=>({id:t.id,title:t.title,date:t.date,time:t.time||null}));
+    // Load signals
+    const loadToday=tasks.filter(t=>t.date===todayStr&&t.category!=="work").length;
+    const yst=(()=>{const d=new Date(now);d.setDate(d.getDate()-1);return d.toISOString().slice(0,10);})();
+    const loadYesterday=tasks.filter(t=>t.date===yst&&t.category!=="work").length;
+    // Missed tasks from last 3 days
+    const missedTasks=tasks.filter(t=>{
+      if(t.date>=todayStr||t.completed||t.category==="work")return false;
+      const d=new Date(now);d.setDate(d.getDate()-3);
+      return t.date>=d.toISOString().slice(0,10);
+    }).map(t=>({id:t.id,title:t.title,date:t.date,category:t.category}));
+    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habitHistory,habitHistory,callouts,loadToday,loadYesterday,missedTasks};
   },[tasks,habits,habitLogs,settings]);
 
   const QUICK=[
