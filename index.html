@@ -4024,8 +4024,8 @@ function PlansSection({trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
 }
 
 // ── Coach Panel ───────────────────────────────────────────────
-function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActions}){
-  const [msgs,setMsgs]=useState([{role:"assistant",content:"Hey! I'm Coach ▸\n\nWhat I can do:\n• \"Plan my week\" — generate a smart week from your template\n• \"Auto-adjust\" — rebalance load across the week\n• \"Match cancelled\" — swap for quality training\n• \"Tired today\", \"Rest day\", \"What's next?\", \"Week check\""}]);
+function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,healthLogs,foodLogs,settings,onApplyActions}){
+  const [msgs,setMsgs]=useState([{role:"assistant",content:"Hey, I'm Coach ▸ — your personal planning assistant.\n\nI work fully offline. Ask me anything:\n• \"Plan my week\" / \"Auto-adjust\"\n• \"Health check\" / \"How did I sleep?\"\n• \"What should I eat today?\"\n• \"My knee is sore\" / \"Warmup protocol\"\n• \"Motivate me\" / \"Match cancelled\"\n• Or just tell me how you're feeling."}]);
   const [input,setInput]=useState(""); const [busy,setBusy]=useState(false);
   const bodyRef=useRef(null); const inputRef=useRef(null);
   useEffect(()=>{ if(isOpen) setTimeout(()=>inputRef.current?.focus(),100); },[isOpen]);
@@ -4035,8 +4035,20 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
     const now=new Date(),todayStr=todayISO(),weekDates=getWeekDates();
     const upcoming=tasks.filter(t=>t.date>=todayStr).sort((a,b)=>(`${a.date}${a.time||""}`).localeCompare(`${b.date}${b.time||""}`)).slice(0,60).map(t=>({id:t.id,title:t.title,date:t.date,time:t.time||null,category:t.category,completed:t.completed,planKey:t.planKey||null,notes:t.notes||""}));
     const weekStats={};tasks.filter(t=>weekDates.includes(t.date)).forEach(t=>{if(!weekStats[t.category])weekStats[t.category]={done:0,total:0};weekStats[t.category].total++;if(t.completed)weekStats[t.category].done++;});
-    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habits.filter(h=>h.days.includes(now.getDay())).map(h=>({id:h.id,title:h.title,done:!!habitLogs[`${h.id}_${todayStr}`]})),weekDates,settings};
-  },[tasks,habits,habitLogs,settings]);
+    const healthLog=(healthLogs||{})[todayStr]||{};
+    const habitStreaks=habits.reduce((acc,h)=>{
+      let streak=0;const start=habitLogs[`${h.id}_${todayStr}`]?0:1;
+      for(let i=start;i<90;i++){const d=isoDate(addDays(now,-i));if(habitLogs[`${h.id}_${d}`])streak++;else break;}
+      acc[h.id]={title:h.title,emoji:h.emoji||"▸",streak};return acc;
+    },{});
+    const meals=(foodLogs||{})[todayStr]?.meals||[];
+    const todayMacros=meals.reduce((a,m2)=>({cal:a.cal+(+m2.cal||0),protein:a.protein+(+m2.protein||0),carbs:a.carbs+(+m2.carbs||0),fat:a.fat+(+m2.fat||0)}),{cal:0,protein:0,carbs:0,fat:0});
+    const profile=settings.profile||{};
+    const macroTargets=calcDailyMacros(profile,tasks,todayStr);
+    const callouts=getCallouts(tasks,habits,habitLogs,settings,weekDates);
+    const bodyZones=healthLog.bodyMap?.zones||{};
+    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habits.filter(h=>h.days.includes(now.getDay())).map(h=>({id:h.id,title:h.title,emoji:h.emoji,done:!!habitLogs[`${h.id}_${todayStr}`]})),weekDates,settings,healthLog,habitStreaks,todayMacros,macroTargets,profile,callouts,bodyZones};
+  },[tasks,habits,habitLogs,healthLogs,foodLogs,settings]);
 
   const QUICK=[
     {l:"Plan week",p:"Plan my week"},
