@@ -744,7 +744,7 @@ function localCoach(msg,ctx){
       return{handled:true,reply:`**Recovery: ${r}%**${hrvLine}${hrLine}${slpLine}\n\n${light}`,actions:[]};
     }
     return{handled:true,reply:pick([
-      "No health data yet. Log sleep and HRV in the Health tab — or sync via Apple Health shortcut. Once data is in, I'll give you a full readiness score.",
+      "No health data yet. Log sleep and HRV in the Health tab — or set up the Apple Watch app (Health tab → Setup Guide) to sync automatically. Once data is in, I'll give you a full readiness score.",
       "Health data not logged. Head to Health tab → log sleep. Add your HRV if you have a wearable. I'll calculate your readiness score immediately.",
     ]),actions:[]};
   }
@@ -3640,27 +3640,25 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
     ${healthTab==="nutrition"?html`<${NutritionView} foodLogs=${foodLogs||{}} macroTargets=${settings?.macroTargets} onUpsertFoodLog=${onUpsertFoodLog} tasks=${tasks} settings=${settings} onUpdateSettings=${onUpdateSettings}/>`:null}
     ${healthTab==="health"?html`<div style=${{display:"contents"}}>
 
-    <!-- Apple Health sync card -->
+    <!-- Apple Watch direct sync card -->
     ${(()=>{
       const syncedAt=log.syncedAt;
       const syncLabel=syncedAt?`Last synced: ${new Date(syncedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})} today`:"Not synced yet";
-      const shortcutUrl=`${window.location.origin}/?hk=1&date=DATE&hrv=HRV&rhr=RHR&sleep=BED-WAKE&sq=QUALITY`;
       return html`<div style=${{...S.card,marginBottom:10,padding:"14px 16px"}}>
         <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
           <div>
-            <div style=${{fontSize:11,fontWeight:900,color:T.muted,letterSpacing:1}}>APPLE HEALTH SYNC</div>
+            <div style=${{fontSize:11,fontWeight:900,color:T.muted,letterSpacing:1}}>APPLE WATCH SYNC</div>
             <div style=${{fontSize:11,color:syncedAt?T.green:T.muted,fontWeight:600,marginTop:2}}>${syncLabel}</div>
           </div>
           <button onClick=${()=>{
-            const origin=window.location.origin;
-            const info=`TWO SHORTCUTS SETUP\n\n──────────────────────────\nSHORTCUT 1 — Morning Health\n──────────────────────────\nRuns each morning after Apple Watch syncs.\n\n1. Open Shortcuts → New Shortcut\n2. Add Health actions:\n   • Get HRV Average\n   • Get Resting Heart Rate\n   • Get Last Sleep Analysis\n3. Open URL:\n${origin}/?hk=1&date=DATE&hrv=HRV&rhr=RHR&sleep=BED-WAKE&sq=QUALITY\n\nReplace DATE/HRV/RHR/BED/WAKE/QUALITY with the Health variables.\n\n──────────────────────────────\nSHORTCUT 2 — Workout Auto-Log\n──────────────────────────────\nWorks with ALL apps (Strava, Garmin, Nike, Apple Fitness+) — they all write to Apple Health.\n\n1. Open Shortcuts → Automation\n2. New Automation → "When Workout ends"\n3. Add action: Get Last Workout (from Health)\n4. Open URL:\n${origin}/?hk=1&date=DATE&wt=TYPE&wd=DURATION&wcal=CALORIES&whr=AVG_HR&wdist=DISTANCE_KM\n\nReplace with workout variables.\nwt = workout type (running, cycling, strength, swimming, football, pilates, yoga, basketball, hiking…)\n\nBoth can be combined in one URL for full sync.`;
+            const info=`APPLE WATCH APP SETUP (5 min)\nDirect Watch → Feliz Dias sync. No Shortcuts. No middleman.\n\n1. Xcode → File → New → Project\n   Platform: watchOS | Template: App\n   Name: FelizDias\n\n2. Copy 3 Swift files from /watchapp/ into project:\n   • FelizDiasWatchApp.swift\n   • HealthSyncManager.swift\n   • ContentView.swift\n\n3. Edit FelizDiasWatchApp.swift line 13:\n   static let apiBase = "${window.location.origin}"\n\n4. Signing & Capabilities → + Capability → HealthKit\n\n5. Select Watch as destination → ▶ Build & Run\n\n6. Open app on Watch → grant HealthKit access → Allow All\n\nDone. Syncs HRV, sleep, resting HR + workouts\ndirectly to Feliz Dias every morning at 6:30am.\n\nManual sync: open app on Watch → tap "Sync now"`;
             alert(info);
           }} style=${{
             fontSize:11,fontWeight:800,padding:"7px 12px",borderRadius:9,cursor:"pointer",fontFamily:"inherit",
             background:T.accentGlow,border:`1px solid ${T.accentBorder}`,color:T.accent,
           }}>Setup Guide</button>
         </div>
-        <div style=${{fontSize:10,color:T.muted,lineHeight:1.55}}>Two iOS Shortcuts: one for morning health data (HRV, HR, sleep), one for workouts. Workouts from any app — Strava, Garmin, Nike, Apple Fitness+ — auto-log as completed tasks and update strain.</div>
+        <div style=${{fontSize:10,color:T.muted,lineHeight:1.55}}>Native watchOS app syncs HRV, resting HR, sleep and workouts directly from your Apple Watch — no Shortcuts, no iPhone middleman. Auto-syncs at 6:30am daily after overnight Watch recording.</div>
       </div>`;
     })()}
 
