@@ -4404,6 +4404,7 @@ function App(){
 
     <${CoachPanel} isOpen=${coachOpen} onClose=${()=>setCoachOpen(false)}
       tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs}
+      healthLogs=${state.healthLogs||{}} foodLogs=${state.foodLogs||{}}
       settings=${state.settings} onApplyActions=${applyActions}/>
 
     <${Toast} onReady=${toastReady}/>
