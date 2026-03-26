@@ -907,7 +907,62 @@ function localCoach(msg,ctx){
     return{handled:true,reply:`Week load: **${weekLoad2}** — within healthy range (<${maxLoad}). You're managing volume well. Progressive overload is the goal — not overload.`,actions:[]};
   }
 
-  // [CHUNK_E]
+  // ㉑ Stress / overwhelmed / anxious
+  if(/\b(stress|overwhelm|anxious|anxiety|burnout|burned.{0,4}out|can.?t cope|too much|struggling|pressure|not.{0,8}feeling it|demotivat|no motivation)\b/.test(m)){
+    const qPeace=BIBLE_QUOTES.find(q=>/anxious|cast|peace|fear|strength/.test(q.text))||quote;
+    if(todayHard.length>0) todayHard.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:"Gentle walk or light mobility [mental reset]",category:"recovery",notes:"Mental load is physical load. Be kind today."}}));
+    return{handled:true,reply:pick([
+      `That's valid — and important to acknowledge. Stress is real physical load on your body.\n\n"${qPeace.text}" — ${qPeace.ref}\n\n${todayHard.length>0?"I've lightened today's training. ":""}Take one hour at a time. Move gently, breathe, and come back stronger.`,
+      `Your body hears everything your mind feels. Rest is not weakness today.\n\n"${qPeace.text}" — ${qPeace.ref}\n\n${todayHard.length>0?"Training swapped to easy movement. ":""}Do what you can, give what you have.`,
+    ]),actions};
+  }
+
+  // ㉒ Feeling great / pumped / motivated
+  if(/feel.{0,10}(great|amazing|fantastic|incredible|strong|good|brilliant)|ready to go|let.?s go|pumped|fired up|on fire/.test(m)){
+    const nextHard=upcoming.find(t=>t.date>=today&&["run","bike","football","game"].includes(t.category)&&!t.completed);
+    const qStrong=BIBLE_QUOTES.find(q=>/strength|strong|run|prize|power/.test(q.text))||quote;
+    return{handled:true,reply:pick([
+      `${recovery!=null?`Recovery: **${recovery}%** — `:""} Green light. Use it.\n\n${nextHard?`Next hard session: **${nextHard.title}** on ${nextHard.date}. Give it everything.`:"Stack a session while you're feeling this good. Ask me to add one."}\n\n"${qStrong.text}" — ${qStrong.ref}`,
+      `That energy is a gift — don't waste it. ${nextHard?`**${nextHard.title}** is next. Attack it.`:"Head to Review and stack a session."}\n\n"${qStrong.text}" — ${qStrong.ref}`,
+    ]),actions:[]};
+  }
+
+  // ㉓ Match day protocol
+  if(/match day|game day|game today|match today|playing today|got a (game|match)/.test(m)){
+    const todayGame=todayTasks.find(t=>["game","football"].includes(t.category));
+    const gameTime=todayGame?.time||"15:00";
+    const[gh]=gameTime.split(":").map(Number);
+    const fuelH=pad2((gh-3+24)%24);
+    const[,gm]=gameTime.split(":");
+    return{handled:true,reply:`**Match day protocol:**\n\n⏰ Wake: normal time, easy morning\n🍽️ ${fuelH}:${gm||"00"} — Complex carbs + lean protein (pasta/rice)\n💧 Hydrate all morning — 2L before kick-off\n🏃 ${gameTime} −20min — Full dynamic warmup\n⚡ ${gameTime} — Kick-off. Leave everything out there\n🧊 Post-match — Ice hot spots, protein within 30min\n😴 Tonight — 9hr sleep target\n\n"The horse is made ready for the day of battle, but victory belongs to the Lord." — Proverbs 21:31\n\nGo win it. 🏟️`,actions:[]};
+  }
+
+  // ㉔ Sleep recommendations / bedtime
+  if(/when.{0,8}sleep|go.{0,6}bed|bedtime|sleep.{0,6}(better|tips|improve|earlier)|improve.{0,6}sleep/.test(m)){
+    const wakeT=hl.sleep?.wakeTime||ctx.constraints?.wake||"07:00";
+    const[wh,wm]=wakeT.split(":").map(Number);
+    const bedH=pad2((wh-9+24)%24);
+    return{handled:true,reply:pick([
+      `For your **${wakeT}** wake time, target bed by **${bedH}:${pad2(wm)}** (8hrs + 30min wind-down).\n\n**Sleep protocol:**\n• No screens 30min before bed\n• Room: dark, cool (17–19°C)\n• No caffeine after 2pm\n• Magnesium glycinate 200–400mg before bed\n• Same wake time daily — even weekends\n\nSleep is your #1 performance lever. Non-negotiable.`,
+      `Bed by **${bedH}:${pad2(wm)}** for ${wakeT} wake. That's the target.\n\nTop tips: dark/cool room, no screens, consistent wake time, magnesium before bed. Every hour before midnight is worth two after.`,
+    ]),actions:[]};
+  }
+
+  // ㉕ Goals / weekly targets
+  if(/\b(goal|target|aim|objective|what.*working toward|my targets|weekly target)\b/.test(m)){
+    const targets=ctx.weekTargets||{};
+    const lines=Object.entries(targets).filter(([,v])=>v>0).map(([k,v])=>`• ${CATS[k]?.emoji||"▸"} ${CATS[k]?.label||k}: ${v} session${v>1?"s":""}/week`);
+    return{handled:true,reply:`**Your weekly targets:**\n${lines.length>0?lines.join("\n"):"No targets set — go to Settings to define your weekly session goals."}\n\n"Commit your work to the Lord, and your plans will be established." — Proverbs 16:3`,actions:[]};
+  }
+
+  // ㉖ Hydration
+  if(/\b(water|hydrat|drink.{0,6}(water|enough|today)|how much.{0,6}(water|drink))\b/.test(m)){
+    const wt=profile.weight||75;
+    const daily=(wt*0.033).toFixed(1);
+    const hasTraining=todayTasks.some(t=>["run","bike","football","game"].includes(t.category));
+    return{handled:true,reply:`**Daily hydration: ${daily}L** (${wt}kg × 33ml)\n\n${hasTraining?"Training today — add 500ml–1L during and after your session.\n\n":""}📊 Spread it:\n• Wake: 500ml immediately\n• Pre-session: 400ml 2hrs before\n• During: 150–200ml every 15–20min\n• Evening: finish your bottle by 8pm`,actions:[]};
+  }
+
   // Fallback — always handled, never "I'm offline"
   const nextAny=upcoming.find(t=>t.date>=today&&!t.completed&&t.category!=="work");
   return{handled:true,isFallback:true,reply:pick([
