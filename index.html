@@ -974,13 +974,15 @@ function localCoach(msg,ctx){
 
 async function callCoach(msg,ctx){
   const local=localCoach(msg,ctx);
-  if(local.handled) return local;
+  // Known scenario matched — return immediately (no network needed)
+  if(local.handled&&!local.isFallback) return local;
+  // Unrecognised query — try API for richer response, fall back to local catch-all
   try{
     const res=await fetch("/api/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx,system:SYSTEM})});
-    const data=await res.json();
-    if(typeof data.reply==="string") return data;
+    if(res.ok){const data=await res.json();if(typeof data.reply==="string") return data;}
   }catch{}
-  return{reply:"I'm offline. Try: \"plan my week\", \"auto-adjust\", \"match cancelled\", \"tired today\", \"rest day\", \"what's next\", \"week check\".",actions:[]};
+  // Always return something useful — local catch-all is never an error message
+  return local;
 }
 
 // ── Base components ───────────────────────────────────────────
