@@ -833,7 +833,81 @@ function localCoach(msg,ctx){
     return{handled:true,reply:`**${area.charAt(0).toUpperCase()+area.slice(1)} issue noted.**\n\n${tip}\n\n${todayHard.length>0?"Flagged today's session — modify or swap to recovery if pain is >4/10.":"No hard sessions today — good timing to rest it."}`,actions};
   }
 
-  // [CHUNK_D]
+  // ⑯ Warmup / cooldown / stretching
+  if(/warm.?up|cool.?down|stretch|mobility|before.{0,8}(run|session|training|game|match)|how.{0,6}prepare/.test(m)){
+    const hasGame=todayTasks.some(t=>["game","football"].includes(t.category));
+    const hasRun=todayTasks.some(t=>t.category==="run");
+    if(hasGame){
+      return{handled:true,reply:"**Pre-match warmup (20min):**\n• 5min easy jog\n• Leg swings, hip circles, arm swings\n• 3×10 glute bridges\n• 4×20m strides building to 80%\n• 2×10 lateral shuffles + short sprints\n\n**Post-match:**\n• 10min easy walk\n• Static stretches: quads, hamstrings, calves (30sec each)\n• Ice any hot spots",actions:[]};
+    }
+    if(hasRun){
+      return{handled:true,reply:"**Pre-run (10min):**\n• 5min easy walk\n• Leg swings, hip circles\n• 2×10 glute bridges\n• 2×20m strides at 60%\n\n**Post-run:**\n• 5min easy walk\n• Calf, quad, hamstring stretches (30sec each)\n• Foam roll if available",actions:[]};
+    }
+    return{handled:true,reply:"**Daily mobility (10min):**\n• Cat-cow ×10\n• Hip flexor stretch 60sec/side\n• Thoracic rotation ×10/side\n• World's greatest stretch ×5/side\n• Ankle circles + calf raises\n\nDo this daily — it compounds massively over a season.",actions:[]};
+  }
+
+  // ⑰ Pacing / heart rate zones / intensity
+  if(/\b(pace|pacing|how fast|speed|zone\s?[1-5]|easy pace|conversational|effort level|intensity|threshold|tempo|interval|sprint.*effort)\b/.test(m)){
+    const hrMax=profile.hrMax||190;
+    return{handled:true,reply:`**Training zones (HRmax ~${hrMax}bpm):**\n\n🟢 Z1 Recovery: <${Math.round(hrMax*.60)}bpm — very easy, breathe through nose\n🔵 Z2 Aerobic: ${Math.round(hrMax*.60)}–${Math.round(hrMax*.70)}bpm — conversational, fat burning\n🟡 Z3 Tempo: ${Math.round(hrMax*.70)}–${Math.round(hrMax*.80)}bpm — can speak sentences\n🟠 Z4 Threshold: ${Math.round(hrMax*.80)}–${Math.round(hrMax*.90)}bpm — hard, few words only\n🔴 Z5 Max: >${Math.round(hrMax*.90)}bpm — all out, 10–30s max\n\n80% of your training should be Z1–Z2. Most athletes train too hard on easy days. Slow down to get faster.`,actions:[]};
+  }
+
+  // ⑱ "I just finished" / task completion
+  if(/i (just|already|have|did|finished|completed|done|ran|biked|cycled|played|crushed|smashed)|just (finished|done|completed|ran|biked|crushed)/.test(m)){
+    const catMap={ran:"run",biked:"bike",cycled:"bike",played:"football",ran:"run"};
+    const detectedCat=Object.entries(catMap).find(([k])=>m.includes(k))?.[1];
+    const justDone=upcoming.find(t=>t.date===today&&!t.completed&&(detectedCat?t.category===detectedCat:t.category!=="work"));
+    if(justDone){
+      actions.push({type:"updateTask",taskId:justDone.id,changes:{completed:true}});
+      const strainNow=calcStrain(upcoming,today);
+      const nextUp=upcoming.find(t=>t.date===today&&t.id!==justDone.id&&!t.completed&&t.category!=="work");
+      return{handled:true,reply:pick([
+        `✅ Marked **${justDone.title}** as done! Today's strain: ${strainNow.toFixed(1)}. ${strainNow>14?"High load — prioritise sleep and protein tonight.":"Good work."} ${nextUp?`Next: **${nextUp.title}**.`:"That's a wrap for today."}`,
+        `Banked. **${justDone.title}** is ticked off. Strain: ${strainNow.toFixed(1)}.${nextUp?` Still to go: **${nextUp.title}**.`:" All done today. Recover well."}`,
+      ]),actions};
+    }
+    return{handled:true,reply:pick([
+      "Nice work! Tap the task in your schedule to mark it done — I'll track your strain and progression.",
+      "Well done. Couldn't identify which session automatically — tap the task in Review to mark it complete.",
+    ]),actions:[]};
+  }
+
+  // ⑲ Add a task / schedule something
+  if(/\badd.{0,15}(run|bike|gym|pilates|swim|sauna|football|recovery|session|workout)\b|schedule.{0,8}(a|me a)\b|can you add|i need to (train|run|bike)/.test(m)){
+    const catMap2={run:"run",bike:"bike",gym:"other",pilates:"pilates",swim:"other",sauna:"sauna",football:"football",recovery:"recovery",workout:"other"};
+    const catKey=Object.keys(catMap2).find(k=>m.includes(k))||"other";
+    const cat=catMap2[catKey];
+    const durMatch=m.match(/(\d+)\s*(min|hour|hr)/);
+    const dur=durMatch?`${durMatch[1]}${durMatch[2].startsWith("h")?"hr":"min"}`:"45min";
+    const timeMatch=m.match(/at\s+(\d{1,2}(?::\d{2})?)\s*(am|pm)?/i);
+    const dayNames2=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+    const dayMatch2=m.match(/\b(tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
+    let tDate=today;
+    if(dayMatch2?.[1]==="tomorrow") tDate=isoDate(addDays(new Date(),1));
+    else if(dayMatch2?.[1]){const td2=dayNames2.indexOf(dayMatch2[1]);const d2=new Date();const diff2=(td2-d2.getDay()+7)%7||7;tDate=isoDate(addDays(d2,diff2));}
+    let tTime="07:00";
+    if(timeMatch){let h=parseInt(timeMatch[1]);if(timeMatch[2]?.toLowerCase()==="pm"&&h<12)h+=12;tTime=`${pad2(h)}:${timeMatch[1].includes(":")?timeMatch[1].split(":")[1]:"00"}`;}
+    const title=`${cat.charAt(0).toUpperCase()+cat.slice(1)} ${dur}`;
+    actions.push({type:"addTask",task:{title,date:tDate,time:tTime,category:cat,notes:"Added via coach."}});
+    return{handled:true,reply:pick([
+      `Added **${title}** on ${tDate} at ${tTime}. Check Review to adjust details.`,
+      `Done — **${title}** is on your schedule for ${tDate}. Tap it in Review to edit time or notes.`,
+    ]),actions};
+  }
+
+  // ⑳ Overtraining / load check
+  if(/overtraining|too.{0,8}much.{0,6}(training|volume|work)|overdoing|training load|load check|volume check/.test(m)){
+    const weekLoad2=upcoming.filter(t=>weekDates.includes(t.date)).reduce((s,t)=>s+(LOAD[t.category]||1),0);
+    const maxLoad=35;
+    if(weekLoad2>maxLoad){
+      const hardLeft=upcoming.filter(t=>weekDates.filter(d=>d>=today).includes(t.date)&&["run","bike"].includes(t.category)&&!t.completed).slice(0,1);
+      hardLeft.forEach(t=>actions.push({type:"updateTask",taskId:t.id,changes:{title:t.title.replace(/\d+min/,"25min")+" [load-managed]",notes:"Week load too high — volume reduced."}}));
+      return{handled:true,reply:`Week load: **${weekLoad2}** (healthy ceiling: ${maxLoad}).${hardLeft.length>0?" Reduced one session's volume.":""}\n\nSigns of overreaching: elevated resting HR, poor sleep, mood dips, persistent soreness. If that's you — take 2 full rest days immediately.`,actions};
+    }
+    return{handled:true,reply:`Week load: **${weekLoad2}** — within healthy range (<${maxLoad}). You're managing volume well. Progressive overload is the goal — not overload.`,actions:[]};
+  }
+
+  // [CHUNK_E]
   // Fallback — always handled, never "I'm offline"
   const nextAny=upcoming.find(t=>t.date>=today&&!t.completed&&t.category!=="work");
   return{handled:true,isFallback:true,reply:pick([
