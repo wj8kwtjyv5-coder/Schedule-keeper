@@ -1,7 +1,7 @@
 {
   "name": "Feliz Dias",
   "short_name": "FD",
-  "description": "O teu treinador pessoal com IA — dias felizes começam aqui",
+  "description": "Your personal AI coach — happy days start here",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#07080f",
