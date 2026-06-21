@@ -117,6 +117,34 @@ const CATS = {
   other:   {icon:"◇",  color:"#64748b",glow:"rgba(255,255,255,0.03)",border:"rgba(255,255,255,0.08)",label:"Other",emoji:"◇"},
 };
 
+// ── XP / Level system ────────────────────────────────────────
+const XP_CAT={game:100,football:50,run:40,bike:30,pilates:25,recovery:20,sauna:20,other:15,work:5};
+const XP_HABIT=15;
+const LEVELS=[
+  {lvl:1, xp:0,     rank:"Rookie",      color:"#888aaa"},
+  {lvl:2, xp:200,   rank:"Amateur",     color:"#8fb8ff"},
+  {lvl:3, xp:500,   rank:"Developing",  color:"#8fb8ff"},
+  {lvl:4, xp:900,   rank:"Intermediate",color:"#6ee7b7"},
+  {lvl:5, xp:1400,  rank:"Consistent",  color:"#6ee7b7"},
+  {lvl:6, xp:2000,  rank:"Dedicated",   color:"#ffd16b"},
+  {lvl:7, xp:2800,  rank:"Athletic",    color:"#ffd16b"},
+  {lvl:8, xp:3800,  rank:"Semi-Pro",    color:"#f472b6"},
+  {lvl:9, xp:5000,  rank:"Pro",         color:"#f472b6"},
+  {lvl:10,xp:6500,  rank:"Elite",       color:"#c4b5fd"},
+  {lvl:11,xp:8500,  rank:"Champion",    color:"#c4b5fd"},
+  {lvl:12,xp:11000, rank:"Legendary",   color:"#ff6a7a"},
+  {lvl:13,xp:14000, rank:"World Class", color:"#ff6a7a"},
+  {lvl:14,xp:18000, rank:"Icon",        color:"#ff6a7a"},
+  {lvl:15,xp:23000, rank:"GOAT",        color:"#ffd16b"},
+];
+function getLevelInfo(xp=0){
+  let curr=LEVELS[0];
+  for(const l of LEVELS){if(xp>=l.xp)curr=l;else break;}
+  const next=LEVELS.find(l=>l.lvl===curr.lvl+1);
+  const pct=next?Math.min(100,Math.round(((xp-curr.xp)/(next.xp-curr.xp))*100)):100;
+  return{...curr,next:next||null,pct,xpToNext:next?next.xp-xp:0};
+}
+
 const BIBLE_QUOTES=[
   // Discipline & self-control
   {text:"No discipline seems pleasant at the time, but painful. Later on, however, it produces a harvest of righteousness.",ref:"Hebrews 12:11"},
@@ -503,6 +531,258 @@ ACTIONS:
 {"type":"deleteTask","taskId":"..."}
 {"type":"completeTask","taskId":"..."}`;
 
+// ── Jarvis Coach (offline-first) ─────────────────────────────
+const COACH_SYSTEM=`You are Coach — a high-performance natural athlete coach for an elite football player following the Marcos Llorente lifestyle philosophy.
+
+ATHLETE PROFILE: Trains 5–7am + evenings. Work Mon/Wed 8–5, Tue/Thu 8–4, Fri 8–2. Wake 5am, bed 9pm. Weekly targets: 5×runs, 5×football, 3×bike, 2×pilates, 2×recovery, 5×sauna.
+
+MARCOS LLORENTE PRINCIPLES (enforce always):
+• Grounding: barefoot on grass/earth daily for nervous system reset
+• Cold therapy: cold shower or ice bath after every hard session
+• Morning sun: 10–20min outside within 1h of waking for cortisol/vitamin D
+• Circadian rhythm: eat in daylight, stop 2h before bed, hard training in daylight
+• Whole foods only: lean fish, vegetables, legumes, nuts, seeds, fruit — zero processed
+• Train fasted in mornings (sessions under 60min) — no food 2h before any session
+• 3L+ filtered water daily
+• Prayer/meditation: non-negotiable daily anchor before training
+• No screens 60min before bed
+
+KEY SCENARIOS WITH FULL PROTOCOL:
+① MATCH CANCELLED: deleteTask game, add Run 40min + 4 strides (06:00), Football technique 50min (18:00), Pilates 20min (19:15). Reply: sharp, no filler.
+② GAME [day/time]: addTask match, fuel check (12:00), early wind-down eve before (20:30), active recovery morning after (06:10).
+③ TIRED/SORE: replace hard sessions with "Easy walk + mobility 30min" + "Cold shower 3min". Add grounding walk if outdoors possible.
+④ REST DAY: clear hard sessions, add "Barefoot grounding 20min" + "Morning sun 15min" + "Cold shower 3min" + "Prayer + meditation 10min".
+⑤ Maximise every session — always add specific execution notes (sets, pace, intensity %).
+
+OUTPUT STRICT JSON ONLY: {"reply":"1–3 sentence sharp reply","actions":[...]}
+ACTIONS: {"type":"addTask","task":{"title":"...","date":"YYYY-MM-DD","time":"HH:MM","category":"...","notes":"..."}} | {"type":"updateTask","taskId":"...","changes":{...}} | {"type":"deleteTask","taskId":"..."} | {"type":"completeTask","taskId":"..."}`;
+
+function localCoach(msg,ctx){
+  const m=msg.toLowerCase().replace(/['']/g,"'").trim();
+  const today=ctx.today;
+  const tomorrow=(()=>{const d=new Date(today);d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);})();
+  const tasks=ctx.upcomingTasks||[];
+  const weekStats=ctx.weekStats||{};
+  const targets=ctx.weekTargets||{};
+  const callouts=ctx.callouts||[];
+  const habitHistory=ctx.habitHistory||[];
+  const loadToday=ctx.loadToday||0;
+  const missedTasks=ctx.missedTasks||[];
+  const timeNow=ctx.timeNow||"00:00";
+  const [curH]=timeNow.split(":").map(Number);
+  const DAY_MAP={monday:0,tuesday:1,wednesday:2,thursday:3,friday:4,saturday:5,sunday:6,mon:0,tue:1,wed:2,thu:3,fri:4,sat:5,sun:6};
+  function parseTime(s){const m12=/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(s);if(m12){let h=+m12[1],min=+(m12[2]||0);if(m12[3].toLowerCase()==="pm"&&h!==12)h+=12;if(m12[3].toLowerCase()==="am"&&h===12)h=0;return`${String(h).padStart(2,"0")}:${String(min).padStart(2,"0")}`;}const m24=/\b(\d{1,2}):(\d{2})\b/.exec(s);if(m24)return`${String(+m24[1]).padStart(2,"0")}:${m24[2]}`;return null;}
+  function dateForDay(dayWord){if(dayWord==="today"||dayWord===null)return today;if(dayWord==="tomorrow")return tomorrow;const tgt=DAY_MAP[dayWord];if(tgt===undefined)return today;const now=new Date(today);const cur=(now.getDay()+6)%7;let diff=(tgt-cur+7)%7||7;const d=new Date(now);d.setDate(d.getDate()+diff);return d.toISOString().slice(0,10);}
+  function extractDay(s){for(const k of Object.keys(DAY_MAP)){if(s.includes(k))return k;}if(s.includes("tomorrow"))return"tomorrow";return null;}
+  function extractTime(s){return parseTime(s)||null;}
+  function findTask(date,cats){return tasks.find(t=>t.date===date&&cats.includes(t.category)&&!t.completed)||null;}
+  function findTasks(date,cats){return tasks.filter(t=>t.date===date&&(cats?cats.includes(t.category):true)&&!t.completed);}
+  function delTask(t){return t?{type:"deleteTask",taskId:t.id}:null;}
+  function addTask(title,date,time,category,notes=""){return{type:"addTask",task:{title,date,time,category,notes}};}
+  function updateTask(t,changes){return t?{type:"updateTask",taskId:t.id,changes}:null;}
+  const gameTomorrow=callouts.find(c=>c.date===tomorrow);
+  const gameNote=gameTomorrow?`\n\nHeads up — game tomorrow (${gameTomorrow.title}). Keeping you sharp but not heavy today.`:"";
+
+  // 1. Match cancelled
+  if(/match\s*cancel|game\s*(cancel|off|called\s*off|not\s*on)|no\s*(game|match)\s*(today|tonight)/i.test(m)){
+    const gameTask=findTask(today,["game"]);
+    const acts=[];
+    if(gameTask)acts.push(delTask(gameTask));
+    findTasks(today,["other"]).forEach(t=>{if(/wind.?down|fuel|hydration|taper/i.test(t.title))acts.push(delTask(t));});
+    acts.push(addTask("Run 40min + 4 sprint strides [match cancelled]",today,"06:00","run","High quality. Crisp sprints. Full recovery between."));
+    acts.push(addTask("Football technique + fitness 50min [match cancelled]",today,"18:00","football","Full intensity. Treat it like a performance session."));
+    acts.push(addTask("Pilates 20min",today,"19:15","pilates","Core control. Finish strong."));
+    acts.push(addTask("Cold shower 3min",today,"19:40","recovery","End cold. Inflammation down."));
+    return{handled:true,reply:"Match off — nothing wasted. Run at 6am, football technique at 6pm, pilates and cold shower after. Quality day.",actions:acts.filter(Boolean)};
+  }
+
+  // 2. Game added
+  if(/\b(game|match|fixture)\b/.test(m)&&!/cancel|off|called/.test(m)){
+    const dayWord=extractDay(m)||"today";
+    const gameDate=dateForDay(dayWord);
+    const gameTime=extractTime(m)||"15:00";
+    const prevDay=(()=>{const d=new Date(gameDate);d.setDate(d.getDate()-1);return d.toISOString().slice(0,10);})();
+    const nextDay=(()=>{const d=new Date(gameDate);d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);})();
+    const acts=[
+      addTask("Match",gameDate,gameTime,"game","Trust the prep. Activate, then execute."),
+      addTask("Pre-match: dynamic warm-up 15min + 3 activation sprints @ 70%",gameDate,"12:30","other","No static stretching. Activate the CNS."),
+      addTask("Fuel + hydration check",gameDate,"12:00","other","Whole food meal 3h before. 500ml water now."),
+      addTask("Early wind-down",prevDay,"20:30","other","Screens off. No stimulation. Lights out 9pm."),
+      addTask("Active recovery: barefoot walk + mobility 30min",nextDay,"06:10","recovery","Ground your feet on grass. Flush the legs gently."),
+      addTask("Cold shower 3min",nextDay,"06:45","recovery","Cold finish. Speed up the flush."),
+    ];
+    const label=gameDate===today?"today":gameDate===tomorrow?"tomorrow":dayWord;
+    return{handled:true,reply:`Game set ${label} at ${gameTime}. Pre-match protocol, wind-down eve before, and barefoot recovery morning after — all added.`,actions:acts};
+  }
+
+  // 3. Tired / fatigued / heavy legs
+  if(/\b(tired|fatigued|heavy\s*legs?|sore|exhausted|wrecked|dead\s*legs?|drained|no\s*energy)\b/.test(m)){
+    const hard=findTasks(today,["run","football","bike"]);
+    const acts=hard.map(t=>delTask(t));
+    acts.push(addTask("Easy walk + mobility 30min",today,"06:10","recovery","No intensity. Let the body speak. Slow and easy."));
+    acts.push(addTask("Foam roll: hamstrings, hip flexors, calves 10min",today,"06:45","recovery","Work the tight spots. No pain — pressure."));
+    acts.push(addTask("Cold shower 3min",today,"07:00","recovery","End cold. Reduce inflammation. Done."));
+    acts.push(addTask("Barefoot grounding 15min",today,"07:10","recovery","Grass or earth. Feet on the ground. Nervous system reset."));
+    const reply=loadToday>3?"Heavy day behind you. Cleared the hard sessions — easy walk, foam roll, cold shower, grounding. Recovery is training."+gameNote:"Logged. Hard sessions cleared. Easy movement + cold therapy + grounding today."+gameNote;
+    return{handled:true,reply,actions:acts.filter(Boolean)};
+  }
+
+  // 4. Rest day
+  if(/\b(rest\s*day|day\s*off|take\s*(the\s*)?day\s*off|no\s*training\s*today|nothing\s*today)\b/.test(m)){
+    const hard=findTasks(today,["run","football","bike","pilates"]);
+    const acts=hard.map(t=>delTask(t));
+    acts.push(addTask("Prayer + meditation 10min",today,"05:10","other","Non-negotiable. Anchor the day."));
+    acts.push(addTask("Morning sun exposure 15min",today,"05:30","recovery","Outside within the first hour. Cortisol, vitamin D."));
+    acts.push(addTask("Barefoot grounding 20min on grass",today,"05:50","recovery","Feet on earth. Electromagnetic reset."));
+    acts.push(addTask("Cold shower 3min",today,"06:15","recovery","End cold. Parasympathetic activation."));
+    acts.push(addTask("Easy walk + mobility 45min",today,"07:00","recovery","Movement without load. Let the body breathe."));
+    return{handled:true,reply:"Rest day sorted. Hard sessions cleared. Full Llorente protocol: prayer, morning sun, barefoot grounding, cold shower, easy walk. Real rest is active.",actions:acts.filter(Boolean)};
+  }
+
+  // 5. Feeling good / energised
+  if(/\b(feeling\s*(good|great|fresh|strong|energised|energized|brilliant)|legs?\s*(feel|are)\s*(good|great|fresh)|ready\s*to\s*go)\b/.test(m)){
+    const acts=[];
+    if((weekStats.run?.total||0)<(targets.run||5))acts.push(addTask("Extra sprint drills 20min",today,"06:30","run","Feeling it — 6×30m accelerations. Full recovery between."));
+    return{handled:true,reply:"Good to hear — energy like this is an asset, not a given. "+(acts.length?"Added sprint drills to capitalise on it.":"Plan looks strong. Stick to it."),actions:acts};
+  }
+
+  // 6. Injury / pain
+  if(/\b(injur|pain|hurt|strain|pull|tweak|ankle|knee|hamstring|groin|calf|\bback\b)\b/.test(m)){
+    const hard=findTasks(today,["run","football","bike"]);
+    const acts=hard.map(t=>delTask(t));
+    acts.push(addTask("Gentle mobility + walk 20min",today,"06:10","recovery","No load. Assess the area. Listen."));
+    acts.push(addTask("Self-massage / physio 15min",today,"19:00","recovery","Focus on affected area. Ice if acute, heat if chronic."));
+    acts.push(addTask("Cold therapy: ice pack or cold shower 5min",today,"19:20","recovery","Reduce inflammation. No compression unless advised."));
+    return{handled:true,reply:"Injury noted. All hard sessions cleared. Gentle mobility, self-massage, and cold therapy today. Don't push through this — see a physio if it doesn't improve in 48h.",actions:acts.filter(Boolean)};
+  }
+
+  // 7. What's next
+  if(/\b(what'?s?\s*(next|should\s*i\s*do|do\s*i\s*do)|next\s*task|what\s*now)\b/.test(m)){
+    const rem=tasks.filter(t=>t.date===today&&!t.completed&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+    if(!rem.length)return{handled:true,reply:"Nothing left today — you're done. Eat well, sleep by 9pm, no screens."+gameNote,actions:[]};
+    const nxt=rem[0];
+    const tips={run:"Keep form honest. Heel-toe. Breathe through the nose.",football:"Touch, positioning, decision speed. Quality reps.",bike:"Zone 2 means you can hold a conversation. Keep it there.",pilates:"Control over speed. Breathe through every rep.",recovery:"Easy is exactly right. Move, don't push.",sauna:"Hydrate before. Cold finish after.",other:""};
+    return{handled:true,reply:`Next: ${nxt.title}${nxt.time?" at "+nxt.time:""}. ${tips[nxt.category]||""}`.trim()+gameNote,actions:[]};
+  }
+
+  // 8. Week check
+  if(/\b(how'?s?\s*(my\s*)?week|week\s*(check|going|look|stat)|am\s*i\s*on\s*track|week\s*progress)\b/.test(m)){
+    const lines=[];let onTrack=true;
+    Object.entries(targets).forEach(([cat,tgt])=>{const s=weekStats[cat]||{done:0,total:0};const pct=tgt>0?Math.round(((s.done||0)/tgt)*100):100;if(pct<60)onTrack=false;lines.push(`${CATS[cat]?.emoji||"•"} ${cat}: ${s.done||0}/${tgt} (${pct}%)`);});
+    return{handled:true,reply:`${onTrack?"On track.":"Gaps to close."}\n${lines.join(" | ")}`,actions:[]};
+  }
+
+  // 9. Missed sessions
+  if(/\b(what\s*(did\s*i\s*)?miss|missed\s*(session|training)|sessions?\s*missed)\b/.test(m)){
+    if(!missedTasks.length)return{handled:true,reply:"Nothing missed from the last 3 days. Consistent.",actions:[]};
+    const list=missedTasks.slice(0,4).map(t=>`${t.title} (${t.date})`).join(", ");
+    return{handled:true,reply:`Missed: ${list}. Don't chase them — stay consistent from here.`,actions:[]};
+  }
+
+  // 10. Plan for tomorrow / day
+  const planForMatch=/\bwhat'?s?\s*(tomorrow|the\s*plan\s*for|plan\s*for)\b|\bplan\s*for\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow)\b/.exec(m);
+  if(planForMatch){
+    const dayWord=extractDay(m)||"tomorrow";
+    const targetDate=dateForDay(dayWord==="tomorrow"?"tomorrow":dayWord);
+    const dayTasks=tasks.filter(t=>t.date===targetDate&&t.category!=="work").sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+    if(!dayTasks.length)return{handled:true,reply:`Nothing scheduled for ${dayWord} yet. Want me to build a session?`,actions:[]};
+    const list=dayTasks.slice(0,5).map(t=>`${CATS[t.category]?.emoji||"•"} ${t.title}${t.time?" at "+t.time:""}`).join(", ");
+    return{handled:true,reply:`${dayWord.charAt(0).toUpperCase()+dayWord.slice(1)}: ${list}.`,actions:[]};
+  }
+
+  // 11. Skip specific session
+  const skipMatch=/\b(skip|cancel|drop|remove|delete)\s+(the\s+)?(morning|evening|run|football|bike|pilates|recovery|sauna)\b/.exec(m);
+  if(skipMatch){const catMap={morning:["run","bike","pilates"],evening:["football"],run:["run"],football:["football"],bike:["bike"],pilates:["pilates"],recovery:["recovery"],sauna:["sauna"]};const cats=catMap[skipMatch[3]]||["other"];const task=findTask(today,cats);if(task)return{handled:true,reply:`${task.title} removed.`,actions:[delTask(task)]};return{handled:true,reply:`No ${skipMatch[3]} session found today.`,actions:[]};}
+
+  // 12. Add a session
+  const addMatch=/\b(add|schedule|put\s*in|book)\s+(a\s+|an\s+)?(run|jog|sprint|football|soccer|bike|cycle|pilates|yoga|recovery|walk|sauna|pool|mobility|gym|swim)\b/.exec(m);
+  if(addMatch){const word=addMatch[3];const catMap={run:"run",jog:"run",sprint:"run",football:"football",soccer:"football",bike:"bike",cycle:"bike",pilates:"pilates",yoga:"pilates",recovery:"recovery",walk:"recovery",sauna:"sauna",pool:"sauna",mobility:"recovery",gym:"other",swim:"recovery"};const cat=catMap[word]||"other";const t=extractTime(m)||(curH<12?"06:00":"18:00");const dayWord=extractDay(m)||"today";const date=dateForDay(dayWord);const titleMap={run:"Run 30min",jog:"Easy jog 25min",sprint:"Sprint drills 20min — 6×30m, full recovery",football:"Football session",soccer:"Football session",bike:"Bike 35min Zone 2",cycle:"Bike 35min Zone 2",pilates:"Pilates 20min",yoga:"Pilates / yoga 20min",recovery:"Active recovery: walk + mobility 30min",walk:"Easy walk 20min",sauna:"Sauna 15min + cold 3min",pool:"Pool session + cold plunge",mobility:"Mobility + stretching 15min",gym:"Gym session",swim:"Swimming 30min"};return{handled:true,reply:`Added: ${titleMap[word]||word} at ${t}${date!==today?" on "+date:""}.`,actions:[addTask(titleMap[word]||word,date,t,cat)]};}
+
+  // 13. Move session
+  const moveMatch=/\b(move|shift|reschedule|change)\s+(the\s+)?(run|football|bike|pilates|recovery|sauna)\s+(to\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i.exec(m);
+  if(moveMatch){const newTime=parseTime(moveMatch[5]);if(newTime){const catMap={run:["run"],football:["football"],bike:["bike"],pilates:["pilates"],recovery:["recovery"],sauna:["sauna"]};const cats=catMap[moveMatch[3].toLowerCase()]||["run"];const task=findTask(today,cats);if(task)return{handled:true,reply:`Moved ${task.title} to ${newTime}.`,actions:[updateTask(task,{time:newTime})]};}}
+
+  // 14. Bed early / wind-down
+  if(/\b(bed\s*early|early\s*(bed|night)|wind.?down|sleep\s*early|lights?\s*out\s*early)\b/.test(m)){return{handled:true,reply:"Wind-down added for 8:30pm. Screens off first. Sleep by 9 is non-negotiable — it's when you actually recover.",actions:[addTask("Wind-down: screens off + prep kit",today,"20:30","other","No phone. Set out tomorrow's gear. Breathe.")]};}
+
+  // 15. Sauna / pool
+  if(/\b(sauna|steam|cold\s*plunge|ice\s*bath|pool)\b/.test(m)&&!/add|schedule/.test(m)){return{handled:true,reply:"Contrast therapy added. Sauna 15min, cold 3min — repeat 3 rounds if you can. Powerful nervous system reset.",actions:[addTask("Sauna 15min + cold shower 3min",today,"19:00","sauna","3 rounds if possible. End always cold.")]};}
+
+  // 16. Double session
+  if(/\b(double\s*session|two\s*sessions?|extra\s*training|extra\s*session|second\s*session)\b/.test(m)){const t=curH<12?"18:00":"06:30";return{handled:true,reply:`Extra session added at ${t}. Double day means double the fuel and double the sleep priority tonight.`,actions:[addTask("Extra training session",today,t,"football","High focus. Not high volume. Quality reps."),addTask("Cold shower + recovery meal",today,"20:00","recovery","Non-negotiable after a double."),]};}
+
+  // 17. Pre-match taper
+  if(/\b(taper|pre.?match|before\s*the\s*game|day\s*before|light\s*day)\b/.test(m)){const hard=findTasks(today,["run","football","bike"]);const acts=hard.map(t=>updateTask(t,{notes:"PRE-MATCH TAPER: reduce intensity to 60%. No sprints. Sharp, not tired."}));return{handled:true,reply:"Taper mode. Sessions softened to 60% — sharp touches, no heavy loads. Save the juice for the game.",actions:acts.filter(Boolean)};}
+
+  // 18. Grounding / earthing
+  if(/\b(grounding|earthing|barefoot|feet\s*on\s*(the\s*)?(grass|earth|ground)|earth\s*walk)\b/.test(m)){return{handled:true,reply:"Grounding session added. Barefoot on grass or soil for 20min — this is Llorente-level recovery. It works.",actions:[addTask("Grounding: barefoot 20min on grass",today,curH<12?"06:10":"17:00","recovery","Feet directly on earth. No shoes. Stand, walk slowly, breathe.")]};}
+
+  // 19. Cold therapy / cold shower / ice bath
+  if(/\b(cold\s*shower|ice\s*bath|cold\s*plunge|cold\s*water|contrast\s*bath|contrast\s*therapy)\b/.test(m)){return{handled:true,reply:"Cold therapy added. 3min minimum — inflammation down, dopamine up, recovery accelerated.",actions:[addTask("Cold therapy: cold shower 3min",today,curH<12?"07:00":"19:30","recovery","Start warm, end cold. 3min at the end. Breathe through it.")]};}
+
+  // 20. Morning sun / sunlight / vitamin D
+  if(/\b(morning\s*sun|sunlight|sun\s*exposure|vitamin\s*d|outside\s*in\s*the\s*morning|get\s*some\s*sun)\b/.test(m)){return{handled:true,reply:"Morning sun added. 15min within the first hour of waking — this is how you set your circadian rhythm and build your vitamin D.",actions:[addTask("Morning sun exposure 15min",today,"05:30","recovery","Outside. No sunglasses. Face the light. Breathe the air.")]};}
+
+  // 21. Fasting / training fasted
+  if(/\b(fasting|fast(ing)?|train\s*fasted|intermittent\s*fast|no\s*food\s*before)\b/.test(m)){return{handled:true,reply:"Good call — train fasted for sessions under 60min. Your body burns fat, sharpen insulin sensitivity. Break the fast post-session with protein and whole foods.",actions:[]};}
+
+  // 22. Nature walk / outdoor
+  if(/\b(nature\s*walk|outdoor\s*(walk|run|training)|walk\s*outside|get\s*outside|fresh\s*air)\b/.test(m)){return{handled:true,reply:"Nature walk added. Outdoor movement isn't just exercise — it's sunlight, grounding, fresh air, and nervous system reset in one.",actions:[addTask("Nature walk 30min outdoors",today,curH<12?"06:30":"17:00","recovery","Barefoot if grass available. No headphones — just presence.")]};}
+
+  // 23. Meditation / breathwork
+  if(/\b(meditat|mindful|breathwork|breath\s*work|box\s*breath|wim\s*hof|deep\s*breath)\b/.test(m)){return{handled:true,reply:"Breathwork added at 5:15am. 10min of intentional breathing before training sharpens focus and calms the nervous system.",actions:[addTask("Breathwork / meditation 10min",today,"05:15","other","Box breathing: 4 in, 4 hold, 4 out, 4 hold. 10 rounds.")]};}
+
+  // 24. What to eat / nutrition / fuel
+  if(/\b(what\s*(to|should\s*i)\s*eat|what'?s?\s*(a\s*)?(good\s*)?meal|nutrition\s*(advice|tip|today)|meal\s*idea|fuel\s*(advice|idea))\b/.test(m)){return{handled:true,reply:"Llorente protocol: lean fish (salmon, cod) + steamed greens + sweet potato or rice. No gluten, no dairy, no processed. If training in the morning, eat after. If evening session, eat 3h before and keep it light.",actions:[]};}
+
+  // 25. Hydration
+  if(/\b(hydrat|water\s*(intake|check|reminder)|drink\s*(more\s*)?water)\b/.test(m)){return{handled:true,reply:"Hydration check added. 3L minimum daily — filtered if possible. Electrolytes after hard sessions (sea salt + lemon, not sports drinks).",actions:[addTask("Hydration check: 3L filtered water",today,"12:00","other","Electrolytes post-session: sea salt + lemon in water."),addTask("Hydration check: 3L target",today,"18:00","other","Check intake. Add sea salt if training was hard.")]};}
+
+  // 26. Screens off / no screens
+  if(/\b(screen(s)?\s*off|no\s*screen|digital\s*detox|phone\s*(down|off|away))\b/.test(m)){return{handled:true,reply:"Screens-off reminder set for 8:30pm. 60min before bed minimum — melatonin protection. Sleep quality is your biggest performance variable.",actions:[addTask("Screens off — 60min wind-down",today,"20:30","other","Phone down. No social. Read or be still.")]};}
+
+  // 27. Sleep check
+  if(/\b(how'?s?\s*my\s*sleep|sleep\s*(quality|check|bad|poor|tracker)|sleep\s*score|tired\s*(this\s*)?morning)\b/.test(m)){const yst=ctx.loadYesterday||0;const hint=yst>4?"Yesterday had a heavy load — that's probably why.":"Sleep drives everything. If it's off, the training suffers.";return{handled:true,reply:`${hint} Non-negotiables: 9pm lights out, no screens 60min before, 18°C room if possible, blackout. Prioritise this above everything.`,actions:[]};}
+
+  // 28. Eat clean / clean eating
+  if(/\b(eat\s*clean|clean\s*eating|no\s*junk|no\s*processed|whole\s*food)\b/.test(m)){return{handled:true,reply:"Nothing your great-grandmother wouldn't recognise. Lean fish, vegetables, legumes, nuts, seeds, fruit. That's the full Llorente protocol. Non-negotiable.",actions:[]};}
+
+  // 29. Alcohol
+  if(/\b(alcohol|beer|wine|drink(ing)?|pub|night\s*out)\b/.test(m)){return{handled:true,reply:"Not compatible with this programme. Not even occasionally — Llorente cuts it completely. Replace the habit with sparkling water + lemon. Your recovery will be night and day.",actions:[addTask("Sparkling water + lemon (alcohol replacement)",today,"19:00","other","Gut health, hydration, zero compromise.")]};}
+
+  // 30. Skip warm-up
+  if(/\b(skip\s*(the\s*)?warm.?up|no\s*warm.?up)\b/.test(m)){return{handled:true,reply:"Never skip the warm-up. A 10min dynamic routine prevents injury and adds 15% to your session quality.",actions:[addTask("Dynamic warm-up 10min",today,curH<12?"06:00":"17:50","other","Leg swings, hip circles, walking lunges, A-march, 3×20m strides. Every time.")]};}
+
+  // 31. Stress / overwhelmed / anxious
+  if(/\b(stress(ed)?|anxious|anxiety|overwhelm|mental\s*load|too\s*much|burning\s*out)\b/.test(m)){const hard=findTasks(today,["run","football","bike"]);const acts=hard.slice(0,1).map(t=>updateTask(t,{notes:"LOWER INTENSITY TODAY: mental load = physical load. 60% effort, not 100%."}));acts.push(addTask("Prayer + journaling 10min",today,"05:15","other","Write it out. Surrender it. Then train."));acts.push(addTask("Breathwork 10min",today,"07:00","other","4-4-4-4 box breathing. Ground yourself."));return{handled:true,reply:"Mental load is physical load — don't ignore it. Softened today's hard session. Prayer, journaling, and breathwork added first.",actions:acts.filter(Boolean)};}
+
+  // 32. How many [cat] this week
+  const countMatch=/\bhow\s*many\s*(runs?|football|sessions?|bikes?|pilates|sauna)\s*(this\s*week|done)?\b/.exec(m);
+  if(countMatch){const w=countMatch[1].replace(/s$/,"");const catMap={run:"run",football:"football",session:"run",bike:"bike",pilates:"pilates",sauna:"sauna"};const cat=catMap[w];if(cat){const s=weekStats[cat]||{done:0,total:0};return{handled:true,reply:`${CATS[cat]?.emoji||""} ${cat}: ${s.done||0} done, ${s.total||0} scheduled. Target: ${targets[cat]||"?"}/week.`,actions:[]};}}
+
+  // 33. Habit check
+  if(/\b(habit|habits|habit\s*check|how\s*(are\s*)?my\s*habits?)\b/.test(m)){if(!habitHistory.length)return{handled:true,reply:"No habits tracked yet — add them in the Habits tab.",actions:[]};const lines=habitHistory.map(h=>`${h.emoji||"•"} ${h.title}: ${h.doneToday?"✓":"✗"}${h.streak>1?` (${h.streak}-day streak)`:""}`);return{handled:true,reply:"Habits today:\n"+lines.join("\n"),actions:[]};}
+
+  // 34. Contrast therapy explicit
+  if(/\b(contrast\s*therapy|hot\s*(and|to)\s*cold|sauna\s*and\s*cold|hot\s*cold\s*protocol)\b/.test(m)){return{handled:true,reply:"Contrast therapy session added. Sauna 15min → cold 2min × 3 rounds. Most powerful recovery protocol after hard training.",actions:[addTask("Contrast therapy: sauna 15min + cold 2min × 3 rounds",today,"19:00","sauna","Sauna → cold → rest → repeat. End always cold. Hydrate after."),]};}
+
+  // 35. Proactive greeting after 2pm
+  if(curH>=14&&/^\s*(hi|hey|hello|what'?s?\s*up|yo)\s*[!.?]?\s*$/.test(m)){const done=tasks.filter(t=>t.date===today&&t.completed).length;const total=tasks.filter(t=>t.date===today&&t.category!=="work").length;if(!done&&total)return{handled:true,reply:`Hey. It's ${timeNow} and none of today's ${total} sessions are done yet. What's the situation?`,actions:[]};if(!total)return{handled:true,reply:"Hey. Nothing scheduled today — want me to build a session?",actions:[]};return{handled:true,reply:`${done}/${total} sessions done. ${done===total?"Strong day.":"Keep going."}`+gameNote,actions:[]};}
+
+  return{handled:false};
+}
+
+async function callCoach(msg,ctx){
+  const local=localCoach(msg,ctx);
+  if(local.handled)return local;
+  try{
+    const res=await fetch("/api/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,context:ctx})});
+    const data=await res.json();
+    if(typeof data.reply==="string")return data;
+  }catch{}
+  return{reply:"Can't reach Coach right now. Try rephrasing.",actions:[]};
+}
+
 // ── Base components ───────────────────────────────────────────
 function Ring({pct=0,size=48,stroke=3,color=T.accent,glow=false}){
   const r=(size-stroke*2)/2,circ=2*Math.PI*r,dash=(Math.min(100,pct)/100)*circ;
@@ -591,6 +871,131 @@ function Toast({onReady}){
     fontWeight:700,maxWidth:320,textAlign:"center",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",
     boxShadow:"0 12px 48px rgba(0,0,0,0.6),0 0 0 1px rgba(167,139,250,0.06) inset",
     animation:"fadeUp 0.22s ease",letterSpacing:0.3}}>${msg}</div>`;
+}
+
+// ── XP Toast & Level Badge ────────────────────────────────────
+const _xpToast={fn:null};
+function showXPToast(gainedXp,levelUpInfo=null){ _xpToast.fn?.(gainedXp,levelUpInfo); }
+function XPToast({onReady}){
+  const [state,setState]=useState(null); const [vis,setVis]=useState(false); const t=useRef();
+  useEffect(()=>{ onReady((xp,lvl)=>{setState({xp,lvl});setVis(true);clearTimeout(t.current);t.current=setTimeout(()=>setVis(false),lvl?3200:1800);}); },[]);
+  if(!vis||!state) return null;
+  return html`<div style=${{position:"fixed",bottom:108,left:"50%",transform:"translateX(-50%)",zIndex:201,display:"flex",flexDirection:"column",alignItems:"center",gap:7,pointerEvents:"none"}}>
+    ${state.lvl?html`<div style=${{
+      background:"linear-gradient(135deg,rgba(196,181,253,0.18),rgba(255,209,107,0.14))",
+      border:"1px solid rgba(196,181,253,0.5)",borderRadius:18,padding:"12px 24px",
+      textAlign:"center",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",
+      boxShadow:"0 0 40px rgba(196,181,253,0.25)",animation:"fadeUp 0.3s ease",
+    }}>
+      <div style=${{fontSize:11,fontWeight:800,color:"#c4b5fd",letterSpacing:1.5,marginBottom:4}}>LEVEL UP!</div>
+      <div style=${{fontSize:22,fontWeight:900,color:T.text,lineHeight:1}}>${state.lvl.rank}</div>
+      <div style=${{fontSize:12,color:"#c4b5fd",fontWeight:700,marginTop:3}}>Level ${state.lvl.lvl}</div>
+    </div>`:""}
+    <div style=${{background:"rgba(5,7,15,0.96)",border:"1px solid rgba(255,209,107,0.4)",borderRadius:12,padding:"7px 14px",backdropFilter:"blur(14px)"}}>
+      <span style=${{fontWeight:900,fontSize:14,color:"#ffd16b"}}>⚡ +${state.xp} XP</span>
+    </div>
+  </div>`;
+}
+
+function LevelBadge({xp=0}){
+  const info=getLevelInfo(xp);
+  return html`<div style=${{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+    <div style=${{display:"flex",alignItems:"center",gap:5}}>
+      <div style=${{width:24,height:24,borderRadius:8,fontWeight:900,fontSize:10,display:"grid",placeItems:"center",flexShrink:0,background:`${info.color}18`,border:`1px solid ${info.color}55`,color:info.color}}>${info.lvl}</div>
+      <div style=${{fontSize:10,fontWeight:800,color:info.color,whiteSpace:"nowrap"}}>${info.rank}</div>
+    </div>
+    <div style=${{width:64,height:3,borderRadius:99,background:"rgba(255,255,255,0.08)",overflow:"hidden"}}>
+      <div style=${{width:`${info.pct}%`,height:"100%",borderRadius:99,background:info.color,transition:"width 0.5s ease"}}/>
+    </div>
+  </div>`;
+}
+
+// ── CoachPanel ────────────────────────────────────────────────
+function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActions}){
+  const [msgs,setMsgs]=useState([{role:"assistant",content:"Hey — Coach here.\n\nI follow the Marcos Llorente approach: train smart, eat clean, ground daily, sleep by 9pm.\n\n• \"Match cancelled\" — I'll rebuild your day\n• \"I feel tired\" — I'll protect your recovery\n• \"Add grounding session\" — done instantly\n• \"What should I do next?\" — I'll tell you exactly"}]);
+  const [input,setInput]=useState(""); const [busy,setBusy]=useState(false);
+  const bodyRef=useRef(null); const inputRef=useRef(null);
+  useEffect(()=>{ if(isOpen) setTimeout(()=>inputRef.current?.focus(),100); },[isOpen]);
+  useEffect(()=>{ if(bodyRef.current) bodyRef.current.scrollTop=bodyRef.current.scrollHeight; },[msgs,busy]);
+
+  const buildCtx=useCallback(()=>{
+    const now=new Date(),todayStr=todayISO(),weekDates=getWeekDates();
+    const upcoming=tasks.filter(t=>t.date>=todayStr).sort((a,b)=>(`${a.date}${a.time||""}`).localeCompare(`${b.date}${b.time||""}`)).slice(0,60).map(t=>({id:t.id,title:t.title,date:t.date,time:t.time||null,category:t.category,completed:t.completed,notes:t.notes||""}));
+    const weekStats={};tasks.filter(t=>weekDates.includes(t.date)).forEach(t=>{if(!weekStats[t.category])weekStats[t.category]={done:0,total:0};weekStats[t.category].total++;if(t.completed)weekStats[t.category].done++;});
+    const habitHistory=habits.filter(h=>h.days.includes(now.getDay())).map(h=>{let streak=0;for(let i=1;i<=30;i++){const d=new Date(now);d.setDate(d.getDate()-i);const k=`${h.id}_${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;if(habitLogs[k])streak++;else break;}return{id:h.id,title:h.title,emoji:h.emoji||"",doneToday:!!habitLogs[`${h.id}_${todayStr}`],streak};});
+    const in3=(()=>{const d=new Date(now);d.setDate(d.getDate()+3);return d.toISOString().slice(0,10);})();
+    const callouts=tasks.filter(t=>t.category==="game"&&t.date>=todayStr&&t.date<=in3&&!t.completed).sort((a,b)=>a.date.localeCompare(b.date)).map(t=>({id:t.id,title:t.title,date:t.date,time:t.time||null}));
+    const loadToday=tasks.filter(t=>t.date===todayStr&&t.category!=="work").length;
+    const yst=(()=>{const d=new Date(now);d.setDate(d.getDate()-1);return d.toISOString().slice(0,10);})();
+    const loadYesterday=tasks.filter(t=>t.date===yst&&t.category!=="work").length;
+    const missedTasks=tasks.filter(t=>{if(t.date>=todayStr||t.completed||t.category==="work")return false;const d=new Date(now);d.setDate(d.getDate()-3);return t.date>=d.toISOString().slice(0,10);}).map(t=>({id:t.id,title:t.title,date:t.date,category:t.category}));
+    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habitHistory,habitHistory,callouts,loadToday,loadYesterday,missedTasks};
+  },[tasks,habits,habitLogs,settings]);
+
+  const QUICK=[
+    {l:"Match cancelled ❌",p:"Match cancelled"},
+    {l:"Game tomorrow 🏟",p:"I have a game tomorrow evening"},
+    {l:"Tired today 😴",p:"I feel tired and heavy legged today"},
+    {l:"What's next? ⚡",p:"What should I do next?"},
+    {l:"Week check 📊",p:"How is my week going so far?"},
+    {l:"Grounding 🌿",p:"Add a grounding session"},
+    {l:"Cold therapy 🧊",p:"Add cold shower"},
+    {l:"Rest day 🌙",p:"Make today a rest day"},
+  ];
+  const send=async(text)=>{
+    const t=text.trim(); if(!t||busy) return;
+    setMsgs(p=>[...p,{role:"user",content:t}]); setInput(""); setBusy(true);
+    try{
+      const r=await callCoach(t,buildCtx());
+      setMsgs(p=>[...p,{role:"assistant",content:r.reply}]);
+      if(r.actions?.length){ onApplyActions(r.actions); showToast(`✅ ${r.actions.length} update${r.actions.length>1?"s":""} applied`); }
+    }catch{setMsgs(p=>[...p,{role:"assistant",content:"⚠️ Can't reach Coach right now."}]);}
+    finally{setBusy(false);}
+  };
+
+  if(!isOpen) return null;
+  return html`<div style=${{position:"fixed",inset:0,zIndex:80,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick=${onClose}>
+    <div style=${{background:"rgba(5,7,15,0.98)",borderRadius:"22px 22px 0 0",border:"1px solid rgba(167,139,250,0.18)",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.8)"}} onClick=${e=>e.stopPropagation()}>
+      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px 10px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexShrink:0}}>
+        <div style=${{display:"flex",alignItems:"center",gap:10}}>
+          <div style=${{width:38,height:38,borderRadius:13,background:"linear-gradient(135deg,rgba(167,139,250,0.18),rgba(52,211,153,0.10))",border:"1px solid rgba(167,139,250,0.30)",display:"grid",placeItems:"center",fontSize:19}}>🤖</div>
+          <div>
+            <div style=${{fontWeight:900,fontSize:15,color:T.text}}>Coach</div>
+            <div style=${{fontSize:11,fontWeight:700,color:busy?T.accent:"#6ee7b7"}}>${busy?"thinking…":"● ready — Llorente protocol"}</div>
+          </div>
+        </div>
+        <button onClick=${onClose} style=${{width:36,height:36,borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.04)",color:T.muted,fontSize:14,cursor:"pointer",display:"grid",placeItems:"center"}}>✕</button>
+      </div>
+      <div ref=${bodyRef} style=${{flex:1,overflowY:"auto",padding:"12px 16px",display:"flex",flexDirection:"column",gap:10,minHeight:200}}>
+        ${msgs.map((m,i)=>html`<div key=${i} style=${{
+          alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",padding:"10px 14px",
+          borderRadius:m.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",
+          background:m.role==="user"?"rgba(167,139,250,0.12)":"rgba(255,255,255,0.04)",
+          border:`1px solid ${m.role==="user"?"rgba(167,139,250,0.25)":"rgba(255,255,255,0.07)"}`,
+          color:T.text,fontSize:14,lineHeight:1.55,whiteSpace:"pre-wrap",
+        }}>
+          ${m.role==="assistant"?html`<div style=${{fontSize:9,fontWeight:800,color:T.accent,marginBottom:5,letterSpacing:1}}>COACH</div>`:""}
+          ${m.content}
+        </div>`)}
+        ${busy?html`<div style=${{alignSelf:"flex-start",padding:"12px 16px",borderRadius:"16px 16px 16px 4px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",color:T.muted,fontSize:18,letterSpacing:4}}>···</div>`:""}
+      </div>
+      <div style=${{display:"flex",gap:7,padding:"8px 16px",overflowX:"auto",flexShrink:0,borderTop:"1px solid rgba(255,255,255,0.06)",scrollbarWidth:"none"}}>
+        ${QUICK.map(c=>html`<button key=${c.l} onClick=${()=>send(c.p)} style=${{
+          flexShrink:0,padding:"6px 11px",borderRadius:99,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",whiteSpace:"nowrap",
+          border:"1px solid rgba(167,139,250,0.22)",background:"rgba(167,139,250,0.07)",color:T.accent,
+        }}>${c.l}</button>`)}
+      </div>
+      <div style=${{display:"flex",gap:8,padding:"10px 16px 14px",flexShrink:0}}>
+        <textarea ref=${inputRef} value=${input} onInput=${e=>setInput(e.target.value)} onKeyDown=${e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);} }} placeholder="Ask Coach anything… (Enter to send)" rows=${1}
+          style=${{flex:1,padding:"10px 12px",borderRadius:14,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.04)",color:T.text,fontSize:15,fontFamily:"inherit",outline:"none",resize:"none",minHeight:46,lineHeight:1.4,maxHeight:120}}/>
+        <button onClick=${()=>send(input)} disabled=${!input.trim()||busy} style=${{
+          height:46,padding:"0 18px",borderRadius:13,border:"1px solid rgba(167,139,250,0.32)",
+          background:"rgba(167,139,250,0.12)",color:T.accent,fontWeight:800,fontSize:13,fontFamily:"inherit",
+          cursor:!input.trim()||busy?"not-allowed":"pointer",opacity:!input.trim()||busy?0.45:1,flexShrink:0,
+        }}>Send</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 // ── Task Item ─────────────────────────────────────────────────
@@ -3436,9 +3841,11 @@ function PlansSection({trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
 function App(){
   const [state,setState]=useState(null); const [ready,setReady]=useState(false);
   const [view,setView]=useState("today");
+  const [coachOpen,setCoachOpen]=useState(false);
   const [taskModal,setTaskModal]=useState(null); const [habitModal,setHabitModal]=useState(null);
   const [syncStatus,setSyncStatus]=useState(null);
   const toastReady=useCallback(fn=>{ _toast.fn=fn; },[]);
+  const xpToastReady=useCallback(fn=>{ _xpToast.fn=fn; },[]);
 
   useEffect(()=>{
     loadState().then(saved=>{
@@ -3501,9 +3908,9 @@ function App(){
           window.history.replaceState({},"",window.location.pathname);
           setTimeout(()=>showToast("Apple Health synced"),500);
         }
-        setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],settings:DEF_SETTINGS,...saved,foodLogs:saved.foodLogs||{},notes:saved.notes||{},settings:{...DEF_SETTINGS,...saved?.settings}});
+        setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],xp:0,settings:DEF_SETTINGS,...saved,foodLogs:saved.foodLogs||{},notes:saved.notes||{},settings:{...DEF_SETTINGS,...saved?.settings}});
       } else {
-        setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});
+        setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],xp:0,settings:{...DEF_SETTINGS}});
       }
       setReady(true);
       // Check sync
@@ -3524,10 +3931,22 @@ function App(){
   },[state?.tasks, state?.settings?.notifEnabled, state?.settings?.constraints?.bed]);
 
   const mut=useCallback(fn=>setState(p=>({...p,...fn(p)})),[]);
-  const toggleTask=useCallback(id=>mut(s=>({tasks:s.tasks.map(t=>t.id===id?{...t,completed:!t.completed,completedAt:!t.completed?Date.now():null}:t)})),[mut]);
+  const toggleTask=useCallback(id=>mut(s=>{
+    const task=s.tasks.find(t=>t.id===id);
+    const completing=task&&!task.completed;
+    const gained=completing?(XP_CAT[task.category]||15):0;
+    const newXp=(s.xp||0)+gained;
+    if(completing){const oldLvl=getLevelInfo(s.xp||0).lvl;const newInfo=getLevelInfo(newXp);showXPToast(gained,newInfo.lvl>oldLvl?newInfo:null);}
+    return{tasks:s.tasks.map(t=>t.id===id?{...t,completed:!t.completed,completedAt:!t.completed?Date.now():null}:t),xp:completing?newXp:s.xp||0};
+  }),[mut]);
   const upsertTask=useCallback(task=>mut(s=>{const i=s.tasks.findIndex(t=>t.id===task.id);if(i>=0){const tasks=[...s.tasks];tasks[i]={...tasks[i],...task};return{tasks};}return{tasks:[...s.tasks,task]};}),[mut]);
   const deleteTask=useCallback(id=>mut(s=>({tasks:s.tasks.filter(t=>t.id!==id)})),[mut]);
-  const toggleHabit=useCallback((hid,date)=>mut(s=>({habitLogs:{...s.habitLogs,[`${hid}_${date}`]:!s.habitLogs[`${hid}_${date}`]}})),[mut]);
+  const toggleHabit=useCallback((hid,date)=>mut(s=>{
+    const key=`${hid}_${date}`;const completing=!s.habitLogs[key];
+    const newXp=(s.xp||0)+(completing?XP_HABIT:0);
+    if(completing){const oldLvl=getLevelInfo(s.xp||0).lvl;const newInfo=getLevelInfo(newXp);showXPToast(XP_HABIT,newInfo.lvl>oldLvl?newInfo:null);}
+    return{habitLogs:{...s.habitLogs,[key]:completing},xp:completing?newXp:s.xp||0};
+  }),[mut]);
   const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,h]};}),[mut]);
   const deleteHabit=useCallback(id=>mut(s=>({habits:s.habits.filter(h=>h.id!==id)})),[mut]);
   const upsertHealthLog=useCallback((date,patch)=>mut(s=>({healthLogs:{...s.healthLogs,[date]:{...s.healthLogs[date],...patch}}})),[mut]);
@@ -3566,7 +3985,7 @@ function App(){
     </div>
   </div>`;
 
-  const NAV=[{id:"today",icon:"◉",label:"Today"},{id:"week",icon:"◫",label:"Review"},{id:"habits",icon:"◈",label:"Habits"},{id:"health",icon:"♦",label:"Health"},{id:"journal",icon:"✦",label:"Journal"},{id:"body",icon:"◍",label:"Body"},{id:"settings",icon:"⊙",label:"More"}];
+  const NAV=[{id:"today",icon:"◉",label:"Today"},{id:"week",icon:"◫",label:"Review"},{id:"habits",icon:"◈",label:"Habits"},{id:"health",icon:"♦",label:"Health"},{id:"journal",icon:"✦",label:"Journal"},{id:"body",icon:"◍",label:"Body"},{id:"settings",icon:"⊙",label:"More"},{id:"coach",icon:"🤖",label:"Coach",isCoach:true}];
   const weekDates=getWeekDates();
   const wTotal=state.tasks.filter(t=>weekDates.includes(t.date)&&t.category!=="work").length;
   const wDone=state.tasks.filter(t=>weekDates.includes(t.date)&&t.completed&&t.category!=="work").length;
@@ -3635,6 +4054,7 @@ function App(){
             </div>
           </div>
         </div>
+        <${LevelBadge} xp=${state.xp||0}/>
         <div style=${{display:"flex",gap:7}}>
           <button onClick=${()=>setTaskModal({task:null,date:todayISO()})} style=${{
             width:38,height:38,borderRadius:13,cursor:"pointer",fontSize:20,fontWeight:300,
@@ -3660,7 +4080,7 @@ function App(){
         onUpsertPlan=${upsertPlan} onDeletePlan=${deletePlan}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
         onExport=${()=>{const b=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`sk-backup-${todayISO()}.json`;a.click();}}
-        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],settings:{...DEF_SETTINGS}});}}/>`:""}
+        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],xp:0,settings:{...DEF_SETTINGS}});}}/>`:""}
 
       <!-- Bottom nav — WHOOP-style pill -->
       <nav style=${{
@@ -3670,15 +4090,15 @@ function App(){
         border:"1px solid rgba(255,255,255,0.07)",borderRadius:26,
         boxShadow:"0 -2px 60px rgba(0,0,0,0.6),0 0 0 1px rgba(167,139,250,0.06) inset,0 2px 0 rgba(255,255,255,0.04) inset",
       }}>
-        ${NAV.map(v=>html`<button key=${v.id} onClick=${()=>setView(v.id)} style=${{
+        ${NAV.map(v=>html`<button key=${v.id} onClick=${()=>v.isCoach?setCoachOpen(true):setView(v.id)} style=${{
           flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
           padding:"8px 4px 7px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
-          border:`1px solid ${view===v.id?"rgba(167,139,250,0.25)":"transparent"}`,
-          background:view===v.id
+          border:`1px solid ${(v.isCoach?coachOpen:view===v.id)?"rgba(167,139,250,0.25)":"transparent"}`,
+          background:(v.isCoach?coachOpen:view===v.id)
             ?"linear-gradient(145deg,rgba(167,139,250,0.14),rgba(167,139,250,0.07))"
             :"transparent",
-          color:view===v.id?T.accent:T.muted,
-          boxShadow:view===v.id?"0 0 16px rgba(167,139,250,0.10)":"none",
+          color:(v.isCoach?coachOpen:view===v.id)?T.accent:T.muted,
+          boxShadow:(v.isCoach?coachOpen:view===v.id)?"0 0 16px rgba(167,139,250,0.10)":"none",
           transition:"background 0.2s,border-color 0.2s,color 0.2s,box-shadow 0.2s",
         }}>
           <span style=${{
@@ -3700,7 +4120,12 @@ function App(){
       onDelete=${id=>{deleteHabit(id);setHabitModal(null);showToast("Deleted");}}
       onClose=${()=>setHabitModal(null)}/>`:""}
 
+    <${CoachPanel} isOpen=${coachOpen} onClose=${()=>setCoachOpen(false)}
+      tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs}
+      settings=${state.settings} onApplyActions=${applyActions}/>
+
     <${Toast} onReady=${toastReady}/>
+    <${XPToast} onReady=${xpToastReady}/>
   </div>`;
 }
 

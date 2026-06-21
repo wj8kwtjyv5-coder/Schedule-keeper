@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────
 //  ScheduleKeeper — Scriptable Widget
-//  Version 2.0 | Supports Lock Screen + Home Screen
+//  Version 3.0 | Lock Screen + Home Screen + Apple Watch
 // ─────────────────────────────────────────────────────────
 //
 //  SETUP:
@@ -8,17 +8,20 @@
 //  2. Paste this entire file into a new Scriptable script
 //  3. Long-press your lock screen → Customise → Add widget → Scriptable
 //  4. Long-press the Scriptable widget → Edit widget
-//  5. Set Parameter to: https://YOUR-APP.netlify.app
+//  5. Set Parameter to: https://YOUR-VERCEL-APP.vercel.app
 //
 //  WIDGET SIZES SUPPORTED:
-//  • Lock screen Circular  → task progress ring
+//  • Lock screen Circular    → task progress + XP level
 //  • Lock screen Rectangular → top 3 tasks + habit count
-//  • Home screen Small     → day summary
-//  • Home screen Medium    → tasks + habits grid
+//  • Home screen Small       → day summary
+//  • Home screen Medium      → tasks + habits grid
+//  • Watch Circular          → done/total + XP level (complication)
+//  • Watch Rectangular       → next task + time (complication)
+//  • Watch Inline            → ⚡ 2/5 · Lv3 (slim top-row complication)
 // ─────────────────────────────────────────────────────────
 
 const BASE_URL = (args.widgetParameter || "").replace(/\/$/, "");
-const SYNC_URL = BASE_URL ? `${BASE_URL}/.netlify/functions/sync` : null;
+const SYNC_URL = BASE_URL ? `${BASE_URL}/api/sync` : null;
 
 // ── Design tokens ──────────────────────────────────────────
 const C = {
@@ -85,7 +88,19 @@ function buildToday(state) {
   const habitLogs = state.habitLogs || {};
   const habitsDone = habits.filter(h => !!habitLogs[`${h.id}_${today}`]).length;
 
-  return { tasks, done, total, pct, nextTask, habits, habitsDone, today };
+  // XP level
+  const xp = state.xp || 0;
+  const LEVELS = [
+    {lvl:1,xp:0,rank:"Rookie"},{lvl:2,xp:200,rank:"Amateur"},{lvl:3,xp:500,rank:"Developing"},
+    {lvl:4,xp:900,rank:"Inter"},{lvl:5,xp:1400,rank:"Consistent"},{lvl:6,xp:2000,rank:"Dedicated"},
+    {lvl:7,xp:2800,rank:"Athletic"},{lvl:8,xp:3800,rank:"Semi-Pro"},{lvl:9,xp:5000,rank:"Pro"},
+    {lvl:10,xp:6500,rank:"Elite"},{lvl:11,xp:8500,rank:"Champion"},{lvl:12,xp:11000,rank:"Legend"},
+    {lvl:13,xp:14000,rank:"World Class"},{lvl:14,xp:18000,rank:"Icon"},{lvl:15,xp:23000,rank:"GOAT"},
+  ];
+  let level = LEVELS[0];
+  for (const l of LEVELS) { if (xp >= l.xp) level = l; else break; }
+
+  return { tasks, done, total, pct, nextTask, habits, habitsDone, today, xp, level };
 }
 
 // ── LOCK SCREEN: Circular ────────────────────────────────────
@@ -207,6 +222,26 @@ function buildRectangular(d) {
     habTxt.textColor = d.habitsDone >= d.habits.length ? C.green :
                        d.habitsDone > 0 ? C.accent : C.muted;
   }
+
+  return w;
+}
+
+// ── WATCH: Inline (slim text row) ───────────────────────────
+function buildWatchInline(d) {
+  const w = new ListWidget();
+  w.backgroundColor = C.bg;
+  if (BASE_URL) w.url = BASE_URL;
+
+  const stack = w.addStack();
+  stack.layoutHorizontally();
+  stack.centerAlignContent();
+
+  const txt = stack.addText(
+    d ? `⚡ ${d.done}/${d.total} · Lv${d.level.lvl}` : "⚡ ScheduleKeeper"
+  );
+  txt.font = Font.boldSystemFont(12);
+  txt.textColor = d && d.pct >= 80 ? C.green : d && d.pct >= 50 ? C.accent : C.blue;
+  txt.lineLimit = 1;
 
   return w;
 }
@@ -407,10 +442,11 @@ const d = buildToday(state);
 
 let widget;
 switch (config.widgetFamily) {
-  case "accessoryCircular":    widget = buildCircular(d);    break;
-  case "accessoryRectangular": widget = buildRectangular(d); break;
-  case "small":                widget = buildSmall(d);       break;
-  case "medium":               widget = buildMedium(d);      break;
+  case "accessoryCircular":    widget = buildCircular(d);     break;
+  case "accessoryRectangular": widget = buildRectangular(d);  break;
+  case "accessoryInline":      widget = buildWatchInline(d);  break;
+  case "small":                widget = buildSmall(d);        break;
+  case "medium":               widget = buildMedium(d);       break;
   default:
     // Preview mode (running in-app) — show medium
     widget = buildMedium(d);
