@@ -61,6 +61,34 @@ const CATS = {
   other:   {emoji:"📌",color:T.muted, glow:"rgba(255,255,255,0.04)",border:T.border,label:"Other"},
 };
 
+// ── XP / Level system ────────────────────────────────────────
+const XP_CAT={game:100,football:50,run:40,bike:30,pilates:25,recovery:20,sauna:20,other:15,work:5};
+const XP_HABIT=15;
+const LEVELS=[
+  {lvl:1, xp:0,     rank:"Rookie",      color:"#888aaa"},
+  {lvl:2, xp:200,   rank:"Amateur",     color:"#8fb8ff"},
+  {lvl:3, xp:500,   rank:"Developing",  color:"#8fb8ff"},
+  {lvl:4, xp:900,   rank:"Intermediate",color:"#6ee7b7"},
+  {lvl:5, xp:1400,  rank:"Consistent",  color:"#6ee7b7"},
+  {lvl:6, xp:2000,  rank:"Dedicated",   color:"#ffd16b"},
+  {lvl:7, xp:2800,  rank:"Athletic",    color:"#ffd16b"},
+  {lvl:8, xp:3800,  rank:"Semi-Pro",    color:"#f472b6"},
+  {lvl:9, xp:5000,  rank:"Pro",         color:"#f472b6"},
+  {lvl:10,xp:6500,  rank:"Elite",       color:"#c4b5fd"},
+  {lvl:11,xp:8500,  rank:"Champion",    color:"#c4b5fd"},
+  {lvl:12,xp:11000, rank:"Legendary",   color:"#ff6a7a"},
+  {lvl:13,xp:14000, rank:"World Class", color:"#ff6a7a"},
+  {lvl:14,xp:18000, rank:"Icon",        color:"#ff6a7a"},
+  {lvl:15,xp:23000, rank:"GOAT",        color:"#ffd16b"},
+];
+function getLevelInfo(xp=0){
+  let curr=LEVELS[0];
+  for(const l of LEVELS){if(xp>=l.xp)curr=l;else break;}
+  const next=LEVELS.find(l=>l.lvl===curr.lvl+1);
+  const pct=next?Math.min(100,Math.round(((xp-curr.xp)/(next.xp-curr.xp))*100)):100;
+  return{...curr,next:next||null,pct,xpToNext:next?next.xp-xp:0};
+}
+
 // ── Utils ──────────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2,"0");
 const uid = () => crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -571,6 +599,51 @@ function Toast({onReady}){
     fontWeight:700,maxWidth:320,textAlign:"center",backdropFilter:"blur(14px)"}}>${msg}</div>`;
 }
 
+// ── XP Toast & Level Badge ────────────────────────────────────
+const _xpToast={fn:null};
+function showXPToast(gainedXp,levelUpInfo=null){ _xpToast.fn?.(gainedXp,levelUpInfo); }
+function XPToast({onReady}){
+  const [state,setState]=useState(null); const [vis,setVis]=useState(false); const t=useRef();
+  useEffect(()=>{ onReady((xp,lvl)=>{setState({xp,lvl});setVis(true);clearTimeout(t.current);t.current=setTimeout(()=>setVis(false),lvl?3200:1800);}); },[]);
+  if(!vis||!state) return null;
+  return html`<div style=${{position:"fixed",bottom:96,left:"50%",transform:"translateX(-50%)",zIndex:201,display:"flex",flexDirection:"column",alignItems:"center",gap:7,pointerEvents:"none"}}>
+    ${state.lvl?html`<div style=${{
+      background:"linear-gradient(135deg,rgba(196,181,253,0.18),rgba(255,209,107,0.14))",
+      border:"1px solid rgba(196,181,253,0.5)",borderRadius:18,padding:"12px 24px",
+      textAlign:"center",backdropFilter:"blur(20px)",
+      boxShadow:"0 0 40px rgba(196,181,253,0.25)",
+      animation:"fadeUp 0.3s ease",
+    }}>
+      <div style=${{fontSize:11,fontWeight:800,color:"#c4b5fd",letterSpacing:1.5,marginBottom:4}}>LEVEL UP!</div>
+      <div style=${{fontSize:22,fontWeight:900,color:T.text,lineHeight:1}}>${state.lvl.rank}</div>
+      <div style=${{fontSize:12,color:"#c4b5fd",fontWeight:700,marginTop:3}}>Level ${state.lvl.lvl}</div>
+    </div>`:""}
+    <div style=${{
+      background:"rgba(10,12,22,0.95)",border:"1px solid rgba(255,209,107,0.4)",
+      borderRadius:12,padding:"7px 14px",backdropFilter:"blur(14px)",
+    }}>
+      <span style=${{fontWeight:900,fontSize:14,color:"#ffd16b"}}>⚡ +${state.xp} XP</span>
+    </div>
+  </div>`;
+}
+
+function LevelBadge({xp=0}){
+  const info=getLevelInfo(xp);
+  return html`<div style=${{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+    <div style=${{display:"flex",alignItems:"center",gap:5}}>
+      <div style=${{
+        width:26,height:26,borderRadius:8,fontWeight:900,fontSize:11,
+        display:"grid",placeItems:"center",flexShrink:0,
+        background:`${info.color}18`,border:`1px solid ${info.color}55`,color:info.color,
+      }}>${info.lvl}</div>
+      <div style=${{fontSize:11,fontWeight:800,color:info.color,whiteSpace:"nowrap"}}>${info.rank}</div>
+    </div>
+    <div style=${{width:72,height:3,borderRadius:99,background:"rgba(255,255,255,0.08)",overflow:"hidden"}}>
+      <div style=${{width:`${info.pct}%`,height:"100%",borderRadius:99,background:info.color,transition:"width 0.5s ease"}}/>
+    </div>
+  </div>`;
+}
+
 // ── Task Item ─────────────────────────────────────────────────
 function TaskItem({task,onToggle,onEdit,highlight=false}){
   const cat=CATS[task.category]||CATS.other;
@@ -991,11 +1064,12 @@ function App(){
   const [taskModal,setTaskModal]=useState(null); const [habitModal,setHabitModal]=useState(null);
   const [syncStatus,setSyncStatus]=useState(null);
   const toastReady=useCallback(fn=>{ _toast.fn=fn; },[]);
+  const xpToastReady=useCallback(fn=>{ _xpToast.fn=fn; },[]);
 
   useEffect(()=>{
     loadState().then(saved=>{
-      if(saved) setState({tasks:[],habits:[],habitLogs:{},goals:[],settings:DEF_SETTINGS,...saved,settings:{...DEF_SETTINGS,...saved?.settings}});
-      else setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});
+      if(saved) setState({tasks:[],habits:[],habitLogs:{},goals:[],settings:DEF_SETTINGS,xp:0,...saved,settings:{...DEF_SETTINGS,...saved?.settings}});
+      else setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS},xp:0});
       setReady(true);
       // Check sync
       fetch(SYNC_URL).then(()=>setSyncStatus("ok")).catch(()=>setSyncStatus("offline"));
@@ -1005,10 +1079,37 @@ function App(){
   useEffect(()=>{ if(ready&&state) saveState(state); },[state,ready]);
 
   const mut=useCallback(fn=>setState(p=>({...p,...fn(p)})),[]);
-  const toggleTask=useCallback(id=>mut(s=>({tasks:s.tasks.map(t=>t.id===id?{...t,completed:!t.completed,completedAt:!t.completed?Date.now():null}:t)})),[mut]);
+  const toggleTask=useCallback(id=>mut(s=>{
+    const task=s.tasks.find(t=>t.id===id);
+    const completing=task&&!task.completed;
+    const gained=completing?(XP_CAT[task.category]||15):0;
+    const newXp=(s.xp||0)+gained;
+    if(completing){
+      const oldLvl=getLevelInfo(s.xp||0).lvl;
+      const newInfo=getLevelInfo(newXp);
+      showXPToast(gained,newInfo.lvl>oldLvl?newInfo:null);
+    }
+    return{
+      tasks:s.tasks.map(t=>t.id===id?{...t,completed:!t.completed,completedAt:!t.completed?Date.now():null}:t),
+      xp:completing?newXp:s.xp||0,
+    };
+  }),[mut]);
   const upsertTask=useCallback(task=>mut(s=>{const i=s.tasks.findIndex(t=>t.id===task.id);if(i>=0){const tasks=[...s.tasks];tasks[i]={...tasks[i],...task};return{tasks};}return{tasks:[...s.tasks,task]};}),[mut]);
   const deleteTask=useCallback(id=>mut(s=>({tasks:s.tasks.filter(t=>t.id!==id)})),[mut]);
-  const toggleHabit=useCallback((hid,date)=>mut(s=>({habitLogs:{...s.habitLogs,[`${hid}_${date}`]:!s.habitLogs[`${hid}_${date}`]}})),[mut]);
+  const toggleHabit=useCallback((hid,date)=>mut(s=>{
+    const key=`${hid}_${date}`;
+    const completing=!s.habitLogs[key];
+    const newXp=(s.xp||0)+(completing?XP_HABIT:0);
+    if(completing){
+      const oldLvl=getLevelInfo(s.xp||0).lvl;
+      const newInfo=getLevelInfo(newXp);
+      showXPToast(XP_HABIT,newInfo.lvl>oldLvl?newInfo:null);
+    }
+    return{
+      habitLogs:{...s.habitLogs,[key]:completing},
+      xp:completing?newXp:s.xp||0,
+    };
+  }),[mut]);
   const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,h]};}),[mut]);
   const deleteHabit=useCallback(id=>mut(s=>({habits:s.habits.filter(h=>h.id!==id)})),[mut]);
   const applyActions=useCallback(actions=>mut(s=>{
@@ -1050,6 +1151,7 @@ function App(){
             <div style=${{fontSize:11,color:T.muted,fontWeight:700,marginTop:1}}>${wDone}/${wTotal} this week</div>
           </div>
         </div>
+        <${LevelBadge} xp=${state.xp||0}/>
         <div style=${{display:"flex",gap:8}}>
           <${IconBtn} onClick=${()=>setTaskModal({task:null,date:todayISO()})} style=${{background:T.blueGlow,borderColor:T.blueBorder,color:T.blue,fontSize:17,fontWeight:900}}>＋<//>
           <${IconBtn} onClick=${()=>setCoachOpen(true)} style=${{background:T.accentGlow,borderColor:T.accentBorder,fontSize:18}}>🤖<//>
@@ -1062,7 +1164,7 @@ function App(){
       ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
         onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
         onExport=${()=>{const b=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`sk-backup-${todayISO()}.json`;a.click();}}
-        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS}});}}/>`:""}
+        onReset=${()=>{if(confirm("Reset all data?"))setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},goals:[],settings:{...DEF_SETTINGS},xp:0});}}/>`:""}
 
       <!-- Bottom nav -->
       <nav style=${{position:"fixed",left:0,right:0,bottom:0,zIndex:25,display:"flex",gap:4,
@@ -1097,6 +1199,7 @@ function App(){
       settings=${state.settings} onApplyActions=${applyActions}/>
 
     <${Toast} onReady=${toastReady}/>
+    <${XPToast} onReady=${xpToastReady}/>
   </div>`;
 }
 
