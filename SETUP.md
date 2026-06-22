@@ -12,25 +12,37 @@
 4. Tap "Add"
 5. The app icon appears on your home screen — tap it to open full-screen
 
-## Step 3: Lock Screen Widget (Scriptable)
+## Step 3 (Simplest): Workout Auto-Sync via iOS Shortcuts
+No extra apps needed — uses iOS Shortcuts built-in to your iPhone.
+
+1. In the app, go to Settings → "iPhone & Apple Watch" → tap **Import Shortcut**
+2. Add the shortcut to the Shortcuts app when prompted
+3. iOS will run it automatically after every Apple Watch workout ends
+4. Workouts appear as completed tasks in your Today view immediately
+
+This works with ALL workout apps that write to Apple Health (Strava, Garmin, Nike Run Club, Apple Fitness+, etc.).
+
+## Step 4: Lock Screen Widget (Scriptable)
 1. Download **Scriptable** from the App Store (free)
-2. Open Scriptable → tap the + button to create a new script
-3. Paste the entire contents of `widget.js` into the script
-4. Name it "ScheduleKeeper"
-5. Add the widget to your lock screen:
+2. In the app, go to Settings → "iPhone & Apple Watch" → tap **Open in Scriptable**
+3. Scriptable opens with the widget script pre-loaded — tap the save button
+4. Add the widget to your lock screen:
    - Long-press your lock screen → Customise
    - Tap "Add widgets" below the time
    - Find Scriptable → choose Rectangular (shows tasks) or Circular (shows progress)
-6. Long-press the widget → Edit widget
-7. Set **Script** = ScheduleKeeper
-8. Set **Parameter** = https://your-name.vercel.app
-9. Done! The widget refreshes automatically.
+5. Long-press the widget → Edit widget
+6. Set **Script** = ScheduleKeeper
+7. Set **Parameter** = https://your-name.vercel.app
+8. Done! The widget refreshes automatically.
 
-## Step 4: Apple Watch Complication (Scriptable — no Shortcuts app needed)
+Alternatively, you can add the script manually:
+- Open Scriptable → tap the + button → paste the entire contents of `widget.js` → name it "ScheduleKeeper"
+
+## Step 4b: Apple Watch Complication (Scriptable — no Shortcuts app needed)
 Scriptable natively supports Apple Watch complications — the same script runs on Watch.
 
-1. Make sure Scriptable is installed on your iPhone (Step 3 above)
-2. The "ScheduleKeeper" script with the `widget.js` code must be set up (Step 3)
+1. Make sure Scriptable is installed on your iPhone (Step 4 above)
+2. The "ScheduleKeeper" script with the `widget.js` code must be set up (Step 4)
 3. On your iPhone, open the **Watch** app
 4. Tap **My Watch** → **Complications**
 5. Choose a complication slot (e.g. top or bottom of watch face)
