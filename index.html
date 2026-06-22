@@ -538,7 +538,10 @@ ATHLETE PROFILE: Trains 5–7am + evenings. Work Mon/Wed 8–5, Tue/Thu 8–4, F
 
 MARCOS LLORENTE PRINCIPLES (enforce always):
 • Grounding: barefoot on grass/earth daily for nervous system reset
-• Cold therapy: cold shower or ice bath after every hard session
+• Cold therapy: cold shower or ice bath after every hard session. COLD ONLY post-training — hot baths blunt the adaptation. Sauna is the only heat tool, always end cold.
+• Lactic acid flush: 20–25min easy bike Zone 1 immediately after any hard run, football, or sprint session. Comes BEFORE the cold shower. Clears lactate, prevents next-day soreness.
+• Stretching & mobility: 10min morning mobility on waking (hip flexors, thoracic, ankles). 15min post-session static stretch (hamstrings, hip flexors, calves — 45s each). Static stretching POST-session only. Dynamic warm-up PRE-session only.
+• Functional strength: Pilates + single-leg work 2× per week — glute activation, hip stability, core. Injury prevention is performance.
 • Morning sun: 10–20min outside within 1h of waking for cortisol/vitamin D
 • Circadian rhythm: eat in daylight, stop 2h before bed, hard training in daylight
 • Whole foods only: lean fish, vegetables, legumes, nuts, seeds, fruit — zero processed
@@ -548,10 +551,10 @@ MARCOS LLORENTE PRINCIPLES (enforce always):
 • No screens 60min before bed
 
 KEY SCENARIOS WITH FULL PROTOCOL:
-① MATCH CANCELLED: deleteTask game, add Run 40min + 4 strides (06:00), Football technique 50min (18:00), Pilates 20min (19:15). Reply: sharp, no filler.
-② GAME [day/time]: addTask match, fuel check (12:00), early wind-down eve before (20:30), active recovery morning after (06:10).
-③ TIRED/SORE: replace hard sessions with "Easy walk + mobility 30min" + "Cold shower 3min". Add grounding walk if outdoors possible.
-④ REST DAY: clear hard sessions, add "Barefoot grounding 20min" + "Morning sun 15min" + "Cold shower 3min" + "Prayer + meditation 10min".
+① MATCH CANCELLED: deleteTask game, add Run 40min + 4 strides (06:00), Football technique 50min (18:00), Lactic flush bike 20min (19:10), Pilates 20min (19:35), Cold shower 3min (20:00). Reply: sharp, no filler.
+② GAME [day/time]: addTask match, fuel check (12:00), early wind-down eve before (20:30), morning after: lactic flush bike 20min (06:10) → stretch 15min (06:35) → barefoot walk 20min (06:55) → cold shower 3min (07:20). No hot bath.
+③ TIRED/SORE: replace hard sessions with lactic flush easy bike 20min (06:10) → foam roll 10min (06:35) → static stretch hamstrings+hip flexors+calves 15min (06:50) → cold shower 3min (07:10) → grounding 15min (07:25). Never hot bath.
+④ REST DAY: clear hard sessions, add prayer+meditation (05:10), morning sun (05:30), barefoot grounding (05:50), cold shower (06:15), mobility+stretch 20min (06:45), easy walk (07:10).
 ⑤ Maximise every session — always add specific execution notes (sets, pace, intensity %).
 
 OUTPUT STRICT JSON ONLY: {"reply":"1–3 sentence sharp reply","actions":[...]}
@@ -608,22 +611,25 @@ function localCoach(msg,ctx){
       addTask("Pre-match: dynamic warm-up 15min + 3 activation sprints @ 70%",gameDate,"12:30","other","No static stretching. Activate the CNS."),
       addTask("Fuel + hydration check",gameDate,"12:00","other","Whole food meal 3h before. 500ml water now."),
       addTask("Early wind-down",prevDay,"20:30","other","Screens off. No stimulation. Lights out 9pm."),
-      addTask("Active recovery: barefoot walk + mobility 30min",nextDay,"06:10","recovery","Ground your feet on grass. Flush the legs gently."),
-      addTask("Cold shower 3min",nextDay,"06:45","recovery","Cold finish. Speed up the flush."),
+      addTask("Lactic flush: easy bike 20–25min",nextDay,"06:10","bike","Zone 1. Light spin to clear the legs. No intensity — just flush."),
+      addTask("Full stretch: hamstrings, hip flexors, quads, adductors 15min",nextDay,"06:40","recovery","Static holds 45s each. Non-negotiable after a game."),
+      addTask("Barefoot grounding walk 20min",nextDay,"07:00","recovery","Feet on grass. Slow walk. Nervous system reset."),
+      addTask("Cold shower 3min",nextDay,"07:25","recovery","End cold. No hot bath — cold is the recovery tool."),
     ];
     const label=gameDate===today?"today":gameDate===tomorrow?"tomorrow":dayWord;
-    return{handled:true,reply:`Game set ${label} at ${gameTime}. Pre-match protocol, wind-down eve before, and barefoot recovery morning after — all added.`,actions:acts};
+    return{handled:true,reply:`Game set ${label} at ${gameTime}. Pre-match protocol, wind-down the night before, and lactic flush → stretch → grounding → cold shower the morning after — all added.`,actions:acts};
   }
 
   // 3. Tired / fatigued / heavy legs
   if(/\b(tired|fatigued|heavy\s*legs?|sore|exhausted|wrecked|dead\s*legs?|drained|no\s*energy)\b/.test(m)){
-    const hard=findTasks(today,["run","football","bike"]);
+    const hard=findTasks(today,["run","football"]);
     const acts=hard.map(t=>delTask(t));
-    acts.push(addTask("Easy walk + mobility 30min",today,"06:10","recovery","No intensity. Let the body speak. Slow and easy."));
-    acts.push(addTask("Foam roll: hamstrings, hip flexors, calves 10min",today,"06:45","recovery","Work the tight spots. No pain — pressure."));
-    acts.push(addTask("Cold shower 3min",today,"07:00","recovery","End cold. Reduce inflammation. Done."));
-    acts.push(addTask("Barefoot grounding 15min",today,"07:10","recovery","Grass or earth. Feet on the ground. Nervous system reset."));
-    const reply=loadToday>3?"Heavy day behind you. Cleared the hard sessions — easy walk, foam roll, cold shower, grounding. Recovery is training."+gameNote:"Logged. Hard sessions cleared. Easy movement + cold therapy + grounding today."+gameNote;
+    acts.push(addTask("Lactic flush: easy bike 20min",today,"06:10","bike","Zone 1 only. 60–70rpm, light resistance. No effort — just spin the legs clear."));
+    acts.push(addTask("Foam roll: quads, hamstrings, hip flexors, calves 10min",today,"06:35","recovery","Slow pressure. 60 seconds per muscle group. No bouncing."));
+    acts.push(addTask("Stretching: hamstrings + hip flexors + calves 15min",today,"06:50","recovery","Static holds 45 seconds each. No bouncing. Breathe slowly. Hip flexor lunge, seated hamstring, standing calf."));
+    acts.push(addTask("Cold shower 3min",today,"07:10","recovery","End cold. Reduce inflammation. No hot bath — cold is the recovery tool."));
+    acts.push(addTask("Barefoot grounding 15min",today,"07:25","recovery","Grass or earth. Feet on the ground. Nervous system reset."));
+    const reply=loadToday>3?"Heavy day behind you. Cleared the hard sessions — lactic flush on the bike first, foam roll, stretch, cold shower, and ground. No hot bath. Recovery is training."+gameNote:"Legs speaking. Hard sessions cleared. Flush ride → foam roll → stretch → cold shower → grounding. That's the protocol."+gameNote;
     return{handled:true,reply,actions:acts.filter(Boolean)};
   }
 
@@ -718,7 +724,25 @@ function localCoach(msg,ctx){
   if(/\b(grounding|earthing|barefoot|feet\s*on\s*(the\s*)?(grass|earth|ground)|earth\s*walk)\b/.test(m)){return{handled:true,reply:"Grounding session added. Barefoot on grass or soil for 20min — this is Llorente-level recovery. It works.",actions:[addTask("Grounding: barefoot 20min on grass",today,curH<12?"06:10":"17:00","recovery","Feet directly on earth. No shoes. Stand, walk slowly, breathe.")]};}
 
   // 19. Cold therapy / cold shower / ice bath
-  if(/\b(cold\s*shower|ice\s*bath|cold\s*plunge|cold\s*water|contrast\s*bath|contrast\s*therapy)\b/.test(m)){return{handled:true,reply:"Cold therapy added. 3min minimum — inflammation down, dopamine up, recovery accelerated.",actions:[addTask("Cold therapy: cold shower 3min",today,curH<12?"07:00":"19:30","recovery","Start warm, end cold. 3min at the end. Breathe through it.")]};}
+  if(/\b(cold\s*shower|ice\s*bath|cold\s*plunge|cold\s*water|contrast\s*bath)\b/.test(m)){return{handled:true,reply:"Cold shower added. 3min minimum — inflammation down, dopamine up, recovery accelerated. Cold only post-training: no hot baths — heat blunts the adaptation. Sauna is the only heat tool, always end cold.",actions:[addTask("Cold therapy: cold shower 3min",today,curH<12?"07:00":"19:30","recovery","Start warm, end cold. 3min at the end. Breathe through it. No hot bath post-session.")]};}
+
+  // 19b. Lactic flush / flush ride / recovery spin
+  if(/\b(lactic|flush\s*(ride|bike|spin|legs?)?|flush\s*the\s*legs?|easy\s*spin|spin\s*out|recovery\s*(ride|bike|spin)|active\s*recovery\s*bike)\b/.test(m)){
+    const t1=curH<12?"06:10":"17:30";const t2=curH<12?"06:35":"17:55";
+    return{handled:true,reply:"Lactic flush added. 20min Zone 1 — legs only, no effort, just spin. Do it within 30min of the hard session. Then cold shower after.",actions:[addTask("Lactic flush: easy bike 20min",today,t1,"bike","Zone 1. 60–70rpm. Light resistance. The only goal is to clear the lactate."),addTask("Cold shower 3min",today,t2,"recovery","Always after the flush. Cold only — no hot bath.")]};
+  }
+
+  // 19c. Stretching / mobility / flexibility
+  if(/\b(stretch(ing)?|mobility\s*(session|work|routine)?|flexibility|tight\s*(hamstrings?|hips?|calves?|quads?|adductors?)|hip\s*flexors?|foam\s*roll)\b/.test(m)&&!/add\s+(a\s+)?run|add\s+(a\s+)?football|add\s+(a\s+)?bike/.test(m)){
+    const t=curH<12?"07:00":"19:00";
+    return{handled:true,reply:"Mobility session added. Static stretching post-session only — never before training. Dynamic warm-up pre-session. 45 seconds per hold, breathe slowly.",actions:[addTask("Mobility & stretch: hamstrings, hip flexors, quads, thoracic 20min",today,t,"recovery","Hamstrings 45s, hip flexor lunge 45s, quad stretch 45s, pigeon pose 60s, thoracic rotation 10 reps each side.")]};
+  }
+
+  // 19d. Functional strength / pilates / injury prevention
+  if(/\b(functional\s*strength|single[\s-]leg|glute\s*(activation|bridges?)|copenhagen|hip\s*stability|core\s*stability|injury\s*prevention|dead\s*bugs?)\b/.test(m)){
+    const t=curH<12?"06:00":"18:00";
+    return{handled:true,reply:"Functional strength added. This is injury-proofing — single-leg stability, glute activation, core control. Two sessions per week minimum, no exceptions.",actions:[addTask("Pilates / functional strength 40min",today,t,"pilates","Single-leg squats 3×10, glute bridges 3×15, Copenhagen planks 3×10 each side, dead bugs 3×12. Control over load.")]};
+  }
 
   // 20. Morning sun / sunlight / vitamin D
   if(/\b(morning\s*sun|sunlight|sun\s*exposure|vitamin\s*d|outside\s*in\s*the\s*morning|get\s*some\s*sun)\b/.test(m)){return{handled:true,reply:"Morning sun added. 15min within the first hour of waking — this is how you set your circadian rhythm and build your vitamin D.",actions:[addTask("Morning sun exposure 15min",today,"05:30","recovery","Outside. No sunglasses. Face the light. Breathe the air.")]};}
@@ -938,6 +962,8 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
     {l:"Tired today 😴",p:"I feel tired and heavy legged today"},
     {l:"What's next? ⚡",p:"What should I do next?"},
     {l:"Week check 📊",p:"How is my week going so far?"},
+    {l:"Flush ride 🚴",p:"Add lactic acid flush ride"},
+    {l:"Stretch & mobility 🧘",p:"Add mobility and stretching session"},
     {l:"Grounding 🌿",p:"Add a grounding session"},
     {l:"Cold therapy 🧊",p:"Add cold shower"},
     {l:"Rest day 🌙",p:"Make today a rest day"},
