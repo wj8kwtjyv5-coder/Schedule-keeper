@@ -37,7 +37,7 @@ const C = {
 
 const CAT_EMOJI = {
   run:"🏃", football:"⚽", game:"🏟", bike:"🚴",
-  pilates:"🧘", recovery:"🌿", sauna:"🌡", work:"💼", other:"◈",
+  pilates:"🧘", recovery:"🌿", sauna:"🌡", redlight:"🔴", work:"💼", other:"◈",
 };
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -63,6 +63,40 @@ async function fetchState() {
   req.timeoutInterval = 8;
   try { return await req.loadJSON(); }
   catch(e) { return null; }
+}
+
+// ── HealthKit workout reader ─────────────────────────────────
+async function fetchWorkoutData() {
+  try {
+    const health = Health.instance();
+    await health.requestAuthorization(
+      ["workoutType","heartRate","activeEnergyBurned","distanceWalkingRunning"],
+      []
+    );
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const workouts = await health.findWorkouts({ start, end });
+    return workouts.map(w => ({
+      type: w.workoutActivityType || "other",
+      duration: Math.round((w.duration || 0) / 60),
+      calories: Math.round(w.totalEnergyBurned || 0),
+      distance: Math.round((w.totalDistance || 0) * 10) / 10,
+      avgHR: w.metadata?.averageHeartRate || null,
+      start: (w.startDate || new Date()).toISOString(),
+      end: (w.endDate || new Date()).toISOString(),
+    }));
+  } catch(e) { return []; }
+}
+
+async function syncWorkouts(workouts) {
+  if (!BASE_URL || !workouts.length) return;
+  const url = BASE_URL + "/api/workout";
+  const req = new Request(url);
+  req.method = "POST";
+  req.headers = { "Content-Type": "application/json" };
+  req.body = JSON.stringify({ workouts });
+  req.timeoutInterval = 8;
+  try { await req.loadJSON(); } catch(e) {}
 }
 
 // ── Build today's data from state ───────────────────────────
@@ -428,6 +462,9 @@ function buildMedium(d) {
 
 // ── Main ─────────────────────────────────────────────────────
 const state = await fetchState();
+
+// Sync Apple Watch workout data to server (non-blocking)
+fetchWorkoutData().then(workouts => syncWorkouts(workouts)).catch(() => {});
 
 // Annotate habits with today's done status
 if (state && state.habits && state.habitLogs) {

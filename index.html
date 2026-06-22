@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <title>Feliz Dias</title>
-<meta name="theme-color" content="#05070f"/>
+<meta name="theme-color" content="#09070a"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="FD"/>
@@ -21,13 +21,13 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{
   height:100%;margin:0;
-  background:#05070f;
+  background:#09070a;
   color:#F1F5F9;
   font-family:ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif;
 }
 input,textarea,select,button{font-family:inherit}
 ::-webkit-scrollbar{width:3px;height:3px}
-::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(167,139,250,0.35),rgba(52,211,153,0.25));border-radius:99px}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(245,158,11,0.40),rgba(52,211,153,0.25));border-radius:99px}
 ::-webkit-scrollbar-track{background:transparent}
 input[type=date]::-webkit-calendar-picker-indicator,
 input[type=time]::-webkit-calendar-picker-indicator{filter:invert(0.5)}
@@ -38,16 +38,17 @@ textarea::placeholder,input::placeholder{color:rgba(241,245,249,0.16)}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes popIn{0%{transform:scale(0)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
 @keyframes pulseGlow{0%,100%{opacity:0.4}50%{opacity:1}}
-@keyframes opalShift{0%,100%{opacity:0.8}50%{opacity:1}}
+@keyframes emberShift{0%,100%{opacity:0.8}50%{opacity:1}}
 @keyframes heatPulse{0%,100%{opacity:0.85}50%{opacity:1}}
+@keyframes dashFlow{to{stroke-dashoffset:-14}}
 button{transition:transform 0.14s cubic-bezier(0.34,1.56,0.64,1),opacity 0.14s,background 0.18s,border-color 0.18s,box-shadow 0.18s}
 button:active{transform:scale(0.93)!important}
 button:hover{opacity:0.88}
 .sk-card{transition:transform 0.2s cubic-bezier(0.34,1.2,0.64,1),box-shadow 0.2s}
-.sk-card:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,0,0,0.5),0 0 0 1px rgba(167,139,250,0.08) inset}
-.sk-task:hover{background:rgba(167,139,250,0.055)!important}
+.sk-card:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,0,0,0.5),0 0 0 1px rgba(245,158,11,0.08) inset}
+.sk-task:hover{background:rgba(245,158,11,0.045)!important}
 .sk-habit:hover{filter:brightness(1.08)}
-input:focus,textarea:focus{outline:none;border-color:rgba(167,139,250,0.5)!important;box-shadow:0 0 0 3px rgba(167,139,250,0.10)}
+input:focus,textarea:focus{outline:none;border-color:rgba(245,158,11,0.5)!important;box-shadow:0 0 0 3px rgba(245,158,11,0.10)}
 </style>
 </head>
 <body>
@@ -57,43 +58,43 @@ import { h, render, Fragment } from 'preact';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
 import { html } from 'htm/preact';
 
-// ── Design tokens ────────────────────────────────────────────
+// ── Design tokens — Ember & Earth ────────────────────────────
 const T = {
-  bg:           "#05070f",
+  bg:           "#09070a",
   surface:      "rgba(255,255,255,0.032)",
   surfaceHigh:  "rgba(255,255,255,0.062)",
   surfaceMid:   "rgba(255,255,255,0.047)",
   border:       "rgba(255,255,255,0.072)",
-  borderOpal:   "rgba(167,139,250,0.14)",
-  borderActive: "rgba(167,139,250,0.60)",
+  borderOpal:   "rgba(245,158,11,0.14)",
+  borderActive: "rgba(245,158,11,0.60)",
   text:         "#F1F5F9",
   textSoft:     "rgba(241,245,249,0.88)",
   muted:        "rgba(241,245,249,0.36)",
-  // Opal accent — iris violet
-  accent:       "#a78bfa",
-  accentDeep:   "#7c3aed",
-  accentGlow:   "rgba(167,139,250,0.10)",
-  accentBorder: "rgba(167,139,250,0.28)",
-  // Opal mint — recovery / green
+  // Ember accent — amber gold
+  accent:       "#f59e0b",
+  accentDeep:   "#d97706",
+  accentGlow:   "rgba(245,158,11,0.10)",
+  accentBorder: "rgba(245,158,11,0.28)",
+  // Earth mint — recovery / green
   blue:         "#38bdf8",
   blueGlow:     "rgba(56,189,248,0.10)",
   blueBorder:   "rgba(56,189,248,0.28)",
   green:        "#34d399",
   greenGlow:    "rgba(52,211,153,0.10)",
   greenBorder:  "rgba(52,211,153,0.28)",
-  // Opal rose — strain / alert
+  // Strain / alert
   amber:        "#fbbf24",
   amberGlow:    "rgba(251,191,36,0.10)",
   red:          "#f87171",
   redGlow:      "rgba(248,113,113,0.10)",
   redBorder:    "rgba(248,113,113,0.28)",
-  purple:       "#c084fc",
+  purple:       "#a855f7",
   // Premium shadows
   shadow:       "0 2px 4px rgba(0,0,0,0.5),0 12px 40px rgba(0,0,0,0.4)",
   shadowDeep:   "0 4px 6px rgba(0,0,0,0.5),0 20px 60px rgba(0,0,0,0.5),0 0 0 1px rgba(255,255,255,0.04) inset",
   // Glass
-  glass:        "rgba(5,7,15,0.75)",
-  glassStrong:  "rgba(5,7,15,0.88)",
+  glass:        "rgba(9,7,10,0.75)",
+  glassStrong:  "rgba(9,7,10,0.88)",
 };
 // Premium symbol icons — no system emoji in UI chrome
 const ICONS = {
@@ -104,21 +105,22 @@ const ICONS = {
   fire:"◆", edit:"◇",
 };
 const CATS = {
-  run:     {icon:"↗",  color:"#a78bfa",glow:"rgba(167,139,250,0.13)",border:"rgba(167,139,250,0.30)",label:"Run",emoji:"🏃"},
-  football:{icon:"⬡",  color:"#fb923c",glow:"rgba(251,146,60,0.12)", border:"rgba(251,146,60,0.30)", label:"Football",emoji:"⚽"},
-  game:    {icon:"◆",  color:"#f9a8d4",glow:"rgba(249,168,212,0.12)",border:"rgba(249,168,212,0.30)",label:"Game",emoji:"🏆"},
+  run:     {icon:"↗",  color:"#f59e0b",glow:"rgba(245,158,11,0.13)",  border:"rgba(245,158,11,0.30)",  label:"Run",emoji:"🏃"},
+  football:{icon:"⬡",  color:"#22c55e",glow:"rgba(34,197,94,0.12)",   border:"rgba(34,197,94,0.30)",   label:"Football",emoji:"⚽"},
+  game:    {icon:"◆",  color:"#ef4444",glow:"rgba(239,68,68,0.12)",   border:"rgba(239,68,68,0.30)",   label:"Game",emoji:"🏆"},
   bike:    {icon:"◎",  color:"#38bdf8",glow:"rgba(56,189,248,0.12)",  border:"rgba(56,189,248,0.30)",  label:"Bike",emoji:"🚴"},
-  gym:     {icon:"▲",  color:"#f59e0b",glow:"rgba(245,158,11,0.12)",  border:"rgba(245,158,11,0.30)",  label:"Gym",emoji:"🏋️"},
+  gym:     {icon:"▲",  color:"#fb923c",glow:"rgba(251,146,60,0.12)",  border:"rgba(251,146,60,0.30)",  label:"Gym",emoji:"🏋️"},
   swim:    {icon:"〜", color:"#22d3ee",glow:"rgba(34,211,238,0.11)",  border:"rgba(34,211,238,0.28)",  label:"Swim",emoji:"🏊"},
-  pilates: {icon:"◈",  color:"#c084fc",glow:"rgba(192,132,252,0.12)",border:"rgba(192,132,252,0.30)",label:"Pilates",emoji:"🤸"},
+  pilates: {icon:"◈",  color:"#a855f7",glow:"rgba(168,85,247,0.12)",  border:"rgba(168,85,247,0.30)",  label:"Pilates",emoji:"🤸"},
   recovery:{icon:"○",  color:"#34d399",glow:"rgba(52,211,153,0.11)",  border:"rgba(52,211,153,0.28)",  label:"Recovery",emoji:"🌿"},
-  sauna:   {icon:"≋",  color:"#fda4af",glow:"rgba(253,164,175,0.11)",border:"rgba(253,164,175,0.28)",label:"Sauna",emoji:"♨️"},
-  work:    {icon:"▤",  color:"#94a3b8",glow:"rgba(148,163,184,0.06)",border:"rgba(148,163,184,0.16)",label:"Work",emoji:"💼"},
-  other:   {icon:"◇",  color:"#64748b",glow:"rgba(255,255,255,0.03)",border:"rgba(255,255,255,0.08)",label:"Other",emoji:"◇"},
+  sauna:   {icon:"≋",  color:"#f97316",glow:"rgba(249,115,22,0.12)",  border:"rgba(249,115,22,0.28)",  label:"Sauna",emoji:"♨️"},
+  redlight:{icon:"◈",  color:"#dc2626",glow:"rgba(220,38,38,0.14)",   border:"rgba(220,38,38,0.32)",   label:"Red Light",emoji:"🔴"},
+  work:    {icon:"▤",  color:"#94a3b8",glow:"rgba(148,163,184,0.06)", border:"rgba(148,163,184,0.16)", label:"Work",emoji:"💼"},
+  other:   {icon:"◇",  color:"#64748b",glow:"rgba(255,255,255,0.03)", border:"rgba(255,255,255,0.08)", label:"Other",emoji:"◇"},
 };
 
 // ── XP / Level system ────────────────────────────────────────
-const XP_CAT={game:100,football:50,run:40,bike:30,pilates:25,recovery:20,sauna:20,other:15,work:5};
+const XP_CAT={game:100,football:50,run:40,bike:30,pilates:25,recovery:20,sauna:20,redlight:20,other:15,work:5};
 const XP_HABIT=15;
 const LEVELS=[
   {lvl:1, xp:0,     rank:"Rookie",      color:"#888aaa"},
@@ -406,9 +408,10 @@ function seedHabits(){ return [
   {id:uid(),title:"Sauna + pool",emoji:"♨️",days:[0,1,2,3,4,5,6]},
   {id:uid(),title:"Eat clean",emoji:"🥗",days:[0,1,2,3,4,5,6]},
   {id:uid(),title:"Bed by 9pm",emoji:"🌙",days:[0,1,2,3,4,5,6]},
+  {id:uid(),title:"Red light glasses (8:30pm)",emoji:"🔴",days:[0,1,2,3,4,5,6]},
 ];}
 const DEF_SETTINGS={
-  weekTargets:{run:5,football:5,bike:3,pilates:2,recovery:2,sauna:5},
+  weekTargets:{run:5,football:5,bike:3,pilates:2,recovery:2,sauna:5,redlight:3},
   constraints:{wake:"05:00",bed:"21:00"},
   notifEnabled:false,
   macroTargets:{cal:2500,protein:160,carbs:220,fat:70},
@@ -539,13 +542,16 @@ ATHLETE PROFILE: Trains 5–7am + evenings. Work Mon/Wed 8–5, Tue/Thu 8–4, F
 MARCOS LLORENTE PRINCIPLES (enforce always):
 • Grounding: barefoot on grass/earth daily for nervous system reset
 • Cold therapy: cold shower or ice bath after every hard session. COLD ONLY post-training — hot baths blunt the adaptation. Sauna is the only heat tool, always end cold.
-• Lactic acid flush: 20–25min easy bike Zone 1 immediately after any hard run, football, or sprint session. Comes BEFORE the cold shower. Clears lactate, prevents next-day soreness.
+• Lactic acid flush: 20–25min easy spin Zone 1 immediately after any hard run, football, or sprint session. Comes BEFORE the cold shower. Category is RECOVERY (not bike). Clears lactate, prevents next-day soreness.
 • Stretching & mobility: 10min morning mobility on waking (hip flexors, thoracic, ankles). 15min post-session static stretch (hamstrings, hip flexors, calves — 45s each). Static stretching POST-session only. Dynamic warm-up PRE-session only.
 • Functional strength: Pilates + single-leg work 2× per week — glute activation, hip stability, core. Injury prevention is performance.
 • Morning sun: 10–20min outside within 1h of waking for cortisol/vitamin D
 • Circadian rhythm: eat in daylight, stop 2h before bed, hard training in daylight
 • Whole foods only: lean fish, vegetables, legumes, nuts, seeds, fruit — zero processed
 • Train fasted in mornings (sessions under 60min) — no food 2h before any session
+• Post-session electrolyte protocol: within 20min of ANY hard session — Celtic sea salt ¼ tsp + 500ml filtered water + juice of half a lemon + ½ tsp raw honey + pinch of baking soda. Not sports drinks — real food only.
+• Red light therapy (photobiomodulation): 10–20min on key muscle groups 3× per week. Morning sessions (06:00–07:00) prime testosterone and mitochondria. Evening sessions use red-only wavelengths (635nm) to support melatonin. Never blue light at night.
+• Heat therapy timing: sauna and heat BEFORE training (as warm-up) or 2+ hours after — NEVER immediately post-session (blunts cold adaptation). Infrared sauna preferred over traditional. Always end sauna with cold.
 • 3L+ filtered water daily
 • Prayer/meditation: non-negotiable daily anchor before training
 • No screens 60min before bed
@@ -611,7 +617,7 @@ function localCoach(msg,ctx){
       addTask("Pre-match: dynamic warm-up 15min + 3 activation sprints @ 70%",gameDate,"12:30","other","No static stretching. Activate the CNS."),
       addTask("Fuel + hydration check",gameDate,"12:00","other","Whole food meal 3h before. 500ml water now."),
       addTask("Early wind-down",prevDay,"20:30","other","Screens off. No stimulation. Lights out 9pm."),
-      addTask("Lactic flush: easy bike 20–25min",nextDay,"06:10","bike","Zone 1. Light spin to clear the legs. No intensity — just flush."),
+      addTask("Lactic flush: easy spin 20–25min",nextDay,"06:10","recovery","Zone 1. Light spin to clear the legs. No intensity — just flush."),
       addTask("Full stretch: hamstrings, hip flexors, quads, adductors 15min",nextDay,"06:40","recovery","Static holds 45s each. Non-negotiable after a game."),
       addTask("Barefoot grounding walk 20min",nextDay,"07:00","recovery","Feet on grass. Slow walk. Nervous system reset."),
       addTask("Cold shower 3min",nextDay,"07:25","recovery","End cold. No hot bath — cold is the recovery tool."),
@@ -624,7 +630,7 @@ function localCoach(msg,ctx){
   if(/\b(tired|fatigued|heavy\s*legs?|sore|exhausted|wrecked|dead\s*legs?|drained|no\s*energy)\b/.test(m)){
     const hard=findTasks(today,["run","football"]);
     const acts=hard.map(t=>delTask(t));
-    acts.push(addTask("Lactic flush: easy bike 20min",today,"06:10","bike","Zone 1 only. 60–70rpm, light resistance. No effort — just spin the legs clear."));
+    acts.push(addTask("Lactic flush: easy spin 20min",today,"06:10","recovery","Zone 1 only. 60–70rpm, light resistance. No effort — just spin the legs clear."));
     acts.push(addTask("Foam roll: quads, hamstrings, hip flexors, calves 10min",today,"06:35","recovery","Slow pressure. 60 seconds per muscle group. No bouncing."));
     acts.push(addTask("Stretching: hamstrings + hip flexors + calves 15min",today,"06:50","recovery","Static holds 45 seconds each. No bouncing. Breathe slowly. Hip flexor lunge, seated hamstring, standing calf."));
     acts.push(addTask("Cold shower 3min",today,"07:10","recovery","End cold. Reduce inflammation. No hot bath — cold is the recovery tool."));
@@ -729,7 +735,7 @@ function localCoach(msg,ctx){
   // 19b. Lactic flush / flush ride / recovery spin
   if(/\b(lactic|flush\s*(ride|bike|spin|legs?)?|flush\s*the\s*legs?|easy\s*spin|spin\s*out|recovery\s*(ride|bike|spin)|active\s*recovery\s*bike)\b/.test(m)){
     const t1=curH<12?"06:10":"17:30";const t2=curH<12?"06:35":"17:55";
-    return{handled:true,reply:"Lactic flush added. 20min Zone 1 — legs only, no effort, just spin. Do it within 30min of the hard session. Then cold shower after.",actions:[addTask("Lactic flush: easy bike 20min",today,t1,"bike","Zone 1. 60–70rpm. Light resistance. The only goal is to clear the lactate."),addTask("Cold shower 3min",today,t2,"recovery","Always after the flush. Cold only — no hot bath.")]};
+    return{handled:true,reply:"Lactic flush added. 20min Zone 1 — legs only, no effort, just spin. Do it within 30min of the hard session. Then cold shower after.",actions:[addTask("Lactic flush: easy spin 20min",today,t1,"recovery","Zone 1. 60–70rpm. Light resistance. The only goal is to clear the lactate."),addTask("Cold shower 3min",today,t2,"recovery","Always after the flush. Cold only — no hot bath.")]};
   }
 
   // 19c. Stretching / mobility / flexibility
@@ -793,6 +799,28 @@ function localCoach(msg,ctx){
   // 35. Proactive greeting after 2pm
   if(curH>=14&&/^\s*(hi|hey|hello|what'?s?\s*up|yo)\s*[!.?]?\s*$/.test(m)){const done=tasks.filter(t=>t.date===today&&t.completed).length;const total=tasks.filter(t=>t.date===today&&t.category!=="work").length;if(!done&&total)return{handled:true,reply:`Hey. It's ${timeNow} and none of today's ${total} sessions are done yet. What's the situation?`,actions:[]};if(!total)return{handled:true,reply:"Hey. Nothing scheduled today — want me to build a session?",actions:[]};return{handled:true,reply:`${done}/${total} sessions done. ${done===total?"Strong day.":"Keep going."}`+gameNote,actions:[]};}
 
+  // 36. Red light therapy / photobiomodulation
+  if(/\b(red\s*light|infrared\s*(therapy|session|lamp)?|photobiomodulation|pbm|red\s*lamp)\b/.test(m)){
+    const t=curH<12?"06:15":"19:00";
+    return{handled:true,reply:"Red light added. 10–15min on quads, hamstrings, and shoulders. Morning session boosts testosterone and mitochondrial output — evening uses red-only wavelengths to support melatonin.",actions:[addTask("Red light therapy 15min",today,t,"redlight","Target: quads, hamstrings, lower back. 635–850nm. Keep 15cm from skin. Morning = energy + hormonal prime. Evening = recovery + sleep quality.")]};
+  }
+
+  // 37. Heat therapy / infrared sauna / pre-session heat
+  if(/\b(heat\s*therapy|infrared\s*sauna|pre[\s-]training\s*heat|warm\s*up\s*sauna|hot\s*bath\s*before)\b/.test(m)){
+    const t=curH<12?"06:00":"17:00";
+    return{handled:true,reply:"Heat therapy added before training. Infrared sauna or warm bath BEFORE a session raises core temp and improves elasticity — that's the correct window. Never immediately after a hard session: always cold post-training.",actions:[addTask("Infrared sauna / heat therapy 20min",today,t,"sauna","Pre-session only. Raise core temp, improve muscle elasticity. Hydrate before. Cold shower after training — not here.")]};
+  }
+
+  // 38. Celtic sea salt / electrolyte / recovery drink
+  if(/\b(electrolyte|celtic\s*sea\s*salt|sea\s*salt|recovery\s*drink|post.?workout\s*drink|lemon\s*water|honey\s*(lemon|water)?|baking\s*soda)\b/.test(m)){
+    return{handled:true,reply:"Recovery drink added. Celtic sea salt + lemon + raw honey + baking soda in 500ml filtered water — drink within 20min of finishing. This replaces everything a sports drink does, naturally.",actions:[addTask("Recovery drink: sea salt + lemon + honey",today,curH<12?"07:15":"19:30","other","¼ tsp Celtic sea salt, ½ lemon juiced, ½ tsp raw honey, pinch baking soda in 500ml filtered water. Drink within 20min post-session.")]};
+  }
+
+  // 39. Overtraining guard
+  if((ctx.weekHardLoad||0)>=7&&/\b(plan|schedule|add|what\s*should|more\s*training|extra)\b/.test(m)){
+    return{handled:true,reply:`You've hit ${ctx.weekHardLoad} hard sessions this week. Elite athletes deload every 3–4 weeks — today should be recovery, not another run. Your body builds during rest, not during work.`,actions:[addTask("Active recovery: walk + mobility 30min",today,curH<12?"06:30":"17:00","recovery","Easy movement only. No intensity. This is where adaptation happens."),addTask("Cold shower 3min",today,curH<12?"07:05":"17:35","recovery","End cold. Reset.")]};
+  }
+
   return{handled:false};
 }
 
@@ -828,11 +856,11 @@ function Ring({pct=0,size=48,stroke=3,color=T.accent,glow=false}){
 
 const S={
   card:{
-    background:"linear-gradient(145deg,rgba(255,255,255,0.04) 0%,rgba(167,139,250,0.025) 50%,rgba(52,211,153,0.018) 100%)",
+    background:"linear-gradient(145deg,rgba(255,255,255,0.04) 0%,rgba(245,158,11,0.022) 50%,rgba(52,211,153,0.018) 100%)",
     border:"1px solid rgba(255,255,255,0.075)",
     borderRadius:18,padding:"18px 16px",
     backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",
-    boxShadow:"0 1px 0 rgba(255,255,255,0.07) inset,0 8px 32px rgba(0,0,0,0.4),0 0 0 1px rgba(167,139,250,0.04) inset",
+    boxShadow:"0 1px 0 rgba(255,255,255,0.07) inset,0 8px 32px rgba(0,0,0,0.4),0 0 0 1px rgba(245,158,11,0.04) inset",
   },
   input:{
     width:"100%",padding:"11px 14px",borderRadius:12,
@@ -846,8 +874,8 @@ const S={
 function Btn({onClick,children,variant="default",style={},disabled=false}){
   const V={
     default:{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.09)",color:T.text},
-    primary:{background:"linear-gradient(135deg,rgba(167,139,250,0.16),rgba(167,139,250,0.08))",border:`1px solid ${T.accentBorder}`,color:T.accent,boxShadow:"0 0 16px rgba(167,139,250,0.10)"},
-    accent:{background:"linear-gradient(135deg,rgba(167,139,250,0.14),rgba(109,40,217,0.08))",border:"1px solid rgba(167,139,250,0.30)",color:T.accent},
+    primary:{background:"linear-gradient(135deg,rgba(245,158,11,0.16),rgba(245,158,11,0.08))",border:`1px solid ${T.accentBorder}`,color:T.accent,boxShadow:"0 0 16px rgba(245,158,11,0.10)"},
+    accent:{background:"linear-gradient(135deg,rgba(245,158,11,0.14),rgba(180,100,0,0.08))",border:"1px solid rgba(245,158,11,0.30)",color:T.accent},
     danger:{background:T.redGlow,border:`1px solid ${T.redBorder}`,color:T.red},
     ghost:{background:"transparent",border:"1px solid rgba(255,255,255,0.07)",color:T.muted},
   };
@@ -890,10 +918,10 @@ function Toast({onReady}){
   useEffect(()=>{ onReady(m=>{setMsg(m);setVis(true);clearTimeout(t.current);t.current=setTimeout(()=>setVis(false),2600);}); },[]);
   if(!vis) return null;
   return html`<div style=${{position:"fixed",bottom:100,left:"50%",transform:"translateX(-50%)",
-    background:"rgba(5,7,15,0.95)",border:"1px solid rgba(167,139,250,0.22)",
+    background:"rgba(9,7,10,0.95)",border:"1px solid rgba(245,158,11,0.22)",
     borderRadius:16,padding:"11px 22px",zIndex:200,color:T.text,fontSize:13,
     fontWeight:700,maxWidth:320,textAlign:"center",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",
-    boxShadow:"0 12px 48px rgba(0,0,0,0.6),0 0 0 1px rgba(167,139,250,0.06) inset",
+    boxShadow:"0 12px 48px rgba(0,0,0,0.6),0 0 0 1px rgba(245,158,11,0.06) inset",
     animation:"fadeUp 0.22s ease",letterSpacing:0.3}}>${msg}</div>`;
 }
 
@@ -953,7 +981,10 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
     const yst=(()=>{const d=new Date(now);d.setDate(d.getDate()-1);return d.toISOString().slice(0,10);})();
     const loadYesterday=tasks.filter(t=>t.date===yst&&t.category!=="work").length;
     const missedTasks=tasks.filter(t=>{if(t.date>=todayStr||t.completed||t.category==="work")return false;const d=new Date(now);d.setDate(d.getDate()-3);return t.date>=d.toISOString().slice(0,10);}).map(t=>({id:t.id,title:t.title,date:t.date,category:t.category}));
-    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habitHistory,habitHistory,callouts,loadToday,loadYesterday,missedTasks};
+    const weekHardLoad=tasks.filter(t=>weekDates.includes(t.date)&&["run","football","bike","game"].includes(t.category)&&t.completed).length;
+    const savedCheckin=localStorage.getItem(`sk-checkin-${todayStr}`);
+    const todayReadiness=savedCheckin?JSON.parse(savedCheckin):null;
+    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habitHistory,habitHistory,callouts,loadToday,loadYesterday,missedTasks,weekHardLoad,readiness:todayReadiness};
   },[tasks,habits,habitLogs,settings]);
 
   const QUICK=[
@@ -981,10 +1012,10 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
 
   if(!isOpen) return null;
   return html`<div style=${{position:"fixed",inset:0,zIndex:80,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick=${onClose}>
-    <div style=${{background:"rgba(5,7,15,0.98)",borderRadius:"22px 22px 0 0",border:"1px solid rgba(167,139,250,0.18)",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.8)"}} onClick=${e=>e.stopPropagation()}>
+    <div style=${{background:"rgba(9,7,10,0.98)",borderRadius:"22px 22px 0 0",border:"1px solid rgba(245,158,11,0.18)",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.8)"}} onClick=${e=>e.stopPropagation()}>
       <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px 10px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexShrink:0}}>
         <div style=${{display:"flex",alignItems:"center",gap:10}}>
-          <div style=${{width:38,height:38,borderRadius:13,background:"linear-gradient(135deg,rgba(167,139,250,0.18),rgba(52,211,153,0.10))",border:"1px solid rgba(167,139,250,0.30)",display:"grid",placeItems:"center",fontSize:19}}>🤖</div>
+          <div style=${{width:38,height:38,borderRadius:13,background:"linear-gradient(135deg,rgba(245,158,11,0.18),rgba(52,211,153,0.10))",border:"1px solid rgba(245,158,11,0.30)",display:"grid",placeItems:"center",fontSize:19}}>🤖</div>
           <div>
             <div style=${{fontWeight:900,fontSize:15,color:T.text}}>Coach</div>
             <div style=${{fontSize:11,fontWeight:700,color:busy?T.accent:"#6ee7b7"}}>${busy?"thinking…":"● ready — Llorente protocol"}</div>
@@ -996,8 +1027,8 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
         ${msgs.map((m,i)=>html`<div key=${i} style=${{
           alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",padding:"10px 14px",
           borderRadius:m.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",
-          background:m.role==="user"?"rgba(167,139,250,0.12)":"rgba(255,255,255,0.04)",
-          border:`1px solid ${m.role==="user"?"rgba(167,139,250,0.25)":"rgba(255,255,255,0.07)"}`,
+          background:m.role==="user"?"rgba(245,158,11,0.10)":"rgba(255,255,255,0.04)",
+          border:`1px solid ${m.role==="user"?"rgba(245,158,11,0.22)":"rgba(255,255,255,0.07)"}`,
           color:T.text,fontSize:14,lineHeight:1.55,whiteSpace:"pre-wrap",
         }}>
           ${m.role==="assistant"?html`<div style=${{fontSize:9,fontWeight:800,color:T.accent,marginBottom:5,letterSpacing:1}}>COACH</div>`:""}
@@ -1008,15 +1039,15 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
       <div style=${{display:"flex",gap:7,padding:"8px 16px",overflowX:"auto",flexShrink:0,borderTop:"1px solid rgba(255,255,255,0.06)",scrollbarWidth:"none"}}>
         ${QUICK.map(c=>html`<button key=${c.l} onClick=${()=>send(c.p)} style=${{
           flexShrink:0,padding:"6px 11px",borderRadius:99,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",whiteSpace:"nowrap",
-          border:"1px solid rgba(167,139,250,0.22)",background:"rgba(167,139,250,0.07)",color:T.accent,
+          border:"1px solid rgba(245,158,11,0.22)",background:"rgba(245,158,11,0.07)",color:T.accent,
         }}>${c.l}</button>`)}
       </div>
       <div style=${{display:"flex",gap:8,padding:"10px 16px 14px",flexShrink:0}}>
         <textarea ref=${inputRef} value=${input} onInput=${e=>setInput(e.target.value)} onKeyDown=${e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);} }} placeholder="Ask Coach anything… (Enter to send)" rows=${1}
           style=${{flex:1,padding:"10px 12px",borderRadius:14,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.04)",color:T.text,fontSize:15,fontFamily:"inherit",outline:"none",resize:"none",minHeight:46,lineHeight:1.4,maxHeight:120}}/>
         <button onClick=${()=>send(input)} disabled=${!input.trim()||busy} style=${{
-          height:46,padding:"0 18px",borderRadius:13,border:"1px solid rgba(167,139,250,0.32)",
-          background:"rgba(167,139,250,0.12)",color:T.accent,fontWeight:800,fontSize:13,fontFamily:"inherit",
+          height:46,padding:"0 18px",borderRadius:13,border:"1px solid rgba(245,158,11,0.32)",
+          background:"rgba(245,158,11,0.12)",color:T.accent,fontWeight:800,fontSize:13,fontFamily:"inherit",
           cursor:!input.trim()||busy?"not-allowed":"pointer",opacity:!input.trim()||busy?0.45:1,flexShrink:0,
         }}>Send</button>
       </div>
@@ -1191,8 +1222,8 @@ function DailyQuote(){
   const {text,ref}=BIBLE_QUOTES[Math.floor(Date.now()/86_400_000)%BIBLE_QUOTES.length];
   return html`<div style=${{
     ...S.card,marginBottom:14,textAlign:"center",
-    background:"linear-gradient(135deg,rgba(167,139,250,0.07) 0%,rgba(52,211,153,0.04) 100%)",
-    border:"1px solid rgba(167,139,250,0.15)",padding:"16px 18px",
+    background:"linear-gradient(135deg,rgba(245,158,11,0.06) 0%,rgba(52,211,153,0.04) 100%)",
+    border:"1px solid rgba(245,158,11,0.15)",padding:"16px 18px",
   }}>
     <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Today's Word</div>
     <div style=${{fontSize:13,color:T.textSoft,lineHeight:1.65,fontStyle:"italic"}}>"${text}"</div>
@@ -1205,21 +1236,21 @@ function DailyPodcast(){
   const btnBase={fontFamily:"inherit",cursor:"pointer",fontWeight:800,fontSize:11,borderRadius:10,padding:"8px 14px",display:"flex",alignItems:"center",gap:6,border:"none"};
   return html`<div style=${{
     ...S.card,marginBottom:14,
-    background:"linear-gradient(135deg,rgba(167,139,250,0.08) 0%,rgba(251,191,36,0.05) 50%,rgba(167,139,250,0.04) 100%)",
-    border:"1px solid rgba(167,139,250,0.18)",padding:"16px 18px",
+    background:"linear-gradient(135deg,rgba(245,158,11,0.07) 0%,rgba(251,191,36,0.05) 50%,rgba(52,211,153,0.03) 100%)",
+    border:"1px solid rgba(245,158,11,0.18)",padding:"16px 18px",
   }}>
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
       <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,textTransform:"uppercase"}}>Today's Listen</div>
       <span style=${{
         fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:999,letterSpacing:0.8,
-        background:"rgba(167,139,250,0.12)",border:"1px solid rgba(167,139,250,0.22)",color:T.accent,
+        background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.22)",color:T.accent,
       }}>${pod.tag}</span>
     </div>
     <div style=${{display:"flex",gap:12,alignItems:"flex-start",marginBottom:12}}>
       <div style=${{
         width:46,height:46,borderRadius:13,flexShrink:0,
-        background:"linear-gradient(135deg,rgba(167,139,250,0.22),rgba(251,191,36,0.14))",
-        border:"1px solid rgba(167,139,250,0.28)",
+        background:"linear-gradient(135deg,rgba(245,158,11,0.20),rgba(251,191,36,0.14))",
+        border:"1px solid rgba(245,158,11,0.28)",
         display:"grid",placeItems:"center",fontSize:22,
       }}>${pod.emoji}</div>
       <div style=${{flex:1,minWidth:0}}>
@@ -1231,8 +1262,8 @@ function DailyPodcast(){
     <div style=${{display:"flex",gap:8}}>
       <button onClick=${()=>window.open(pod.appleUrl,"_blank")} style=${{
         ...btnBase,flex:1,justifyContent:"center",
-        background:"linear-gradient(135deg,rgba(167,139,250,0.14),rgba(167,139,250,0.07))",
-        border:"1px solid rgba(167,139,250,0.28)",color:T.accent,
+        background:"linear-gradient(135deg,rgba(245,158,11,0.14),rgba(245,158,11,0.07))",
+        border:"1px solid rgba(245,158,11,0.28)",color:T.accent,
       }}>🎧 Apple Podcasts</button>
       <button onClick=${()=>window.open(pod.youtubeUrl,"_blank")} style=${{
         ...btnBase,flex:1,justifyContent:"center",
@@ -1281,7 +1312,7 @@ function BodyFuelPanel({tasks,healthLog,onUpsertLog,dateStr}){
     <!-- Upcoming workout banner -->
     ${upcoming?html`<div style=${{
       display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:12,marginBottom:14,
-      background:`${cat?.glow||"rgba(167,139,250,0.07)"}`,
+      background:`${cat?.glow||"rgba(245,158,11,0.07)"}`,
       border:`1px solid ${cat?.border||T.border}`,
     }}>
       <span style=${{fontSize:20}}>${cat?.emoji||"🏋️"}</span>
@@ -1353,11 +1384,14 @@ function BodyView({bodyMap,onUpdateBodyMap}){
 
   const visibleZones=BODY_ZONES.filter(z=>z.view===view);
   const connections=selectedZone?new Set(FASCIA_CONNECTIONS[selectedZone]||[]):new Set();
+  const sameViewConnections=selectedZone?(FASCIA_CONNECTIONS[selectedZone]||[]).filter(id=>{const z=BODY_ZONES.find(z=>z.id===id);return z&&z.view===view;}):[];
+  const selZoneObj=selectedZone?BODY_ZONES.find(z=>z.id===selectedZone):null;
+  const zoneChains=selectedZone?ZONE_CHAINS[selectedZone]||[]:[];
 
   function zoneColor(id){
     const z=zones[id];
     if(!z)return null;
-    const base=BODY_TYPE_COLORS[z.type]||"#a78bfa";
+    const base=BODY_TYPE_COLORS[z.type]||T.accent;
     return{fill:"url(#hg-"+id+")",stroke:base};
   }
   function openPicker(id,e){
@@ -1388,7 +1422,7 @@ function BodyView({bodyMap,onUpdateBodyMap}){
   const markedZones=Object.entries(zones);
 
   // SVG silhouette paths (front + back)
-  const frontSilhouette=html`<g stroke="rgba(255,255,255,0.10)" fill="rgba(255,255,255,0.03)" strokeWidth="1.2">
+  const frontSilhouette=html`<g filter="drop-shadow(0 0 12px rgba(245,158,11,0.06))" stroke="rgba(255,255,255,0.16)" fill="rgba(255,255,255,0.07)" strokeWidth="1.2">
     <ellipse cx="80" cy="26" rx="20" ry="23"/>
     <path d="M73,48 L73,60 Q80,63 87,60 L87,48 Q80,45 73,48Z"/>
     <path d="M48,62 Q36,68 30,80 Q24,94 24,108 Q24,122 26,136 L22,160 L38,164 Q48,166 58,165 L60,163 Q62,168 80,168 Q98,168 100,163 L102,165 Q112,166 122,164 L138,160 L134,136 Q136,122 136,108 Q136,94 130,80 Q124,68 112,62 Q96,75 80,75 Q64,75 48,62Z"/>
@@ -1401,7 +1435,7 @@ function BodyView({bodyMap,onUpdateBodyMap}){
     <path d="M73,60 Q64,63 52,68" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.8"/>
     <path d="M87,60 Q96,63 108,68" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.8"/>
   </g>`;
-  const backSilhouette=html`<g stroke="rgba(255,255,255,0.10)" fill="rgba(255,255,255,0.03)" strokeWidth="1.2">
+  const backSilhouette=html`<g filter="drop-shadow(0 0 12px rgba(245,158,11,0.06))" stroke="rgba(255,255,255,0.16)" fill="rgba(255,255,255,0.07)" strokeWidth="1.2">
     <ellipse cx="80" cy="26" rx="20" ry="23"/>
     <path d="M73,48 L73,60 Q80,63 87,60 L87,48 Q80,45 73,48Z"/>
     <path d="M48,62 Q36,68 30,80 Q24,94 24,108 Q24,122 26,136 L22,160 L38,164 Q48,166 58,165 L60,163 Q62,168 80,168 Q98,168 100,163 L102,165 Q112,166 122,164 L138,160 L134,136 Q136,122 136,108 Q136,94 130,80 Q124,68 112,62 Q96,75 80,75 Q64,75 48,62Z"/>
@@ -1422,12 +1456,12 @@ function BodyView({bodyMap,onUpdateBodyMap}){
     <div style=${{...S.card,padding:"14px 16px",marginBottom:14}}>
       <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
         <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,textTransform:"uppercase"}}>Body Map</div>
-        <div style=${{display:"flex",gap:4}}>
+        <div style=${{display:"flex",background:"rgba(255,255,255,0.04)",borderRadius:99,padding:2,gap:1}}>
           ${["f","b"].map(v=>html`<button key=${v} onClick=${()=>{setView(v);setSelectedZone(null);setPickerZone(null);}} style=${{
-            padding:"5px 12px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:800,
-            border:`1px solid ${view===v?T.accentBorder:T.border}`,
-            background:view===v?T.accentGlow:"transparent",
-            color:view===v?T.accent:T.muted,
+            padding:"5px 14px",borderRadius:97,cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:800,
+            border:`1px solid ${view===v?T.accentBorder:"transparent"}`,
+            background:view===v?"rgba(245,158,11,0.15)":"transparent",
+            color:view===v?T.accent:T.muted,transition:"all 0.18s",
           }}>${v==="f"?"FRONT":"BACK"}</button>`)}
         </div>
       </div>
@@ -1444,8 +1478,8 @@ function BodyView({bodyMap,onUpdateBodyMap}){
         <svg viewBox="0 0 160 286" style=${{width:200,height:357,maxWidth:"100%"}}>
           <defs>
             ${Object.entries(zones).map(([id,z])=>{
-              const base=BODY_TYPE_COLORS[z.type]||"#a78bfa";
-              const centerOpacities=[0,0.5,0.6,0.72,0.85,0.95];
+              const base=BODY_TYPE_COLORS[z.type]||T.accent;
+              const centerOpacities=[0,0.5,0.6,0.72,0.85,0.98];
               const co=centerOpacities[z.level]||0.5;
               return html`<radialGradient key=${id} id=${"hg-"+id} cx="50%" cy="35%" r="70%" gradientUnits="objectBoundingBox">
                 <stop offset="0%" stopColor=${base} stopOpacity=${co}/>
@@ -1454,6 +1488,17 @@ function BodyView({bodyMap,onUpdateBodyMap}){
             })}
           </defs>
           ${view==="f"?frontSilhouette:backSilhouette}
+          <!-- Animated fascia chain lines -->
+          ${sameViewConnections.map(id=>{
+            const cz=BODY_ZONES.find(z=>z.id===id);
+            if(!cz||!selZoneObj)return null;
+            return html`<line key=${id}
+              x1=${selZoneObj.cx} y1=${selZoneObj.cy} x2=${cz.cx} y2=${cz.cy}
+              stroke="#f59e0b" strokeWidth="1" strokeOpacity="0.38"
+              strokeDasharray="4 3"
+              style=${{animation:"dashFlow 1.2s linear infinite",filter:"drop-shadow(0 0 3px rgba(245,158,11,0.6))"}}
+            />`;
+          })}
           ${visibleZones.map(z=>{
             const col=zoneColor(z.id);
             const isSelected=selectedZone===z.id;
@@ -1461,8 +1506,8 @@ function BodyView({bodyMap,onUpdateBodyMap}){
             const isPickerOpen=pickerZone===z.id;
             const zoneState=zones[z.id];
             const shouldPulse=zoneState&&zoneState.type==="pain"&&zoneState.level>=4;
-            const pulseAnim=shouldPulse?"heatPulse 2s ease-in-out infinite":"none";
-            const dropFilter=isSelected&&col?`drop-shadow(0 0 6px ${col.stroke}aa)`:"none";
+            const pulseAnim=shouldPulse?"heatPulse 2s ease-in-out infinite":isSelected?"pulseGlow 1.5s ease-in-out infinite":"none";
+            const dropFilter=isSelected?`drop-shadow(0 0 8px rgba(245,158,11,0.7))`:isConnected?`drop-shadow(0 0 4px rgba(245,158,11,0.5))`:"none";
             return html`<g key=${z.id} onClick=${(e)=>openPicker(z.id,e)} style=${{cursor:"pointer"}}>
               <ellipse
                 cx=${z.cx} cy=${z.cy} rx=${z.rx+2} ry=${z.ry+2}
@@ -1470,9 +1515,10 @@ function BodyView({bodyMap,onUpdateBodyMap}){
               />
               <ellipse
                 cx=${z.cx} cy=${z.cy} rx=${z.rx} ry=${z.ry}
-                fill=${col?col.fill:"rgba(255,255,255,0.07)"}
-                stroke=${isPickerOpen?"#fff":isSelected?(col?.stroke||T.accent):isConnected?"#38bdf8":col?.stroke||"rgba(255,255,255,0.18)"}
-                strokeWidth=${isPickerOpen?2.5:isSelected||isConnected?1.8:0.8}
+                fill=${col?col.fill:"rgba(255,255,255,0.03)"}
+                stroke=${isPickerOpen?"#fff":isSelected?"#f59e0b":isConnected?"#f59e0b":col?.stroke||"rgba(255,255,255,0.10)"}
+                strokeWidth=${isPickerOpen?2.5:isSelected?2:isConnected?1.5:0.8}
+                strokeOpacity=${isConnected&&!isSelected?0.5:1}
                 style=${{filter:dropFilter,animation:pulseAnim,transition:"all 0.15s"}}
               />
               ${col?html`<text x=${z.cx} y=${z.cy+1} textAnchor="middle" dominantBaseline="middle"
@@ -1536,36 +1582,43 @@ function BodyView({bodyMap,onUpdateBodyMap}){
     ${selectedZone&&selState&&suggestion?html`<div style=${{...S.card,padding:"14px 16px",marginBottom:14,
       borderLeft:`3px solid ${BODY_TYPE_COLORS[selState.type]}`,
     }}>
-      <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+      <div style=${{display:"flex",alignItems:"flex-start",gap:8,marginBottom:8}}>
         <span style=${{fontSize:16}}>${BODY_TYPE_EMOJI[selState.type]}</span>
-        <div>
+        <div style=${{flex:1}}>
           <div style=${{fontSize:13,fontWeight:800,color:T.text}}>${selZoneData?.label} — ${selState.type.charAt(0).toUpperCase()+selState.type.slice(1)}</div>
-          <div style=${{display:"flex",gap:4,marginTop:2}}>
+          <div style=${{display:"flex",gap:4,marginTop:3,flexWrap:"wrap"}}>
             ${[1,2,3,4,5].map(l=>html`<div key=${l} style=${{
               width:12,height:6,borderRadius:2,
               background:l<=selState.level?BODY_TYPE_COLORS[selState.type]:"rgba(255,255,255,0.08)",
             }}/>`)}
+            ${zoneChains.map(ch=>html`<span key=${ch} style=${{
+              fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:999,marginLeft:4,
+              background:`${CHAIN_COLORS[ch]}18`,border:`1px solid ${CHAIN_COLORS[ch]}50`,
+              color:CHAIN_COLORS[ch],
+            }}>${ch}</span>`)}
           </div>
         </div>
       </div>
-      <div style=${{fontSize:11,color:"#38bdf8",lineHeight:1.5,marginBottom:10,padding:"8px 10px",borderRadius:8,background:"rgba(56,189,248,0.06)",border:"1px solid rgba(56,189,248,0.12)"}}>
-        📌 ${suggestion.chain}
+      <div style=${{fontSize:11,color:T.textSoft,lineHeight:1.5,marginBottom:10,padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}>
+        ${suggestion.chain}
       </div>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,marginBottom:6,textTransform:"uppercase"}}>Actions</div>
-      <div style=${{display:"flex",flexDirection:"column",gap:4,marginBottom:10}}>
-        ${suggestion.actions.map((a,i)=>html`<div key=${i} style=${{fontSize:12,color:T.textSoft,display:"flex",gap:8,alignItems:"flex-start"}}>
-          <span style=${{color:T.accent,flexShrink:0,marginTop:1}}>·</span>${a}
+      <div style=${{fontSize:9,fontWeight:900,color:T.accent,letterSpacing:2,marginBottom:6,textTransform:"uppercase"}}>Actions</div>
+      <div style=${{display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
+        ${suggestion.actions.map((a,i)=>html`<div key=${i} style=${{fontSize:12,color:T.textSoft,display:"flex",gap:8,alignItems:"flex-start",padding:"5px 8px",borderRadius:8,background:"rgba(255,255,255,0.02)"}}>
+          <span style=${{color:T.accent,flexShrink:0,marginTop:1}}>→</span>${a}
         </div>`)}
       </div>
-      ${suggestion.avoid?.length>0?html`<div style=${{fontSize:9,fontWeight:900,color:"#f87171",letterSpacing:2,marginBottom:5,textTransform:"uppercase"}}>Avoid</div>
-      <div style=${{display:"flex",flexDirection:"column",gap:3}}>
-        ${suggestion.avoid.map((a,i)=>html`<div key=${i} style=${{fontSize:11,color:"#fca5a5",display:"flex",gap:8}}>
-          <span style=${{flexShrink:0}}>⚠</span>${a}
-        </div>`)}
+      ${suggestion.avoid?.length>0?html`<div style=${{padding:"8px 10px",borderRadius:8,background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.12)",marginBottom:6}}>
+        <div style=${{fontSize:9,fontWeight:900,color:"#f87171",letterSpacing:2,marginBottom:5,textTransform:"uppercase"}}>Avoid</div>
+        <div style=${{display:"flex",flexDirection:"column",gap:3}}>
+          ${suggestion.avoid.map((a,i)=>html`<div key=${i} style=${{fontSize:11,color:"#fca5a5",display:"flex",gap:8}}>
+            <span style=${{flexShrink:0}}>⚠</span>${a}
+          </div>`)}
+        </div>
       </div>`:""}
       <!-- Connected zones list -->
       ${(FASCIA_CONNECTIONS[selectedZone]||[]).length>0?html`<div style=${{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-        <div style=${{fontSize:9,fontWeight:900,color:"#38bdf8",letterSpacing:2,marginBottom:5,textTransform:"uppercase"}}>Fascial Chain</div>
+        <div style=${{fontSize:9,fontWeight:900,color:T.accent,letterSpacing:2,marginBottom:5,textTransform:"uppercase"}}>Fascial Chain</div>
         <div style=${{display:"flex",flexWrap:"wrap",gap:4}}>
           ${(FASCIA_CONNECTIONS[selectedZone]||[]).map(id=>{
             const z=BODY_ZONES.find(z=>z.id===id);
@@ -1573,9 +1626,9 @@ function BodyView({bodyMap,onUpdateBodyMap}){
             const zs=zones[id];
             return html`<span key=${id} style=${{
               fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:999,
-              background:zs?`${BODY_TYPE_COLORS[zs.type]}20`:"rgba(56,189,248,0.08)",
-              border:`1px solid ${zs?BODY_TYPE_COLORS[zs.type]+"40":"rgba(56,189,248,0.20)"}`,
-              color:zs?BODY_TYPE_COLORS[zs.type]:"#38bdf8",
+              background:zs?`${BODY_TYPE_COLORS[zs.type]}20`:"rgba(245,158,11,0.08)",
+              border:`1px solid ${zs?BODY_TYPE_COLORS[zs.type]+"40":"rgba(245,158,11,0.22)"}`,
+              color:zs?BODY_TYPE_COLORS[zs.type]:T.accent,
             }}>${z.label}${zs?` ${BODY_TYPE_EMOJI[zs.type]}`:""}</span>`;
           })}
         </div>
@@ -1842,10 +1895,10 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
     <${DailyPodcast}/>
     <!-- hero card — WHOOP-style -->
     <div className="sk-card" style=${{
-      background:"linear-gradient(145deg,rgba(167,139,250,0.10) 0%,rgba(109,40,217,0.05) 30%,rgba(52,211,153,0.05) 70%,rgba(56,189,248,0.04) 100%)",
-      border:"1px solid rgba(167,139,250,0.18)",borderRadius:22,padding:"22px 20px",marginBottom:16,
+      background:"linear-gradient(145deg,rgba(245,158,11,0.09) 0%,rgba(180,100,0,0.05) 30%,rgba(52,211,153,0.05) 70%,rgba(56,189,248,0.03) 100%)",
+      border:"1px solid rgba(245,158,11,0.18)",borderRadius:22,padding:"22px 20px",marginBottom:16,
       backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",
-      boxShadow:"0 1px 0 rgba(255,255,255,0.08) inset,0 12px 48px rgba(0,0,0,0.45),0 0 0 1px rgba(167,139,250,0.06) inset",
+      boxShadow:"0 1px 0 rgba(255,255,255,0.08) inset,0 12px 48px rgba(0,0,0,0.45),0 0 0 1px rgba(245,158,11,0.06) inset",
     }}>
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14}}>
         <div style=${{flex:1}}>
@@ -1937,7 +1990,7 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
       <button onClick=${()=>setSleepMode("sleep")} style=${{
         display:"flex",flexDirection:"column",alignItems:"center",gap:4,
         padding:"14px 8px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",
-        background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.2)",
+        background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.2)",
         transition:"background 0.15s",
       }}>
         <span style=${{fontSize:22}}>😴</span>
@@ -1972,8 +2025,8 @@ function DayStrip({tasks,habits,habitLogs,selectedDay,onSelectDay}){
       const barColor=pct>=80?T.green:pct>=50?T.accent:pct!=null?T.amber:T.border;
       return html`<button key=${date} data-today=${isToday||undefined} onClick=${()=>onSelectDay(date===selectedDay?null:date)} style=${{
         flexShrink:0,width:46,padding:"8px 4px 6px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",
-        border:`1px solid ${isSel?T.accentBorder:isToday?"rgba(139,92,246,0.22)":T.border}`,
-        background:isSel?T.accentGlow:isToday?"rgba(139,92,246,0.07)":"rgba(255,255,255,0.02)",
+        border:`1px solid ${isSel?T.accentBorder:isToday?"rgba(245,158,11,0.22)":T.border}`,
+        background:isSel?T.accentGlow:isToday?"rgba(245,158,11,0.07)":"rgba(255,255,255,0.02)",
         opacity:isFuture?0.3:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
       }}>
         <span style=${{fontSize:9,fontWeight:800,color:isSel||isToday?T.accent:T.muted,letterSpacing:0.5}}>${fmtDayShort(date)[0]}</span>
@@ -1995,7 +2048,7 @@ function DayDetailPanel({date,tasks,habits,habitLogs,healthLogs,notes,onToggleTa
   const dayHabits=habits.filter(h=>h.days.includes(new Date(date+"T12:00:00").getDay()));
   const log=healthLogs[date];
   const recovery=log?calcRecovery(log):null;
-  return html`<div style=${{...S.card,marginBottom:14,borderColor:"rgba(139,92,246,0.18)"}}>
+  return html`<div style=${{...S.card,marginBottom:14,borderColor:"rgba(245,158,11,0.18)"}}>
     <div style=${{fontSize:10,fontWeight:800,color:T.accent,letterSpacing:1.8,marginBottom:12}}>${fmtDayLong(date).toUpperCase()}</div>
 
     ${dayTasks.length===0?html`<div style=${{fontSize:12,color:T.muted,marginBottom:10}}>No sessions this day.</div>`:""}
@@ -2144,7 +2197,7 @@ function MonthCalendar({tasks,habits,habitLogs,notes,month,onPrevMonth,onNextMon
           const cnt=dayDoneCount(tasks,date);
           const isToday=date===todayStr,isFuture=date>todayStr;
           const hasNote=!!(notes||{})[date];
-          const bg=cnt>=3?"rgba(16,185,129,0.35)":cnt===2?"rgba(139,92,246,0.28)":cnt===1?"rgba(139,92,246,0.14)":"rgba(255,255,255,0.03)";
+          const bg=cnt>=3?"rgba(16,185,129,0.35)":cnt===2?"rgba(245,158,11,0.28)":cnt===1?"rgba(245,158,11,0.14)":"rgba(255,255,255,0.03)";
           const borderC=isToday?T.accentBorder:T.border;
           return html`<div key=${date} style=${{
             aspectRatio:"1",borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",
@@ -2592,7 +2645,7 @@ function getFuelSuggestions(log,tasks,dateStr){
     const hoursUntil=(uh+um/60)-curDecHrs;
     const plan=FUEL_PLANS[upcoming.category]||FUEL_PLANS.run;
     if(hoursUntil>=2&&plan.meal_3h)
-      suggestions.push({...plan.meal_3h,timing:`Now — ${Math.round(hoursUntil)}h before`,color:"#a78bfa"});
+      suggestions.push({...plan.meal_3h,timing:`Now — ${Math.round(hoursUntil)}h before`,color:"#34d399"});
     if(hoursUntil>=0.5&&hoursUntil<2.5&&plan.snack_1h)
       suggestions.push({...plan.snack_1h,timing:`${Math.round(hoursUntil*60)}min before`,color:"#f59e0b"});
     if(hoursUntil<0.5&&hoursUntil>=0)
@@ -2721,8 +2774,24 @@ const FASCIA_CONNECTIONS={
   l_heel:["l_calf","l_foot"],
   r_heel:["r_calf","r_foot"],
 };
-const BODY_TYPE_COLORS={pain:"#ef4444",fatigue:"#f59e0b",tightness:"#a78bfa"};
-const BODY_TYPE_EMOJI={pain:"🔴",fatigue:"🟡",tightness:"🟣"};
+const BODY_TYPE_COLORS={pain:"#ef4444",fatigue:"#f59e0b",tightness:"#14b8a6"};
+const BODY_TYPE_EMOJI={pain:"🔴",fatigue:"🟡",tightness:"🩵"};
+const CHAIN_COLORS={SBL:"#38bdf8",DFL:"#34d399",LL:"#f59e0b",Spiral:"#dc2626"};
+const ZONE_CHAINS={
+  head:["SBL"],neck:["SBL","DFL"],upper_back:["SBL"],
+  l_shoulder:["LL","Spiral"],r_shoulder:["LL","Spiral"],
+  chest:["DFL"],core:["DFL","Spiral"],
+  lower_back:["SBL","DFL"],
+  l_hip:["DFL","Spiral","LL"],r_hip:["DFL","Spiral","LL"],
+  l_glute:["SBL","LL"],r_glute:["SBL","LL"],
+  l_quad:["DFL"],r_quad:["DFL"],
+  l_ham:["SBL"],r_ham:["SBL"],
+  l_calf:["SBL"],r_calf:["SBL"],
+  l_knee:["SBL","DFL"],r_knee:["SBL","DFL"],
+  l_ankle:["SBL","DFL"],r_ankle:["SBL","DFL"],
+  l_foot:["SBL"],r_foot:["SBL"],
+  l_it_band:["LL"],r_it_band:["LL"],
+};
 const BODY_SUGGESTIONS={
   lower_back:{
     pain:{chain:"SBL: tight hamstrings/calves pull the sacrum, loading the lumbar. DFL: short psoas creates anterior pelvic tilt. Spiral Line may involve opposite shoulder.",actions:["Child's pose — breathe into lower back 2min","Hip flexor kneeling stretch 90s each side","Glute bridge x10 (no hyperextend at top)","Dead bug x8 each side","Cat-cow x12"],avoid:["Loaded rotation under fatigue","Sitting >30min without break","Heavy deadlift during acute flare"]},
@@ -3470,7 +3539,7 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
           flex:1,padding:"8px 4px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
           fontWeight:800,fontSize:12,letterSpacing:0.2,
           border:`1px solid ${healthTab===tab.id?T.accentBorder:"transparent"}`,
-          background:healthTab===tab.id?"linear-gradient(135deg,rgba(167,139,250,0.14),rgba(167,139,250,0.07))":"transparent",
+          background:healthTab===tab.id?"linear-gradient(135deg,rgba(245,158,11,0.14),rgba(245,158,11,0.07))":"transparent",
           color:healthTab===tab.id?T.accent:T.muted,
           transition:"background 0.18s,color 0.18s,border-color 0.18s",
         }}>${tab.label}</button>`)}
@@ -3864,14 +3933,46 @@ function PlansSection({trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
 }
 
 // ── App ───────────────────────────────────────────────────────
+function MorningReadiness({onDone}){
+  const [sleep,setSleep]=useState(0);
+  const [legs,setLegs]=useState(null);
+  const confirm=()=>{if(sleep&&legs)onDone({sleep,legs});};
+  const stars=[1,2,3,4,5];
+  const legOpts=[{v:"fresh",label:"Fresh 🟢"},{v:"ok",label:"OK 🟡"},{v:"heavy",label:"Heavy 🔴"}];
+  return html`<div style=${{position:"fixed",inset:0,background:"rgba(9,7,10,0.85)",zIndex:300,display:"grid",placeItems:"center",backdropFilter:"blur(8px)"}}>
+    <div style=${{...S.card,maxWidth:320,width:"90%",textAlign:"center",animation:"fadeUp 0.4s ease",padding:"28px 24px"}}>
+      <div style=${{fontSize:11,fontWeight:800,color:T.accent,letterSpacing:2,marginBottom:16}}>MORNING CHECK-IN</div>
+      <div style=${{fontSize:14,fontWeight:700,color:T.text,marginBottom:10}}>How did you sleep? 😴</div>
+      <div style=${{display:"flex",gap:8,justifyContent:"center",marginBottom:20}}>
+        ${stars.map(n=>html`<button key=${n} onClick=${()=>setSleep(n)} style=${{
+          fontSize:22,background:"none",border:"none",cursor:"pointer",opacity:n<=sleep?1:0.25,
+          transform:n<=sleep?"scale(1.15)":"scale(1)",transition:"all 0.15s",lineHeight:1
+        }}>⭐</button>`)}
+      </div>
+      <div style=${{fontSize:14,fontWeight:700,color:T.text,marginBottom:10}}>How do the legs feel? 🦵</div>
+      <div style=${{display:"flex",gap:8,justifyContent:"center",marginBottom:24}}>
+        ${legOpts.map(o=>html`<button key=${o.v} onClick=${()=>setLegs(o.v)} style=${{
+          padding:"7px 12px",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+          background:legs===o.v?T.accentGlow:"rgba(255,255,255,0.04)",
+          border:`1px solid ${legs===o.v?T.accentBorder:T.border}`,color:legs===o.v?T.accent:T.text,
+          transition:"all 0.15s"
+        }}>${o.label}</button>`)}
+      </div>
+      <${Btn} onClick=${confirm} variant="primary" disabled=${!sleep||!legs} style=${{width:"100%"}}>Start the day →</Btn>
+    </div>
+  </div>`;
+}
+
 function App(){
   const [state,setState]=useState(null); const [ready,setReady]=useState(false);
   const [view,setView]=useState("today");
   const [coachOpen,setCoachOpen]=useState(false);
   const [taskModal,setTaskModal]=useState(null); const [habitModal,setHabitModal]=useState(null);
   const [syncStatus,setSyncStatus]=useState(null);
+  const [readiness,setReadiness]=useState(null);
+  const [showCheckin,setShowCheckin]=useState(false);
   const toastReady=useCallback(fn=>{ _toast.fn=fn; },[]);
-  const xpToastReady=useCallback(fn=>{ _xpToast.fn=fn; },[]);
+  const xpToastReady=useCallback(fn=>{ _xpToast.fn=fn; });
 
   useEffect(()=>{
     loadState().then(saved=>{
@@ -3939,8 +4040,19 @@ function App(){
         setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],xp:0,settings:{...DEF_SETTINGS}});
       }
       setReady(true);
-      // Check sync
-      fetch(SYNC_URL).then(()=>setSyncStatus("ok")).catch(()=>setSyncStatus("offline"));
+      // Sync XP from server — take the higher value to prevent cross-device loss
+      fetch(SYNC_URL).then(r=>r.json()).then(serverState=>{
+        if(serverState?.xp>0){
+          setState(s=>({...s,xp:Math.max(s.xp||0,serverState.xp||0)}));
+        }
+        setSyncStatus("ok");
+      }).catch(()=>setSyncStatus("offline"));
+      // Show morning check-in once per day before 9am
+      const nowH=new Date().getHours();
+      const checkinKey=`sk-checkin-${todayISO()}`;
+      if(nowH<9&&!localStorage.getItem(checkinKey)){
+        setTimeout(()=>setShowCheckin(true),800);
+      }
     });
   },[]);
 
@@ -3994,15 +4106,15 @@ function App(){
 
   if(!ready||!state) return html`<div style=${{
     height:"100vh",display:"grid",placeItems:"center",
-    background:"radial-gradient(ellipse 80% 70% at 30% 20%,rgba(139,92,246,0.12),transparent 60%),radial-gradient(ellipse 60% 60% at 80% 80%,rgba(52,211,153,0.08),transparent 60%),#05070f",
+    background:"radial-gradient(ellipse 80% 70% at 30% 20%,rgba(245,158,11,0.10),transparent 60%),radial-gradient(ellipse 60% 60% at 80% 80%,rgba(52,211,153,0.08),transparent 60%),#09070a",
     color:T.muted}}>
     <div style=${{textAlign:"center",animation:"fadeUp 0.6s ease"}}>
       <div style=${{
         width:56,height:56,borderRadius:18,margin:"0 auto 16px",
-        background:"linear-gradient(135deg,rgba(167,139,250,0.2),rgba(52,211,153,0.12))",
-        border:"1px solid rgba(167,139,250,0.3)",
+        background:"linear-gradient(135deg,rgba(245,158,11,0.20),rgba(52,211,153,0.12))",
+        border:"1px solid rgba(245,158,11,0.30)",
         display:"grid",placeItems:"center",
-        boxShadow:"0 0 32px rgba(167,139,250,0.2)",
+        boxShadow:"0 0 32px rgba(245,158,11,0.20)",
       }}>
         <span style=${{fontWeight:900,fontSize:16,color:T.accent}}>FD</span>
       </div>
@@ -4019,32 +4131,32 @@ function App(){
   return html`<div style=${{background:T.bg,minHeight:"100vh",color:T.text,fontFamily:"ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif"}}>
     <!-- Opal ambient -->
     <div style=${{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
-      <!-- Violet-iris — top left -->
+      <!-- Amber-ember — top left -->
       <div style=${{position:"absolute",top:"-20%",left:"-10%",width:680,height:680,borderRadius:"50%",
-        background:"radial-gradient(ellipse,rgba(139,92,246,0.13) 0%,rgba(109,40,217,0.06) 40%,transparent 68%)",
-        animation:"opalShift 8s ease-in-out infinite"}}/>
+        background:"radial-gradient(ellipse,rgba(245,158,11,0.10) 0%,rgba(217,119,6,0.05) 40%,transparent 68%)",
+        animation:"emberShift 8s ease-in-out infinite"}}/>
       <!-- Mint-teal — middle right -->
       <div style=${{position:"absolute",top:"28%",right:"-14%",width:560,height:560,borderRadius:"50%",
         background:"radial-gradient(ellipse,rgba(52,211,153,0.09) 0%,rgba(16,185,129,0.04) 45%,transparent 68%)",
-        animation:"opalShift 11s ease-in-out infinite 2s"}}/>
+        animation:"emberShift 11s ease-in-out infinite 2s"}}/>
       <!-- Rose-champagne — bottom left -->
       <div style=${{position:"absolute",bottom:"-5%",left:"-5%",width:480,height:480,borderRadius:"50%",
         background:"radial-gradient(ellipse,rgba(249,168,212,0.07) 0%,rgba(236,72,153,0.03) 45%,transparent 68%)",
-        animation:"opalShift 13s ease-in-out infinite 1s"}}/>
+        animation:"emberShift 13s ease-in-out infinite 1s"}}/>
       <!-- Sky-blue — center -->
       <div style=${{position:"absolute",top:"55%",left:"30%",width:440,height:440,borderRadius:"50%",
         background:"radial-gradient(ellipse,rgba(56,189,248,0.06) 0%,rgba(14,165,233,0.03) 45%,transparent 68%)",
-        animation:"opalShift 9s ease-in-out infinite 3.5s"}}/>
+        animation:"emberShift 9s ease-in-out infinite 3.5s"}}/>
       <!-- Amber-gold — top right -->
       <div style=${{position:"absolute",top:"8%",right:"8%",width:320,height:320,borderRadius:"50%",
-        background:"radial-gradient(ellipse,rgba(251,191,36,0.05) 0%,transparent 65%)",
-        animation:"opalShift 15s ease-in-out infinite 0.5s"}}/>
-      <!-- Deep purple haze — bottom right -->
+        background:"radial-gradient(ellipse,rgba(251,191,36,0.07) 0%,transparent 65%)",
+        animation:"emberShift 15s ease-in-out infinite 0.5s"}}/>
+      <!-- Earth-warm haze — bottom right -->
       <div style=${{position:"absolute",bottom:"15%",right:"5%",width:380,height:380,borderRadius:"50%",
-        background:"radial-gradient(ellipse,rgba(192,132,252,0.07) 0%,transparent 65%)",
-        animation:"opalShift 10s ease-in-out infinite 4s"}}/>
+        background:"radial-gradient(ellipse,rgba(251,146,60,0.06) 0%,transparent 65%)",
+        animation:"emberShift 10s ease-in-out infinite 4s"}}/>
       <!-- Fading cross — faith symbol -->
-      <div style=${{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-55%)",width:520,height:520,pointerEvents:"none",animation:"opalShift 22s ease-in-out infinite 6s"}}>
+      <div style=${{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-55%)",width:520,height:520,pointerEvents:"none",animation:"emberShift 22s ease-in-out infinite 6s"}}>
         <div style=${{position:"absolute",left:"50%",top:"6%",transform:"translateX(-50%)",width:22,height:"88%",
           background:"linear-gradient(180deg,transparent 0%,rgba(255,255,255,0.045) 15%,rgba(255,255,255,0.065) 50%,rgba(255,255,255,0.045) 85%,transparent 100%)",
           borderRadius:11}}/>
@@ -4062,21 +4174,21 @@ function App(){
       <!-- Header -->
       <header style=${{position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"space-between",
         padding:"calc(12px + env(safe-area-inset-top)) 18px 12px",
-        background:"rgba(5,7,15,0.82)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",
+        background:"rgba(9,7,10,0.82)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",
         borderBottom:"1px solid rgba(255,255,255,0.055)",
-        boxShadow:"0 1px 0 rgba(167,139,250,0.06),0 8px 32px rgba(0,0,0,0.3)"}}>
+        boxShadow:"0 1px 0 rgba(245,158,11,0.06),0 8px 32px rgba(0,0,0,0.3)"}}>
         <div style=${{display:"flex",alignItems:"center",gap:11}}>
           <div style=${{width:38,height:38,borderRadius:14,
-            background:"linear-gradient(135deg,rgba(167,139,250,0.18) 0%,rgba(52,211,153,0.10) 100%)",
-            border:"1px solid rgba(167,139,250,0.30)",
+            background:"linear-gradient(135deg,rgba(245,158,11,0.20) 0%,rgba(52,211,153,0.10) 100%)",
+            border:"1px solid rgba(245,158,11,0.32)",
             display:"grid",placeItems:"center",
-            boxShadow:"0 0 16px rgba(167,139,250,0.15),0 1px 0 rgba(255,255,255,0.08) inset"}}>
+            boxShadow:"0 0 16px rgba(245,158,11,0.18),0 1px 0 rgba(255,255,255,0.08) inset"}}>
             <span style=${{fontWeight:900,fontSize:11,color:T.accent,letterSpacing:-0.3}}>FD</span>
           </div>
           <div>
             <div style=${{fontWeight:800,fontSize:15,color:T.text,letterSpacing:-0.5,lineHeight:1.1}}>Feliz Dias</div>
             <div style=${{fontSize:9,color:T.muted,fontWeight:700,marginTop:2,letterSpacing:0.8,textTransform:"uppercase"}}>
-              ${wDone}<span style=${{color:"rgba(167,139,250,0.5)"}}>/${wTotal}</span> this week
+              ${wDone}<span style=${{color:"rgba(245,158,11,0.5)"}}>/${wTotal}</span> this week
             </div>
           </div>
         </div>
@@ -4084,10 +4196,10 @@ function App(){
         <div style=${{display:"flex",gap:7}}>
           <button onClick=${()=>setTaskModal({task:null,date:todayISO()})} style=${{
             width:38,height:38,borderRadius:13,cursor:"pointer",fontSize:20,fontWeight:300,
-            background:"linear-gradient(135deg,rgba(167,139,250,0.16),rgba(167,139,250,0.08))",
-            border:"1px solid rgba(167,139,250,0.32)",color:T.accent,
+            background:"linear-gradient(135deg,rgba(245,158,11,0.16),rgba(245,158,11,0.08))",
+            border:"1px solid rgba(245,158,11,0.32)",color:T.accent,
             display:"grid",placeItems:"center",fontFamily:"inherit",
-            boxShadow:"0 0 12px rgba(167,139,250,0.12)"}}>+</button>
+            boxShadow:"0 0 12px rgba(245,158,11,0.12)"}}>+</button>
           <button onClick=${()=>setView("journal")} style=${{
             width:38,height:38,borderRadius:13,cursor:"pointer",fontSize:15,
             background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",
@@ -4112,19 +4224,19 @@ function App(){
       <nav style=${{
         position:"fixed",left:12,right:12,bottom:0,zIndex:25,display:"flex",gap:1,
         padding:"6px",marginBottom:"calc(12px + env(safe-area-inset-bottom))",
-        background:"rgba(5,7,15,0.88)",backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",
+        background:"rgba(9,7,10,0.88)",backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",
         border:"1px solid rgba(255,255,255,0.07)",borderRadius:26,
-        boxShadow:"0 -2px 60px rgba(0,0,0,0.6),0 0 0 1px rgba(167,139,250,0.06) inset,0 2px 0 rgba(255,255,255,0.04) inset",
+        boxShadow:"0 -2px 60px rgba(0,0,0,0.6),0 0 0 1px rgba(245,158,11,0.06) inset,0 2px 0 rgba(255,255,255,0.04) inset",
       }}>
         ${NAV.map(v=>html`<button key=${v.id} onClick=${()=>v.isCoach?setCoachOpen(true):setView(v.id)} style=${{
           flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
           padding:"8px 4px 7px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
-          border:`1px solid ${(v.isCoach?coachOpen:view===v.id)?"rgba(167,139,250,0.25)":"transparent"}`,
+          border:`1px solid ${(v.isCoach?coachOpen:view===v.id)?"rgba(245,158,11,0.25)":"transparent"}`,
           background:(v.isCoach?coachOpen:view===v.id)
-            ?"linear-gradient(145deg,rgba(167,139,250,0.14),rgba(167,139,250,0.07))"
+            ?"linear-gradient(145deg,rgba(245,158,11,0.14),rgba(245,158,11,0.07))"
             :"transparent",
           color:(v.isCoach?coachOpen:view===v.id)?T.accent:T.muted,
-          boxShadow:(v.isCoach?coachOpen:view===v.id)?"0 0 16px rgba(167,139,250,0.10)":"none",
+          boxShadow:(v.isCoach?coachOpen:view===v.id)?"0 0 16px rgba(245,158,11,0.10)":"none",
           transition:"background 0.2s,border-color 0.2s,color 0.2s,box-shadow 0.2s",
         }}>
           <span style=${{
@@ -4152,6 +4264,13 @@ function App(){
 
     <${Toast} onReady=${toastReady}/>
     <${XPToast} onReady=${xpToastReady}/>
+    ${showCheckin?html`<${MorningReadiness} onDone=${r=>{
+      setReadiness(r);setShowCheckin(false);
+      localStorage.setItem(`sk-checkin-${todayISO()}`,JSON.stringify(r));
+      if(r.sleep<=2||r.legs==="heavy"){
+        showToast("Recovery mode — Coach has adjusted today's plan");
+      }
+    }}/>`:""}
   </div>`;
 }
 
