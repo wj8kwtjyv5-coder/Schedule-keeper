@@ -127,6 +127,24 @@ const CATS = {
 // ── XP / Level system ────────────────────────────────────────
 const XP_CAT={game:100,football:50,run:40,bike:30,pilates:25,recovery:20,sauna:20,redlight:20,other:15,work:5};
 const XP_HABIT=15;
+
+// ── Discipline / Retention streak ─────────────────────────────
+function retentionDays(startDate){
+  if(!startDate)return 0;
+  const start=new Date(startDate+"T00:00:00");
+  const today=new Date(todayISO()+"T00:00:00");
+  return Math.max(0,Math.round((today-start)/86400000));
+}
+const RETENTION_MILESTONES=[
+  {days:7,   label:"First Week",  xp:100,  color:"#34d399",icon:"🌱"},
+  {days:14,  label:"Two Weeks",   xp:150,  color:"#34d399",icon:"🔥"},
+  {days:30,  label:"One Month",   xp:300,  color:"#f59e0b",icon:"⚡"},
+  {days:60,  label:"60 Days",     xp:500,  color:"#f59e0b",icon:"💪"},
+  {days:90,  label:"90 Days",     xp:750,  color:"#f97316",icon:"🏆"},
+  {days:180, label:"Half Year",   xp:1200, color:"#a855f7",icon:"🦁"},
+  {days:365, label:"One Year",    xp:2500, color:"#ffd16b",icon:"👑"},
+];
+
 const LEVELS=[
   {lvl:1, xp:0,     rank:"Rookie",      color:"#888aaa"},
   {lvl:2, xp:200,   rank:"Amateur",     color:"#8fb8ff"},
@@ -826,6 +844,20 @@ function localCoach(msg,ctx){
     return{handled:true,reply:`You've hit ${ctx.weekHardLoad} hard sessions this week. Elite athletes deload every 3–4 weeks — today should be recovery, not another run. Your body builds during rest, not during work.`,actions:[addTask("Active recovery: walk + mobility 30min",today,curH<12?"06:30":"17:00","recovery","Easy movement only. No intensity. This is where adaptation happens."),addTask("Cold shower 3min",today,curH<12?"07:05":"17:35","recovery","End cold. Reset.")]};
   }
 
+  // 40. Semen retention / discipline streak
+  if(/\b(retention|semen\s*retention|nofap|no\s*fap|discipline\s*streak|abstain|testosterone\s*boost|monk\s*mode|sexual\s*discipline)\b/.test(m)){
+    const rDays=ctx.retentionDays||0;
+    const milestone=RETENTION_MILESTONES.slice().reverse().find(ml=>rDays>=ml.days);
+    return{handled:true,reply:`${rDays>0?`${rDays} days in${milestone?` — ${milestone.icon} ${milestone.label}`:""}. That's real discipline.`:"Retention starts now."} Elevated testosterone, sharper focus, higher aggression in training. Llorente lives by this. Protect your energy — direct it into the pitch. Every day retained is a day your body produces more of what you need to perform.`,actions:[]};
+  }
+
+  // 41. Low energy / flat — tie into retention if early streak
+  if(/\b(flat|no\s*energy|unmotivated|low\s*energy|sluggish|depleted)\b/.test(m)){
+    const rDays=ctx.retentionDays||0;
+    const retMsg=rDays>0&&rDays<14?` Energy peaks significantly after Day 14 of your streak — you're ${14-rDays} day${14-rDays!==1?"s":""} away.`:"";
+    return{handled:true,reply:`Low energy is a signal, not a verdict. Cold shower now — 3 min — it resets your nervous system and raises dopamine within 20 minutes.${retMsg} Then grounding barefoot on grass. This is the protocol.`,actions:[addTask("Cold shower 3min",today,curH<12?"07:00":"17:30","recovery","Full cold. 3 minutes minimum. Dopamine reset."),addTask("Barefoot grounding 15min",today,curH<12?"07:10":"17:35","recovery","Grass or earth. Morning sun if available.")]};
+  }
+
   return{handled:false};
 }
 
@@ -1017,7 +1049,7 @@ function ConfettiBurst({x,y}){
 }
 
 // ── CoachPanel ────────────────────────────────────────────────
-function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActions}){
+function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActions,retentionStartDate}){
   const [msgs,setMsgs]=useState([{role:"assistant",content:"Hey — Coach here.\n\nI follow the Marcos Llorente approach: train smart, eat clean, ground daily, sleep by 9pm.\n\n• \"Match cancelled\" — I'll rebuild your day\n• \"I feel tired\" — I'll protect your recovery\n• \"Add grounding session\" — done instantly\n• \"What should I do next?\" — I'll tell you exactly"}]);
   const [input,setInput]=useState(""); const [busy,setBusy]=useState(false);
   const bodyRef=useRef(null); const inputRef=useRef(null);
@@ -1038,7 +1070,7 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
     const weekHardLoad=tasks.filter(t=>weekDates.includes(t.date)&&["run","football","bike","game"].includes(t.category)&&t.completed).length;
     const savedCheckin=localStorage.getItem(`sk-checkin-${todayStr}`);
     const todayReadiness=savedCheckin?JSON.parse(savedCheckin):null;
-    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habitHistory,habitHistory,callouts,loadToday,loadYesterday,missedTasks,weekHardLoad,readiness:todayReadiness};
+    return{today:todayStr,dayOfWeek:now.toLocaleDateString("en-GB",{weekday:"long"}),timeNow:`${pad2(now.getHours())}:${pad2(now.getMinutes())}`,weekStats,weekTargets:settings.weekTargets,constraints:settings.constraints,upcomingTasks:upcoming,todayHabits:habitHistory,habitHistory,callouts,loadToday,loadYesterday,missedTasks,weekHardLoad,readiness:todayReadiness,retentionDays:retentionDays(retentionStartDate||null)};
   },[tasks,habits,habitLogs,settings]);
 
   const QUICK=[
@@ -1925,8 +1957,31 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
   </div>`;
 }
 
+// ── Discipline Streak Badge (hero card widget) ─────────────────
+function DisciplineStreakBadge({days}){
+  const milestone=RETENTION_MILESTONES.slice().reverse().find(m=>days>=m.days);
+  const next=RETENTION_MILESTONES.find(m=>m.days>days);
+  return html`<div style=${{
+    display:"flex",alignItems:"center",gap:8,
+    padding:"6px 10px",borderRadius:10,marginTop:8,
+    background:"rgba(52,211,153,0.06)",
+    border:"1px solid rgba(52,211,153,0.18)",
+  }}>
+    <span style=${{fontSize:16}}>${milestone?.icon||"🌱"}</span>
+    <div style=${{flex:1,minWidth:0}}>
+      <div style=${{fontSize:12,fontWeight:800,color:"#34d399"}}>
+        ${days}d Discipline Streak${milestone?` · ${milestone.label}`:""}
+      </div>
+      ${next?html`<div style=${{fontSize:10,color:T.muted,marginTop:1}}>
+        Next: ${next.label} in ${next.days-days} day${next.days-days!==1?"s":""}
+      </div>`:""}
+    </div>
+    <span style=${{fontSize:11,fontWeight:900,color:"#34d399",opacity:0.7}}>🔥</span>
+  </div>`;
+}
+
 // ── Today View ────────────────────────────────────────────────
-function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenJournal,healthLog={},onUpsertLog}){
+function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenJournal,healthLog={},onUpsertLog,retentionDays:rdDays=0}){
   const[sleepMode,setSleepMode]=useState(null);
   const[confetti,setConfetti]=useState(null);
   const handleTaskToggle=(id,e)=>{
@@ -1981,6 +2036,7 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
               }}>${CATS[k]?.icon} ${s.done}/${s.total}</button>`)
             }
           </div>
+          ${rdDays>0?html`<${DisciplineStreakBadge} days=${rdDays}/>`:""}
         </div>
         <div style=${{textAlign:"center",flexShrink:0}}>
           <div style=${{position:"relative",width:66,height:66}}>
@@ -2352,11 +2408,63 @@ function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,onUpsertNo
 }
 
 // ── Habits View ───────────────────────────────────────────────
-function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit}){
+function DisciplineStreakCard({retentionStartDate,onStart,onReset}){
+  const [confirmReset,setConfirmReset]=useState(false);
+  const [msg,setMsg]=useState(null);
+  const days=retentionDays(retentionStartDate);
+  const milestone=RETENTION_MILESTONES.slice().reverse().find(m=>days>=m.days);
+  const next=RETENTION_MILESTONES.find(m=>m.days>days);
+  const pct=next?Math.min(100,Math.round((days/next.days)*100)):100;
+  const startedStr=retentionStartDate?new Date(retentionStartDate+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}):"";
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(null),2200);};
+  return html`<div className="sk-card" style=${{...S.card,marginBottom:16,
+    background:"linear-gradient(145deg,rgba(52,211,153,0.06) 0%,rgba(245,158,11,0.04) 100%)",
+    border:"1px solid rgba(52,211,153,0.22)",
+  }}>
+    <div style=${{fontSize:9,fontWeight:900,color:"#34d399",letterSpacing:2,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+      🔥 DISCIPLINE STREAK
+    </div>
+    ${retentionStartDate?html`
+      <div style=${{textAlign:"center",marginBottom:12}}>
+        <div style=${{fontSize:64,fontWeight:900,color:"#34d399",lineHeight:1,letterSpacing:-2}}>${days}</div>
+        <div style=${{fontSize:12,color:T.muted,fontWeight:700,marginTop:2}}>days${milestone?` · ${milestone.icon} ${milestone.label}`:""}</div>
+        <div style=${{fontSize:10,color:T.muted,marginTop:4}}>Started ${startedStr}</div>
+      </div>
+      ${next?html`<div style=${{marginBottom:12}}>
+        <div style=${{display:"flex",justifyContent:"space-between",fontSize:10,color:T.muted,marginBottom:4}}>
+          <span>${days}d</span><span>${next.label} (${next.days}d)</span>
+        </div>
+        <div style=${{height:6,borderRadius:99,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}>
+          <div style=${{height:"100%",width:pct+"%",borderRadius:99,background:"linear-gradient(90deg,#34d399,#f59e0b)",transition:"width 0.6s ease"}}></div>
+        </div>
+      </div>`:""}
+      ${msg?html`<div style=${{textAlign:"center",color:"#34d399",fontWeight:700,fontSize:13,marginBottom:8,animation:"popIn 0.3s ease"}}>${msg}</div>`:""}
+      ${confirmReset?html`<div style=${{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.18)",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+        <div style=${{fontSize:12,color:T.muted,marginBottom:8,textAlign:"center"}}>Reset streak to today? This cannot be undone.</div>
+        <div style=${{display:"flex",gap:8}}>
+          <${Btn} variant="danger" style=${{flex:1,fontSize:12}} onClick=${()=>{onReset();setConfirmReset(false);flash("Streak reset. Start again — stronger.");}}>Confirm Reset<//>
+          <${Btn} variant="ghost" style=${{flex:1,fontSize:12}} onClick=${()=>setConfirmReset(false)}>Cancel<//>
+        </div>
+      </div>`:""}
+      <div style=${{display:"flex",gap:8}}>
+        <${Btn} variant="primary" style=${{flex:1,fontSize:12,background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.28)",color:"#34d399"}} onClick=${()=>flash("Strong. Keep going.")}>✓ Still going<//>
+        <${Btn} variant="ghost" style=${{flex:1,fontSize:12,color:T.red,borderColor:T.red+"33"}} onClick=${()=>setConfirmReset(true)}>Reset<//>
+      </div>
+    `:html`
+      <div style=${{textAlign:"center",padding:"8px 0 16px"}}>
+        <div style=${{fontSize:13,color:T.muted,marginBottom:14}}>Not tracking yet</div>
+        <${Btn} variant="primary" style=${{fontSize:13,padding:"10px 24px"}} onClick=${onStart}>Start Today<//>
+      </div>
+    `}
+  </div>`;
+}
+
+function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit,retentionStartDate,onStartRetention,onResetRetention}){
   const weekDates=getWeekDates(),todayStr=todayISO();
   const DAY_LABELS=["M","T","W","T","F","S","S"];
   const[streakPop,setStreakPop]=useState(null);
   return html`<div style=${{padding:"14px 14px 100px",maxWidth:820,margin:"0 auto"}}>
+    <${DisciplineStreakCard} retentionStartDate=${retentionStartDate} onStart=${onStartRetention} onReset=${onResetRetention}/>
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8}}>HABITS</div>
       <${Btn} onClick=${onAddHabit} variant="primary" style=${{fontSize:12,padding:"7px 14px"}}>+ Add<//>
@@ -4185,9 +4293,9 @@ function App(){
           window.history.replaceState({},"",window.location.pathname);
           setTimeout(()=>showToast("Apple Health synced"),500);
         }
-        setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],xp:0,settings:DEF_SETTINGS,...saved,foodLogs:saved.foodLogs||{},notes:saved.notes||{},settings:{...DEF_SETTINGS,...saved?.settings}});
+        setState({tasks:[],habits:[],habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],xp:0,retentionStartDate:null,retentionLastMilestone:0,settings:DEF_SETTINGS,...saved,foodLogs:saved.foodLogs||{},notes:saved.notes||{},settings:{...DEF_SETTINGS,...saved?.settings},retentionStartDate:saved?.retentionStartDate||null,retentionLastMilestone:saved?.retentionLastMilestone||0});
       } else {
-        setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],xp:0,settings:{...DEF_SETTINGS}});
+        setState({tasks:seedTasks(),habits:seedHabits(),habitLogs:{},healthLogs:{},foodLogs:{},notes:{},goals:[],trainingPlans:[],xp:0,retentionStartDate:null,retentionLastMilestone:0,settings:{...DEF_SETTINGS}});
       }
       setReady(true);
       // Sync XP from server — take the higher value to prevent cross-device loss
@@ -4207,6 +4315,19 @@ function App(){
   },[]);
 
   useEffect(()=>{ if(ready&&state) saveState(state); },[state,ready]);
+
+  // Milestone XP awards for retention streak
+  useEffect(()=>{
+    if(!ready||!state?.retentionStartDate)return;
+    const days=retentionDays(state.retentionStartDate);
+    const last=state.retentionLastMilestone||0;
+    const earned=RETENTION_MILESTONES.filter(m=>m.days<=days&&m.days>last);
+    if(!earned.length)return;
+    const top=earned[earned.length-1];
+    const totalXp=earned.reduce((a,m)=>a+m.xp,0);
+    showXPToast(totalXp,{rank:top.label,lvl:0,icon:top.icon});
+    mut(s=>({xp:(s.xp||0)+totalXp,retentionLastMilestone:top.days}));
+  },[state?.retentionStartDate,ready]);
   useEffect(()=>{
     if(!state) return;
     if(state.settings?.notifEnabled){
@@ -4237,6 +4358,8 @@ function App(){
   }),[mut]);
   const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,h]};}),[mut]);
   const deleteHabit=useCallback(id=>mut(s=>({habits:s.habits.filter(h=>h.id!==id)})),[mut]);
+  const startRetention=useCallback(()=>mut(s=>({retentionStartDate:todayISO(),retentionLastMilestone:0})),[mut]);
+  const resetRetention=useCallback(()=>mut(s=>({retentionStartDate:todayISO(),retentionLastMilestone:0})),[mut]);
   const upsertHealthLog=useCallback((date,patch)=>mut(s=>({healthLogs:{...s.healthLogs,[date]:{...s.healthLogs[date],...patch}}})),[mut]);
   const upsertFoodLog=useCallback((date,meals)=>mut(s=>({foodLogs:{...s.foodLogs,[date]:{meals}}})),[mut]);
   const upsertNote=useCallback((date,text)=>mut(s=>({notes:{...s.notes,[date]:text}})),[mut]);
@@ -4387,9 +4510,9 @@ function App(){
       </header>
 
       <div key=${view} ref=${swipeRef} style=${{animation:`slide${slideDir==="right"?"InRight":"InLeft"} 0.22s cubic-bezier(0.22,1,0.36,1) both`}}>
-        ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)}/>`:""}
+        ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)} retentionDays=${retentionDays(state?.retentionStartDate)}/>`:""}
         ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
-        ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})}/>`:""}
+        ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})} retentionStartDate=${state?.retentionStartDate||null} onStartRetention=${startRetention} onResetRetention=${resetRetention}/>`:""}
         ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog} onUpdateSettings=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}/>`:""}
         ${view==="journal"?html`<${JournalView} tasks=${state.tasks} notes=${state.notes||{}} onUpsertNote=${upsertNote} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} onBulkEditTasks=${bulkEditTasks}/>`:""}
         ${view==="body"?html`<${BodyView} bodyMap=${state.healthLogs?.[todayISO()]?.bodyMap||{}} onUpdateBodyMap=${zones=>upsertHealthLog(todayISO(),{bodyMap:{zones}})}/>`:""}
@@ -4453,7 +4576,8 @@ function App(){
 
     <${CoachPanel} isOpen=${coachOpen} onClose=${()=>setCoachOpen(false)}
       tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs}
-      settings=${state.settings} onApplyActions=${applyActions}/>
+      settings=${state.settings} onApplyActions=${applyActions}
+      retentionStartDate=${state?.retentionStartDate||null}/>
 
     <${Toast} onReady=${toastReady}/>
     <${XPToast} onReady=${xpToastReady}/>
