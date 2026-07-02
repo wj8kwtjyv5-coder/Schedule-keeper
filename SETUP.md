@@ -1,96 +1,45 @@
-# ScheduleKeeper v3 — Setup Guide
+# Feliz Dias — Setup
 
-## Step 1: Deploy to Vercel
-1. Connect your GitHub repo to Vercel (vercel.com → Import Project)
-2. Add environment variable: `ANTHROPIC_API_KEY` (for the AI Coach)
-3. Your app URL will be something like: https://your-name.vercel.app
+Three steps. Everything after them is automatic.
 
-## Step 2: Install as iPhone Home Screen App
-1. Open your Vercel URL in Safari (must be Safari, not Chrome)
-2. Tap the Share button (box with arrow pointing up)
-3. Scroll down → "Add to Home Screen"
-4. Tap "Add"
-5. The app icon appears on your home screen — tap it to open full-screen
+## 1. Deploy
+1. vercel.com → Import Project → connect this repo
+2. Add environment variable `ANTHROPIC_API_KEY` (powers the AI Coach)
+3. Storage → Create KV Database → Connect (powers sync + Watch workouts)
 
-## Step 3 (Simplest): Workout Auto-Sync via iOS Shortcuts
-No extra apps needed — uses iOS Shortcuts built-in to your iPhone.
+## 2. Install on your iPhone
+1. Open your Vercel URL in **Safari**
+2. Share button → **Add to Home Screen** → Add
 
-1. In the app, go to Settings → "iPhone & Apple Watch" → tap **Import Shortcut**
-2. Add the shortcut to the Shortcuts app when prompted
-3. iOS will run it automatically after every Apple Watch workout ends
-4. Workouts appear as completed tasks in your Today view immediately
+## 3. Apple Watch sync (one-time, ~2 minutes)
+Open the app → **More** tab → **Apple Watch** card → **Set up**.
+Pick a path in the guided sheet:
 
-This works with ALL workout apps that write to Apple Health (Strava, Garmin, Nike Run Club, Apple Fitness+, etc.).
+- **Widget sync (recommended)** — install the free Scriptable app, tap "Open in Scriptable" (the script imports itself), add the widget. Your Watch workouts upload every ~15 minutes and the app pulls them in automatically whenever you open it. You also get a lock-screen widget and Watch complication.
+- **No extra apps** — one iOS Shortcuts automation ("When any Workout ends" → one *Get Contents of URL* action, URL copied from the app). Runs silently in the background after every workout.
 
-## Step 4: Lock Screen Widget (Scriptable)
-1. Download **Scriptable** from the App Store (free)
-2. In the app, go to Settings → "iPhone & Apple Watch" → tap **Open in Scriptable**
-3. Scriptable opens with the widget script pre-loaded — tap the save button
-4. Add the widget to your lock screen:
-   - Long-press your lock screen → Customise
-   - Tap "Add widgets" below the time
-   - Find Scriptable → choose Rectangular (shows tasks) or Circular (shows progress)
-5. Long-press the widget → Edit widget
-6. Set **Script** = ScheduleKeeper
-7. Set **Parameter** = https://your-name.vercel.app
-8. Done! The widget refreshes automatically.
+Either way: workouts from **any** app that writes to Apple Health (Strava, Garmin, Nike Run Club, Apple Fitness+) appear as completed sessions with duration, calories and heart rate — no taps, ever.
 
-Alternatively, you can add the script manually:
-- Open Scriptable → tap the + button → paste the entire contents of `widget.js` → name it "ScheduleKeeper"
+---
 
-## Step 4b: Apple Watch Complication (Scriptable — no Shortcuts app needed)
-Scriptable natively supports Apple Watch complications — the same script runs on Watch.
+## Power-ups (optional)
 
-1. Make sure Scriptable is installed on your iPhone (Step 4 above)
-2. The "ScheduleKeeper" script with the `widget.js` code must be set up (Step 4)
-3. On your iPhone, open the **Watch** app
-4. Tap **My Watch** → **Complications**
-5. Choose a complication slot (e.g. top or bottom of watch face)
-6. Find **Scriptable** in the list
-7. Tap the Scriptable complication → select **ScheduleKeeper** script
-8. Choose your preferred complication style:
-   - **Circular** — shows done/total tasks + XP level number
-   - **Rectangular** — shows next task title and time
-   - **Inline** — slim top-row text: `⚡ 2/5 · Lv3`
-9. Set **Parameter** = https://your-name.vercel.app
-10. The complication appears on your Watch face and refreshes automatically
+### Back Tap "Mark Done"
+Shortcuts → new shortcut → *Get Contents of URL* → `https://YOUR-APP.vercel.app/api/sync?action=completeNext` (POST). Then Settings → Accessibility → Touch → Back Tap → Double Tap → select it. Double-tap the back of your phone to tick off your next task — even from the lock screen.
 
-**Tap the Watch complication** to open ScheduleKeeper directly on your Watch (via iPhone).
+### Watch complication
+If you set up the Scriptable widget: iPhone Watch app → Complications → Scriptable → choose *ScheduleKeeper* → set Parameter to your app URL. Circular (progress + level), Rectangular (next task), or Inline styles.
 
-No iPhone Shortcuts app needed — Scriptable handles everything.
+### Morning health data (HRV / resting HR / sleep)
+Shortcuts → personal automation at wake time → Health actions (Get HRV, Resting HR, Sleep) → *Open URL*:
+`https://YOUR-APP.vercel.app/?hk=1&date=DATE&hrv=HRV&rhr=RHR&sleep=BED-WAKE&sq=QUALITY`
 
-## Step 5: Back Tap "Mark Done" (No unlock needed!)
-This lets you double-tap the back of your iPhone to mark your next task complete.
+---
 
-1. Open the **Shortcuts** app
-2. Tap + to create a new shortcut
-3. Add action: "Get contents of URL"
-   - URL: https://your-name.vercel.app/api/sync?action=completeNext
-   - Method: POST
-4. Add action: "Show notification" with text: "Task marked done ✅"
-5. Name it "Mark Task Done"
-6. Go to Settings → Accessibility → Touch → Back Tap
-7. Choose Double Tap → select "Mark Task Done"
+## Security note
+The sync endpoints are unauthenticated by default (personal-use design). To lock down writes, set a `SK_TOKEN` environment variable in Vercel and append `&k=YOUR_TOKEN` to the workout sync URL.
 
-Now double-tap the back of your iPhone from ANY screen (even lock screen!) to tick off your next task.
-
-## Step 6: Lock Screen Shortcut Buttons (iPhone 14+)
-You can add 2 extra shortcut buttons to the lock screen:
-
-1. Long-press lock screen → Customise → Lock Screen
-2. Tap the bottom-left or bottom-right icon area
-3. Choose "Shortcuts" → select "Mark Task Done"
-4. Second button: create another Shortcut that opens your app URL
-
-## How Sync Works
-- Every time you tick a task or habit in the app, it syncs to Vercel KV
-- The Scriptable widget and Watch complication read from the same Vercel endpoint
-- Widget refreshes every time you tap/view it + every ~15 minutes automatically
-- Works offline too — changes sync when you're back online
-
-## Tip: AI Coach
-The app includes an AI Coach powered by Anthropic Claude (Marcos Llorente philosophy).
-- Tap the 🤖 Coach button in the nav bar
-- Use quick prompts: Match cancelled, Game tomorrow, Tired, Grounding, Cold therapy...
-- The Coach works offline instantly for common scenarios
-- For novel requests, it calls the Vercel `/api/coach` endpoint (requires `ANTHROPIC_API_KEY`)
+## How sync works
+- App state (tasks, habits, XP) syncs to Vercel KV on every change; widgets read the same endpoint
+- Watch workouts: widget/automation → `/api/workout` (KV) → app auto-pulls on open/foreground, dedupes by workout start time
+- Everything works offline; changes sync when you're back online

@@ -59,12 +59,20 @@ textarea::placeholder,input::placeholder{color:rgba(241,245,249,0.16)}
 .fd-bird{animation:birdGlide 26s linear infinite}
 .fd-sun{animation:sunPulse 8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
 .fd-shimmer{animation:shimmerPulse 6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
-@media (prefers-reduced-motion:reduce){.fd-palm,.fd-wave,.fd-cloud,.fd-star,.fd-bird,.fd-sun,.fd-shimmer,.fd-orb{animation:none!important}}
-button{transition:transform 0.14s cubic-bezier(0.34,1.56,0.64,1),opacity 0.14s,background 0.18s,border-color 0.18s,box-shadow 0.18s}
+:root{--spring:cubic-bezier(0.34,1.2,0.64,1);--spring-snap:cubic-bezier(0.34,1.56,0.64,1);--ease-out:cubic-bezier(0.22,1,0.36,1)}
+.sk-press{transition:transform .18s var(--spring),opacity .18s ease}
+.sk-press:active{transform:scale(0.97);opacity:.85}
+@keyframes shimmer{from{background-position:-200% 0}to{background-position:200% 0}}
+.sk-skeleton{background:linear-gradient(90deg,rgba(255,255,255,0.03) 25%,rgba(255,255,255,0.07) 50%,rgba(255,255,255,0.03) 75%);background-size:200% 100%;animation:shimmer 1.4s linear infinite;border-radius:10px}
+@media (prefers-reduced-motion:reduce){
+  .fd-palm,.fd-wave,.fd-cloud,.fd-star,.fd-bird,.fd-sun,.fd-shimmer,.fd-orb{animation:none!important}
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+button{transition:transform 0.14s var(--spring-snap),opacity 0.14s,background 0.18s,border-color 0.18s,box-shadow 0.18s}
 button:active{transform:scale(0.93)!important}
 button:hover{opacity:0.88}
-.sk-card{transition:transform 0.2s cubic-bezier(0.34,1.2,0.64,1),box-shadow 0.2s}
-.sk-card:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,0,0,0.5),0 0 0 1px rgba(245,158,11,0.08) inset}
+.sk-card{transition:transform 0.2s var(--spring),box-shadow 0.2s}
+.sk-card:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,0,0,0.5),0 0 0 0.5px rgba(255,255,255,0.09)}
 .sk-task:hover{background:rgba(245,158,11,0.045)!important}
 .sk-habit:hover{filter:brightness(1.08)}
 input:focus,textarea:focus{outline:none;border-color:rgba(245,158,11,0.5)!important;box-shadow:0 0 0 3px rgba(245,158,11,0.10)}
@@ -77,7 +85,47 @@ import { h, render, Fragment } from 'preact';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
 import { html } from 'htm/preact';
 const haptic=p=>{try{navigator.vibrate(p);}catch{}};
-const stagger=(i,base=0)=>({animation:`fadeUp 0.28s cubic-bezier(0.22,1,0.36,1) ${base+i*35}ms both`});
+const stagger=(i,base=0)=>({animation:`fadeUp 0.28s var(--ease-out) ${base+i*35}ms both`});
+
+// Vertical drag-to-dismiss for bottom sheets (angle-gated; ignores horizontal swipes + inner scroll)
+function useSheetDrag(onClose,scrollRef){
+  const ref=useRef();
+  const drag=useRef({y0:0,x0:0,dy:0,mode:null,t0:0});
+  const onTouchStart=e=>{
+    drag.current={y0:e.touches[0].clientY,x0:e.touches[0].clientX,dy:0,mode:null,t0:Date.now()};
+    if(ref.current)ref.current.style.willChange="transform";
+  };
+  const onTouchMove=e=>{
+    const d=drag.current;
+    const dy=e.touches[0].clientY-d.y0,dx=e.touches[0].clientX-d.x0;
+    if(d.mode===null){
+      if(Math.abs(dy)<8&&Math.abs(dx)<8)return;
+      const scrollTop=(scrollRef?.current?.scrollTop??ref.current?.scrollTop)||0;
+      d.mode=(Math.abs(dy)>Math.abs(dx)&&dy>0&&scrollTop<=0)?"drag":"off";
+    }
+    if(d.mode!=="drag")return;
+    d.dy=Math.max(0,dy);
+    if(ref.current){
+      ref.current.style.transition="none";
+      ref.current.style.transform=`translateY(${d.dy}px)`;
+    }
+  };
+  const onTouchEnd=()=>{
+    const d=drag.current,el=ref.current;
+    if(!el)return;
+    el.style.willChange="";
+    if(d.mode==="drag"&&(d.dy>120||d.dy/(Date.now()-d.t0||1)>0.55)){
+      el.style.transition="transform 0.25s ease-in";
+      el.style.transform="translateY(105%)";
+      setTimeout(onClose,240);
+    }else{
+      el.style.transition="transform 0.3s var(--spring)";
+      el.style.transform="none";
+    }
+    d.mode=null;d.dy=0;
+  };
+  return{ref,onTouchStart,onTouchMove,onTouchEnd};
+}
 
 // ── Island Dusk — time-of-day scenery system ─────────────────
 const dayPhase=(h=new Date().getHours())=>h>=5&&h<8?"dawn":h>=8&&h<17?"day":h>=17&&h<20?"sunset":"night";
@@ -137,7 +185,21 @@ const T = {
   // Glass
   glass:        "rgba(6,10,13,0.75)",
   glassStrong:  "rgba(6,10,13,0.88)",
+  muted2:       "rgba(241,245,249,0.55)",
 };
+
+// ── Type scale, spacing grid, radius tokens ──────────────────
+const TYPE = {
+  hero:    {fontSize:30, fontWeight:800, letterSpacing:-1,   lineHeight:1.1,  color:T.text},
+  title:   {fontSize:20, fontWeight:800, letterSpacing:-0.5, lineHeight:1.15, color:T.text},
+  headline:{fontSize:15, fontWeight:700, letterSpacing:-0.2, color:T.text},
+  body:    {fontSize:13, fontWeight:500, lineHeight:1.5,  color:T.textSoft},
+  caption: {fontSize:11, fontWeight:600, color:T.muted},
+  label:   {fontSize:10, fontWeight:700, letterSpacing:1.6, textTransform:"uppercase", color:T.muted},
+  num:     {fontVariantNumeric:"tabular-nums", letterSpacing:-0.5},
+};
+const SP = {xs:4, sm:8, md:12, lg:16, xl:24, xxl:32};
+const R  = {sm:10, md:14, lg:20, pill:999};
 // Premium symbol icons — no system emoji in UI chrome
 const ICONS = {
   run:"↗", football:"⬡", game:"◆", bike:"◎", pilates:"◈",
@@ -412,6 +474,7 @@ function detectCat(title=""){
 // ── Sync ────────────────────────────────────────────────────
 const SK_KEY="sk2";
 const SYNC_URL="/api/sync";
+const WORKOUT_URL="/api/workout";
 
 async function loadState(){
   try{ const r=await window.storage?.get(SK_KEY); if(r?.value)return JSON.parse(r.value); }catch{}
@@ -926,7 +989,7 @@ function Ring({pct=0,size=48,stroke=3,color=T.accent,glow=false}){
     <circle cx=${size/2} cy=${size/2} r=${r} stroke=${color} stroke-width=${stroke} fill="none"
       stroke-dasharray="${dash} ${circ}" stroke-linecap="round"
       filter=${glow?`url(#${glowId})`:"none"}
-      style="transition:stroke-dasharray 0.6s cubic-bezier(0.34,1.2,0.64,1)"/>
+      style="transition:stroke-dasharray 0.6s var(--spring)"/>
   </svg>`;
 }
 
@@ -1059,20 +1122,19 @@ function HorizonDivider(){
 }
 
 const S={
+  // Tier-2 content surface — flat calm fill, hairline edge, no blur/glow
   card:{
-    background:"linear-gradient(145deg,rgba(255,255,255,0.04) 0%,rgba(245,158,11,0.022) 50%,rgba(52,211,153,0.018) 100%)",
-    border:"1px solid rgba(255,255,255,0.075)",
-    borderRadius:18,padding:"18px 16px",
-    backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",
-    boxShadow:"0 1px 0 rgba(255,255,255,0.07) inset,0 8px 32px rgba(0,0,0,0.4),0 0 0 1px rgba(245,158,11,0.04) inset",
+    background:"rgba(255,255,255,0.038)",
+    borderRadius:R.lg,padding:SP.lg,
+    boxShadow:"0 0 0 0.5px rgba(255,255,255,0.055)",
   },
   input:{
-    width:"100%",padding:"11px 14px",borderRadius:12,
+    width:"100%",padding:"11px 14px",borderRadius:R.md,
     border:"1px solid rgba(255,255,255,0.09)",
-    background:"rgba(255,255,255,0.045)",color:"#F1F5F9",fontSize:14,
+    background:"rgba(255,255,255,0.045)",color:"#F1F5F9",fontSize:15,
     outline:"none",boxSizing:"border-box",transition:"border-color 0.18s,box-shadow 0.18s",
   },
-  section:{fontSize:9,fontWeight:900,color:"rgba(241,245,249,0.32)",letterSpacing:2.4,marginBottom:12,textTransform:"uppercase"},
+  section:{...TYPE.label,marginBottom:SP.md},
 };
 
 function Btn({onClick,children,variant="default",style={},disabled=false}){
@@ -1087,7 +1149,7 @@ function Btn({onClick,children,variant="default",style={},disabled=false}){
     display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,
     padding:"11px 20px",borderRadius:13,fontFamily:"inherit",fontWeight:700,fontSize:13,
     letterSpacing:0.3,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.35:1,
-    userSelect:"none",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",...V[variant],...style
+    userSelect:"none",...V[variant],...style
   }}>${children}</button>`;
 }
 
@@ -1106,12 +1168,33 @@ function IconBtn({onClick,children,style={}}){
   return html`<button onClick=${onClick} style=${{
     width:38,height:38,borderRadius:13,border:`1px solid ${T.border}`,
     background:"rgba(255,255,255,0.04)",color:T.muted,fontSize:15,cursor:"pointer",
-    display:"grid",placeItems:"center",flexShrink:0,backdropFilter:"blur(12px)",...style
+    display:"grid",placeItems:"center",flexShrink:0,...style
   }}>${children}</button>`;
 }
 
 function Label({children}){
   return html`<div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:0.8,marginBottom:6}}>${children}</div>`;
+}
+
+// ── iOS-style grouped rows ────────────────────────────────────
+function RowGroup({children,style={}}){
+  return html`<div style=${{background:"rgba(255,255,255,0.03)",borderRadius:20,overflow:"hidden",
+    boxShadow:"0 0 0 0.5px rgba(255,255,255,0.055)",...style}}>${children}</div>`;
+}
+function Row({icon,iconColor,title,sub,right,onClick,divider=true,first=false}){
+  return html`<div className=${onClick?"sk-press":""} onClick=${onClick} style=${{
+    display:"flex",alignItems:"center",gap:12,minHeight:46,padding:"11px 14px",
+    cursor:onClick?"pointer":"default",
+    boxShadow:divider&&!first?"0 -0.5px 0 rgba(255,255,255,0.06)":"none",
+  }}>
+    ${icon!=null?html`<div style=${{width:28,height:28,borderRadius:8,flexShrink:0,display:"grid",placeItems:"center",
+      fontSize:14,color:iconColor||T.muted,background:iconColor?`${iconColor}18`:"rgba(255,255,255,0.05)"}}>${icon}</div>`:""}
+    <div style=${{flex:1,minWidth:0}}>
+      <div style=${{fontSize:14,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>${title}</div>
+      ${sub?html`<div style=${{fontSize:11,fontWeight:500,color:"rgba(241,245,249,0.55)",marginTop:1}}>${sub}</div>`:""}
+    </div>
+    ${right!=null?html`<div style=${{flexShrink:0,fontSize:13,fontWeight:600,color:T.muted,display:"flex",alignItems:"center",gap:6}}>${right}</div>`:""}
+  </div>`;
 }
 
 // ── Toast ─────────────────────────────────────────────────────
@@ -1207,7 +1290,7 @@ function ConfettiBurst({x,y}){
       position:"absolute",width:6,height:6,borderRadius:"50%",
       background:cols[i%cols.length],
       '--dx':dx+"px",'--dy':dy+"px",
-      animation:`confettiFly 0.55s cubic-bezier(0.22,1,0.36,1) ${i*20}ms forwards`,
+      animation:`confettiFly 0.55s var(--ease-out) ${i*20}ms forwards`,
       transformOrigin:"center",
     }}/>`)}
   </div>`;
@@ -1218,6 +1301,7 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
   const [msgs,setMsgs]=useState([{role:"assistant",content:"Hey — Coach here.\n\nI follow the Marcos Llorente approach: train smart, eat clean, ground daily, sleep by 9pm.\n\n• \"Match cancelled\" — I'll rebuild your day\n• \"I feel tired\" — I'll protect your recovery\n• \"Add grounding session\" — done instantly\n• \"What should I do next?\" — I'll tell you exactly"}]);
   const [input,setInput]=useState(""); const [busy,setBusy]=useState(false);
   const bodyRef=useRef(null); const inputRef=useRef(null);
+  const sheetDrag=useSheetDrag(onClose,bodyRef);
   useEffect(()=>{ if(isOpen) setTimeout(()=>inputRef.current?.focus(),100); },[isOpen]);
   useEffect(()=>{ if(bodyRef.current) bodyRef.current.scrollTop=bodyRef.current.scrollHeight; },[msgs,busy]);
 
@@ -1263,8 +1347,10 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
 
   if(!isOpen) return null;
   return html`<div style=${{position:"fixed",inset:0,zIndex:80,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick=${onClose}>
-    <div style=${{background:"rgba(6,10,13,0.98)",borderRadius:"22px 22px 0 0",border:"1px solid rgba(245,158,11,0.18)",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.8)"}} onClick=${e=>e.stopPropagation()}>
+    <div ref=${sheetDrag.ref} onTouchStart=${sheetDrag.onTouchStart} onTouchMove=${sheetDrag.onTouchMove} onTouchEnd=${sheetDrag.onTouchEnd}
+      style=${{background:"rgba(6,10,13,0.98)",borderRadius:"22px 22px 0 0",border:"1px solid rgba(245,158,11,0.18)",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.8)"}} onClick=${e=>e.stopPropagation()}>
       <div style=${{height:1,background:"linear-gradient(90deg,transparent,rgba(45,212,191,0.3),transparent)",flexShrink:0}}/>
+      <div style=${{width:32,height:3,background:"rgba(255,255,255,0.15)",borderRadius:99,margin:"8px auto 0",flexShrink:0}}/>
       <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px 10px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexShrink:0}}>
         <div style=${{display:"flex",alignItems:"center",gap:10}}>
           <div style=${{width:38,height:38,borderRadius:13,background:"linear-gradient(135deg,rgba(245,158,11,0.18),rgba(52,211,153,0.10))",border:"1px solid rgba(245,158,11,0.30)",display:"grid",placeItems:"center",fontSize:19}}>🤖</div>
@@ -1286,7 +1372,10 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
           ${m.role==="assistant"?html`<div style=${{fontSize:9,fontWeight:800,color:T.accent,marginBottom:5,letterSpacing:1}}>COACH</div>`:""}
           ${(()=>{const isLastAsst=msgs.filter(x=>x.role==="assistant").at(-1)===m;return m.role==="assistant"&&isLastAsst?html`<${TypewriterText} text=${m.content}/>`:m.content;})()}
         </div>`)}
-        ${busy?html`<div style=${{alignSelf:"flex-start",padding:"12px 16px",borderRadius:"16px 16px 16px 4px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",color:T.muted,fontSize:18,letterSpacing:4}}>···</div>`:""}
+        ${busy?html`<div style=${{alignSelf:"flex-start",width:"70%",maxWidth:260,padding:"12px 16px",borderRadius:"16px 16px 16px 4px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}}>
+          <div className="sk-skeleton" style=${{height:10,width:"90%",marginBottom:8}}/>
+          <div className="sk-skeleton" style=${{height:10,width:"60%"}}/>
+        </div>`:""}
       </div>
       <div style=${{display:"flex",gap:7,padding:"8px 16px",overflowX:"auto",flexShrink:0,borderTop:"1px solid rgba(255,255,255,0.06)",scrollbarWidth:"none"}}>
         ${QUICK.map(c=>html`<button key=${c.l} onClick=${()=>send(c.p)} style=${{
@@ -1310,7 +1399,7 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
 // ── Task Item ─────────────────────────────────────────────────
 function TaskItem({task,onToggle,onEdit,highlight=false}){
   const cat=CATS[task.category]||CATS.other;
-  return html`<div onClick=${()=>onEdit(task)} className="sk-task" style=${{
+  return html`<div onClick=${()=>onEdit(task)} className="sk-task sk-press" style=${{
     display:"flex",alignItems:"center",gap:12,padding:"13px 14px 13px 0",
     borderRadius:15,
     border:`1px solid ${highlight?cat.border:task.completed?"rgba(255,255,255,0.035)":T.border}`,
@@ -1323,7 +1412,7 @@ function TaskItem({task,onToggle,onEdit,highlight=false}){
     cursor:"pointer",transition:"background 0.18s,border-color 0.18s",
     opacity:task.completed?0.38:1,
     paddingLeft:13,
-    backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",
+
   }}>
     <button onClick=${e=>{e.stopPropagation();onToggle(task.id);}} style=${{
       width:26,height:26,borderRadius:9,flexShrink:0,
@@ -1477,7 +1566,7 @@ function DailyQuote(){
     background:"linear-gradient(135deg,rgba(245,158,11,0.06) 0%,rgba(52,211,153,0.04) 100%)",
     border:"1px solid rgba(245,158,11,0.15)",padding:"16px 18px",
   }}>
-    <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Today's Word</div>
+    <div style=${{...S.section,marginBottom:10}}>Today's Word</div>
     <div style=${{fontSize:13,color:T.textSoft,lineHeight:1.65,fontStyle:"italic"}}>"${text}"</div>
     <div style=${{fontSize:10,fontWeight:800,color:T.accent,marginTop:8,letterSpacing:0.5}}>${ref}</div>
   </div>`;
@@ -1492,7 +1581,7 @@ function DailyPodcast(){
     border:"1px solid rgba(245,158,11,0.18)",padding:"16px 18px",
   }}>
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,textTransform:"uppercase"}}>Today's Listen</div>
+      <div style=${{...S.section,marginBottom:0}}>Today's Listen</div>
       <span style=${{
         fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:999,letterSpacing:0.8,
         background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.22)",color:T.accent,
@@ -1508,7 +1597,7 @@ function DailyPodcast(){
       <div style=${{flex:1,minWidth:0}}>
         <div style=${{fontSize:13,fontWeight:800,color:T.text,lineHeight:1.3,marginBottom:3}}>${pod.episode}</div>
         <div style=${{fontSize:11,fontWeight:700,color:T.accent,marginBottom:5}}>${pod.show}</div>
-        <div style=${{fontSize:11,color:T.muted,lineHeight:1.55}}>${pod.description}</div>
+        <div style=${{...TYPE.body,fontSize:11,color:T.muted2}}>${pod.description}</div>
       </div>
     </div>
     <div style=${{display:"flex",gap:8}}>
@@ -1543,7 +1632,7 @@ function BodyFuelPanel({tasks,healthLog,onUpsertLog,dateStr}){
   const cat=upcoming?CATS[upcoming.category]:null;
   return html`<div style=${{...S.card,marginBottom:14,padding:"16px 18px"}}>
     <!-- Header -->
-    <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:14,textTransform:"uppercase"}}>Body Fuel & Journal</div>
+    <div style=${{...S.section,marginBottom:14}}>Body Fuel & Journal</div>
 
     <!-- Quick energy check-in -->
     <div style=${{marginBottom:16}}>
@@ -1599,7 +1688,7 @@ function BodyFuelPanel({tasks,healthLog,onUpsertLog,dateStr}){
 
     <!-- Herbs & Supplements -->
     ${herbs.length>0?html`<div style=${{marginTop:4}}>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Herbs & Supplements</div>
+      <div style=${{...S.section,marginBottom:10}}>Herbs & Supplements</div>
       <div style=${{display:"flex",flexDirection:"column",gap:8}}>
         ${herbs.map((h,i)=>html`<div key=${i} style=${{
           borderRadius:12,padding:"10px 12px",
@@ -1707,10 +1796,10 @@ function BodyView({bodyMap,onUpdateBodyMap}){
     <!-- Header card with toggle -->
     <div style=${{...S.card,padding:"14px 16px",marginBottom:14}}>
       <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-        <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,textTransform:"uppercase"}}>Body Map</div>
+        <div style=${{...S.section,marginBottom:0}}>Body Map</div>
         <div style=${{display:"flex",background:"rgba(255,255,255,0.04)",borderRadius:99,padding:2,gap:1}}>
           ${["f","b"].map(v=>html`<button key=${v} onClick=${()=>{setView(v);setSelectedZone(null);setPickerZone(null);}} style=${{
-            padding:"5px 14px",borderRadius:97,cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:800,
+            padding:"5px 14px",borderRadius:999,cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:800,
             border:`1px solid ${view===v?T.accentBorder:"transparent"}`,
             background:view===v?"rgba(245,158,11,0.15)":"transparent",
             color:view===v?T.accent:T.muted,transition:"all 0.18s",
@@ -1889,7 +1978,7 @@ function BodyView({bodyMap,onUpdateBodyMap}){
 
     <!-- Active areas summary -->
     ${markedZones.length>0?html`<div style=${{...S.card,padding:"14px 16px",marginBottom:14}}>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Marked Areas (${markedZones.length})</div>
+      <div style=${{...S.section,marginBottom:10}}>Marked Areas (${markedZones.length})</div>
       <div style=${{display:"flex",flexDirection:"column",gap:6}}>
         ${markedZones.map(([id,z])=>{
           const zd=BODY_ZONES.find(b=>b.id===id);
@@ -1980,7 +2069,7 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
 
     <!-- Energy check-in -->
     <div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:12,textTransform:"uppercase"}}>How's your body today?</div>
+      <div style=${S.section}>How's your body today?</div>
       <div style=${{display:"flex",gap:6,marginBottom:8}}>
         ${ENERGY_EMOJIS.map((e,i)=>html`<button key=${i} onClick=${()=>onUpsertLog(today,{energy:i+1})} style=${{
           flex:1,padding:"9px 4px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
@@ -2035,7 +2124,7 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
 
     <!-- Today's journal entry -->
     <div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Today's Journal</div>
+      <div style=${{...S.section,marginBottom:10}}>Today's Journal</div>
       <textarea
         placeholder="How are you feeling? Notes for today — body, mindset, wins, gratitude…"
         value=${notes[today]||""}
@@ -2046,7 +2135,7 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
 
     <!-- Today's fuel suggestions -->
     ${fuelSuggestions.length>0?html`<div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Fuel Plan</div>
+      <div style=${{...S.section,marginBottom:10}}>Fuel Plan</div>
       <div style=${{display:"flex",flexDirection:"column",gap:8}}>
         ${fuelSuggestions.slice(0,3).map((s,i)=>html`<div key=${i} style=${{
           borderRadius:11,padding:"9px 11px",
@@ -2066,7 +2155,7 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
 
     <!-- Herb suggestions -->
     ${herbs.length>0?html`<div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:10,textTransform:"uppercase"}}>Herbs & Supplements</div>
+      <div style=${{...S.section,marginBottom:10}}>Herbs & Supplements</div>
       <div style=${{display:"flex",flexDirection:"column",gap:8}}>
         ${herbs.map((h,i)=>html`<div key=${i} style=${{
           borderRadius:11,padding:"9px 11px",
@@ -2085,7 +2174,7 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
 
     <!-- Mood timeline — last 14 days -->
     <div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:12,textTransform:"uppercase"}}>14-Day Energy</div>
+      <div style=${S.section}>14-Day Energy</div>
       <div style=${{display:"flex",gap:3,alignItems:"flex-end",height:36,marginBottom:6}}>
         ${[...pastDays].reverse().map((d,i)=>{
           const e=d.log.energy||0;
@@ -2105,7 +2194,7 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
 
     <!-- Past journal entries -->
     <div style=${{...S.card,padding:"14px 16px"}}>
-      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2.4,marginBottom:12,textTransform:"uppercase"}}>Past Entries</div>
+      <div style=${S.section}>Past Entries</div>
       ${pastDays.slice(1).filter(d=>d.note).length===0?html`<div style=${{fontSize:12,color:T.muted,textAlign:"center",padding:"16px 0"}}>No past entries yet — start writing above</div>`:""}
       <div style=${{display:"flex",flexDirection:"column",gap:10}}>
         ${pastDays.slice(1).filter(d=>d.note).map((d,i)=>html`<div key=${i} style=${{
@@ -2233,7 +2322,7 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
     ${total===0?html`
       <div className="sk-card" onClick=${onOpenJournal} style=${{
         border:"1px dashed rgba(255,255,255,0.07)",borderRadius:16,padding:28,textAlign:"center",marginBottom:14,
-        background:"rgba(255,255,255,0.02)",cursor:"pointer",backdropFilter:"blur(8px)",
+        background:"rgba(255,255,255,0.02)",cursor:"pointer",
       }}>
         <div style=${{marginBottom:8,display:"grid",placeItems:"center"}}><${IslandGlyph} size=${46}/></div>
         <div style=${{fontWeight:700,fontSize:14,color:T.text}}>Nothing scheduled yet</div>
@@ -2242,7 +2331,7 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
 
     ${total>0?html`
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-        <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8}}>TODAY'S PLAN</div>
+        <div style=${{...S.section,marginBottom:0}}>TODAY'S PLAN</div>
         <div style=${{fontSize:11,color:T.muted,fontWeight:600}}>${done} of ${total} done</div>
       </div>
       <div style=${{display:"flex",flexDirection:"column",gap:6,marginBottom:18}}>
@@ -2252,11 +2341,11 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
       </div>`:""}
 
     ${todayHabits.length>0?html`
-      <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8,marginBottom:10}}>HABITS</div>
+      <div style=${{...S.section,marginBottom:10}}>HABITS</div>
       <div style=${{display:"flex",flexDirection:"column",gap:5}}>
         ${todayHabits.map(h=>{
           const done2=!!habitLogs[`${h.id}_${todayStr}`];
-          return html`<div key=${h.id} onClick=${()=>onToggleHabit(h.id,todayStr)} className="sk-habit" style=${{
+          return html`<div key=${h.id} onClick=${()=>onToggleHabit(h.id,todayStr)} className="sk-habit sk-press" style=${{
             display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderRadius:13,
             border:`1px solid ${done2?T.greenBorder:T.border}`,
             background:done2?T.greenGlow:"rgba(255,255,255,0.025)",cursor:"pointer",transition:"background 0.15s,border-color 0.15s",
@@ -2400,7 +2489,7 @@ function WeeklyReview({tasks,habits,habitLogs,healthLogs,settings}){
   const habitScore=allScheduled.length?Math.round(allDone.length/allScheduled.length*100):null;
 
   return html`<div style=${{marginBottom:20}}>
-    <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8,marginBottom:12}}>THIS WEEK</div>
+    <div style=${S.section}>THIS WEEK</div>
 
     <!-- Category bars -->
     <div style=${{...S.card,marginBottom:10}}>
@@ -2419,7 +2508,7 @@ function WeeklyReview({tasks,habits,habitLogs,healthLogs,settings}){
           </div>
           <div style=${{height:4,borderRadius:99,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}>
             <div style=${{
-              height:"100%",borderRadius:99,width:pct+"%",transition:"width 0.6s cubic-bezier(0.34,1.2,0.64,1)",
+              height:"100%",borderRadius:99,width:pct+"%",transition:"width 0.6s var(--spring)",
               background:pct>=80
                 ?`linear-gradient(90deg,${T.green},rgba(52,211,153,0.7))`
                 :pct>=50
@@ -2438,7 +2527,7 @@ function WeeklyReview({tasks,habits,habitLogs,healthLogs,settings}){
 
     <!-- Callouts -->
     ${callouts.length>0?html`
-      <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8,marginBottom:8}}>NEEDS IMPROVEMENT</div>
+      <div style=${{...S.section,marginBottom:8}}>NEEDS IMPROVEMENT</div>
       ${callouts.map((c,i)=>html`<div key=${i} style=${{
         display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:12,marginBottom:6,
         background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.14)",
@@ -2480,7 +2569,7 @@ function MonthCalendar({tasks,habits,habitLogs,notes,month,onPrevMonth,onNextMon
 
   return html`<div style=${{marginBottom:20}}>
     <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-      <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8}}>${monthName}</div>
+      <div style=${{...S.section,marginBottom:0}}>${monthName}</div>
       <div style=${{display:"flex",gap:6}}>
         <${IconBtn} onClick=${onPrevMonth} style=${{width:30,height:30,fontSize:14}}>‹<//>
         <${IconBtn} onClick=${onNextMonth} style=${{width:30,height:30,fontSize:14}}>›<//>
@@ -2533,7 +2622,7 @@ function MonthCalendar({tasks,habits,habitLogs,notes,month,onPrevMonth,onNextMon
     <!-- Habit adherence -->
     ${habits.length>0?html`
       <div style=${{marginTop:12}}>
-        <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8,marginBottom:8}}>HABIT ADHERENCE</div>
+        <div style=${{...S.section,marginBottom:8}}>HABIT ADHERENCE</div>
         ${habits.map(h=>{
           const pct=habitPctForDates(h,habitLogs,monthDates);
           if(pct===null) return null;
@@ -2564,7 +2653,7 @@ function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,onUpsertNo
   }
 
   return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
-    <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8,marginBottom:4}}>REVIEW</div>
+    <div style=${{...S.section,marginBottom:4}}>REVIEW</div>
     <${HorizonDivider}/>
 
     <!-- Day strip -->
@@ -2605,7 +2694,7 @@ function DisciplineStreakCard({retentionStartDate,onStart,onReset}){
     </div>
     ${retentionStartDate?html`
       <div style=${{textAlign:"center",marginBottom:12}}>
-        <div style=${{fontSize:64,fontWeight:900,color:"#34d399",lineHeight:1,letterSpacing:-2}}>${days}</div>
+        <div style=${{fontSize:64,fontWeight:900,color:"#34d399",lineHeight:1,...TYPE.num,letterSpacing:-2}}>${days}</div>
         <div style=${{fontSize:12,color:T.muted,fontWeight:700,marginTop:2}}>days${milestone?` · ${milestone.icon} ${milestone.label}`:""}</div>
         <div style=${{fontSize:10,color:T.muted,marginTop:4}}>Started ${startedStr}</div>
       </div>
@@ -2645,7 +2734,7 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit,reten
   return html`<div style=${{padding:"14px 14px 100px",maxWidth:820,margin:"0 auto"}}>
     <${DisciplineStreakCard} retentionStartDate=${retentionStartDate} onStart=${onStartRetention} onReset=${onResetRetention}/>
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-      <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8}}>HABITS</div>
+      <div style=${{...S.section,marginBottom:0}}>HABITS</div>
       <${Btn} onClick=${onAddHabit} variant="primary" style=${{fontSize:12,padding:"7px 14px"}}>+ Add<//>
     </div>
     ${habits.length===0?html`
@@ -2669,7 +2758,7 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit,reten
               }}>🔥</span>`:""}
             </div>
             <div>
-              <div style=${{fontWeight:800,fontSize:14,color:T.text,letterSpacing:-0.2}}>${h.title}</div>
+              <div style=${{...TYPE.headline,fontSize:14}}>${h.title}</div>
               <div style=${{fontSize:11,color:T.muted,marginTop:2,display:"flex",gap:8}}>
                 <span style=${{color:weekDone>0?T.green:T.muted}}>${weekDone}/7 this week</span>
                 ${streak>0?html`<span style=${{color:T.amber,fontWeight:700}}>◆ ${streak}d streak</span>`:""}
@@ -2707,7 +2796,8 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit,reten
 }
 
 // ── Settings View ─────────────────────────────────────────────
-function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
+function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPlans,tasks,onUpsertPlan,onDeletePlan,lastWorkoutSync,onOpenWatchSetup}){
+  
   const [wt,setWt]=useState({...settings.weekTargets});
   const [mt,setMt]=useState({...( settings.macroTargets||{cal:2500,protein:160,carbs:220,fat:70})});
   const [prof,setProf]=useState({weight:75,height:178,age:26,sex:"male",...(settings.profile||{})});
@@ -2727,14 +2817,14 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPla
     :Notification.permission==="denied"?"blocked":"off";
 
   return html`<div style=${{padding:"14px 14px 100px",maxWidth:820,margin:"0 auto"}}>
-    <div style=${{fontSize:22,fontWeight:900,color:T.text,marginBottom:16}}>Settings</div>
+    <div style=${{...TYPE.title,marginBottom:16}}>Settings</div>
 
     <${PlansSection} trainingPlans=${trainingPlans||[]} tasks=${tasks||[]} onUpsertPlan=${onUpsertPlan} onDeletePlan=${onDeletePlan}/>
 
     <!-- Reminders card -->
     <div style=${{...S.card,marginBottom:10}}>
       <div style=${{...S.section,marginBottom:10}}>Reminders</div>
-      <div style=${{fontSize:12,color:T.muted,lineHeight:1.6,marginBottom:14}}>
+      <div style=${{...TYPE.body,fontSize:12,color:T.muted2,marginBottom:14}}>
         Get notified <b style=${{color:T.text}}>1 hour</b> and <b style=${{color:T.text}}>15 min</b> before each session.<br/>
         Daily <b style=${{color:T.text}}>red light glasses</b> (2h before bed) and <b style=${{color:T.text}}>wind-down</b> (30 min before bed) alerts.
       </div>
@@ -2780,7 +2870,7 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPla
 
     <!-- Body Profile card -->
     <div style=${{...S.card,marginBottom:10}}>
-      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:12}}>BODY PROFILE</div>
+      <div style=${S.section}>BODY PROFILE</div>
       <div style=${{fontSize:11,color:T.muted,marginBottom:12,lineHeight:1.5}}>Used to calculate your daily TDEE and recommended macros.</div>
       <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
         ${[{key:"weight",label:"Weight",unit:"kg",step:0.5,min:30},{key:"height",label:"Height",unit:"cm",step:1,min:100},{key:"age",label:"Age",unit:"yrs",step:1,min:10}].map(f=>html`
@@ -2810,7 +2900,7 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPla
     </div>
 
     <div style=${{...S.card,marginBottom:10}}>
-      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:4}}>LOCK SCREEN WIDGET SYNC</div>
+      <div style=${{...S.section,marginBottom:4}}>LOCK SCREEN WIDGET SYNC</div>
       <div style=${{fontSize:12,color:T.muted,marginBottom:10,lineHeight:1.55}}>
         Your schedule syncs automatically to the Scriptable lock screen widget whenever you make a change.
         ${syncStatus?html`<br/><span style=${{color:syncStatus==="ok"?T.green:T.red}}>${syncStatus==="ok"?"◉ Synced":"○ Sync unavailable (local mode)"}</span>`:""}
@@ -2820,65 +2910,41 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPla
       <//>
     </div>
 
-    <div style=${{...S.card,marginBottom:10}}>
-      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:12}}>WEEKLY TARGETS</div>
-      ${Object.entries(wt).map(([k,v])=>html`
-        <div key=${k} style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
-          <div style=${{display:"flex",alignItems:"center",gap:7}}><span style=${{fontSize:12,color:CATS[k]?.color||T.muted}}>${CATS[k]?.icon||k}</span><span style=${{fontSize:13,fontWeight:700,color:T.text}}>${CATS[k]?.label||k}</span></div>
-          <div style=${{display:"flex",alignItems:"center",gap:8}}>
-            <button onClick=${()=>{const nv=Math.max(0,v-1);const nwt={...wt,[k]:nv};setWt(nwt);onUpdate({weekTargets:nwt});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>-</button>
-            <span style=${{fontWeight:900,fontSize:15,color:T.text,minWidth:20,textAlign:"center"}}>${v}</span>
-            <button onClick=${()=>{const nv=v+1;const nwt={...wt,[k]:nv};setWt(nwt);onUpdate({weekTargets:nwt});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>+</button>
-          </div>
-        </div>`)}
+    <div style=${{marginBottom:10}}>
+      <div style=${S.section}>WEEKLY TARGETS</div>
+      <${RowGroup}>
+        ${Object.entries(wt).map(([k,v],i)=>html`
+          <${Row} key=${k} first=${i===0}
+            icon=${CATS[k]?.icon||k} iconColor=${CATS[k]?.color}
+            title=${CATS[k]?.label||k}
+            right=${html`<div style=${{display:"flex",alignItems:"center",gap:8}}>
+              <button onClick=${()=>{const nv=Math.max(0,v-1);const nwt={...wt,[k]:nv};setWt(nwt);onUpdate({weekTargets:nwt});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>-</button>
+              <span style=${{fontWeight:800,fontSize:15,color:T.text,minWidth:20,textAlign:"center",...TYPE.num}}>${v}</span>
+              <button onClick=${()=>{const nv=v+1;const nwt={...wt,[k]:nv};setWt(nwt);onUpdate({weekTargets:nwt});}} style=${{width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:16}}>+</button>
+            </div>`}/>`)}
+      <//>
     </div>
 
     <!-- iPhone & Apple Watch card -->
     <div style=${{...S.card,marginBottom:10}}>
-      <div style=${{fontSize:11,fontWeight:800,color:T.muted,letterSpacing:1,marginBottom:16,textTransform:"uppercase"}}>iPhone &amp; Apple Watch</div>
-
-      <!-- Sub-section 1: Workout Auto-Sync -->
-      <div style=${{borderLeft:"3px solid rgba(245,158,11,0.55)",paddingLeft:14,marginBottom:16,background:"rgba(245,158,11,0.04)",borderRadius:"0 10px 10px 0",padding:"12px 14px",border:"1px solid rgba(245,158,11,0.12)",borderLeft:"3px solid rgba(245,158,11,0.55)"}}>
-        <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-          <span style=${{fontSize:18}}>⌚</span>
-          <span style=${{fontWeight:800,fontSize:14,color:T.text}}>Workout Auto-Sync</span>
+      <div style=${S.section}>Apple Watch</div>
+      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+        <div style=${{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+          <span style=${{fontSize:22}}>⌚</span>
+          <div style=${{minWidth:0}}>
+            <div style=${{fontWeight:700,fontSize:14,color:T.text}}>Workout sync</div>
+            <div style=${{fontSize:11,fontWeight:600,marginTop:2,
+              color:lastWorkoutSync&&Date.now()-lastWorkoutSync<864e5?T.green:T.muted}}>
+              ${lastWorkoutSync&&Date.now()-lastWorkoutSync<864e5
+                ?`● Synced ${new Date(lastWorkoutSync).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}`
+                :"Not set up — one-time, 2 minutes"}
+            </div>
+          </div>
         </div>
-        <ol style=${{margin:"0 0 10px 0",paddingLeft:18,fontSize:12,color:T.muted,lineHeight:1.7}}>
-          <li>Tap "Import Shortcut" below and add it to Shortcuts</li>
-          <li>iOS will run it automatically after every Apple Watch workout</li>
-          <li>Workouts appear as completed tasks in your Today view</li>
-        </ol>
-        <a href="https://www.icloud.com/shortcuts/" target="_blank" style=${{
-          display:"inline-flex",alignItems:"center",gap:5,
-          padding:"9px 16px",borderRadius:10,fontSize:12,fontWeight:700,
-          background:"linear-gradient(135deg,rgba(245,158,11,0.16),rgba(245,158,11,0.08))",
-          border:"1px solid rgba(245,158,11,0.32)",color:T.accent,
-          textDecoration:"none",letterSpacing:0.3,
-        }}>Import Shortcut →</a>
-        <div style=${{marginTop:8,fontSize:11,color:T.muted,fontStyle:"italic"}}>No extra apps needed — uses iOS Shortcuts built-in to your iPhone</div>
-      </div>
-
-      <!-- Sub-section 2: Watch Complications -->
-      <div style=${{borderLeft:"3px solid rgba(245,158,11,0.55)",paddingLeft:14,background:"rgba(245,158,11,0.04)",borderRadius:"0 10px 10px 0",padding:"12px 14px",border:"1px solid rgba(245,158,11,0.12)",borderLeft:"3px solid rgba(245,158,11,0.55)"}}>
-        <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-          <span style=${{fontSize:18}}>🤖</span>
-          <span style=${{fontWeight:800,fontSize:14,color:T.text}}>Watch Complications</span>
-        </div>
-        <ol style=${{margin:"0 0 10px 0",paddingLeft:18,fontSize:12,color:T.muted,lineHeight:1.7}}>
-          <li>Install Scriptable from the App Store (free)</li>
-          <li>Tap "Open in Scriptable" to import the widget script</li>
-          <li>In the Watch app → Complications → choose Scriptable → set Parameter to your app URL</li>
-        </ol>
-        <a href=${`scriptable:///add-script?name=ScheduleKeeper&url=https://raw.githubusercontent.com/wj8kwtjyv5-coder/schedule-keeper/main/widget.js`} style=${{
-          display:"inline-flex",alignItems:"center",gap:5,
-          padding:"9px 16px",borderRadius:10,fontSize:12,fontWeight:700,
-          background:"linear-gradient(135deg,rgba(245,158,11,0.16),rgba(245,158,11,0.08))",
-          border:"1px solid rgba(245,158,11,0.32)",color:T.accent,
-          textDecoration:"none",letterSpacing:0.3,
-        }}>Open in Scriptable →</a>
-        <div style=${{marginTop:8,fontSize:11,color:T.muted,fontStyle:"italic"}}>Shows today's tasks on your Apple Watch face</div>
+        <${Btn} variant="primary" style=${{fontSize:12,padding:"9px 16px",flexShrink:0}} onClick=${onOpenWatchSetup}>Set up<//>
       </div>
     </div>
+
 
     <div style=${{display:"flex",gap:10,flexWrap:"wrap"}}>
       <${Btn} onClick=${onExport}>Export backup<//>
@@ -2891,19 +2957,80 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPla
 }
 
 // ── Modals ────────────────────────────────────────────────────
-function BottomSheet({children,title,onClose}){
+function BottomSheet({children,title,onClose,fill=false,header=null}){
+  const{ref:sheetRef,onTouchStart,onTouchMove,onTouchEnd}=useSheetDrag(onClose);
   return html`<div style=${{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(14px)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center",animation:"fadeIn 0.18s ease"}} onClick=${onClose}>
-    <div style=${{background:"rgba(7,11,20,0.98)",backdropFilter:"blur(32px)",borderRadius:"26px 26px 0 0",
+    <div ref=${sheetRef} onTouchStart=${onTouchStart} onTouchMove=${onTouchMove} onTouchEnd=${onTouchEnd}
+      style=${{background:"rgba(7,11,20,0.98)",backdropFilter:"blur(32px)",borderRadius:"26px 26px 0 0",
       border:`1px solid ${T.border}`,borderBottom:"none",
-      padding:"16px 18px calc(20px + env(safe-area-inset-bottom))",
-      width:"100%",maxWidth:580,maxHeight:"92vh",overflowY:"auto",
+      padding:fill?"16px 0 0":"16px 18px calc(20px + env(safe-area-inset-bottom))",
+      width:"100%",maxWidth:580,maxHeight:"92vh",
+      overflowY:fill?"hidden":"auto",
+      display:fill?"flex":"block",flexDirection:fill?"column":undefined,
       boxShadow:`0 -32px 80px rgba(0,0,0,0.7),0 0 0 1px rgba(129,140,248,0.06) inset`,
-      animation:"slideUp 0.28s cubic-bezier(0.22,1,0.36,1)"}} onClick=${e=>e.stopPropagation()}>
-      <div style=${{width:32,height:3,background:"rgba(255,255,255,0.15)",borderRadius:99,margin:"0 auto 18px"}}/>
-      <div style=${{fontWeight:900,fontSize:18,color:T.text,marginBottom:20,letterSpacing:-0.4}}>${title}</div>
+      animation:"slideUp 0.28s var(--ease-out)"}} onClick=${e=>e.stopPropagation()}>
+      <div style=${{width:32,height:3,background:"rgba(255,255,255,0.15)",borderRadius:99,margin:fill?"0 auto 12px":"0 auto 18px",flexShrink:0}}/>
+      ${header?header:title?html`<div style=${{fontWeight:900,fontSize:18,color:T.text,marginBottom:fill?12:20,letterSpacing:-0.4,padding:fill?"0 18px":0,flexShrink:0}}>${title}</div>`:""}
       ${children}
     </div>
   </div>`;
+}
+
+// ── Apple Watch setup sheet — two paths, both end fully automatic ──
+function WatchSetupSheet({onClose}){
+  const[path,setPath]=useState("widget");
+  const shortcutURL=`${location.origin}/api/workout?add=1&wt=[Workout Type]&wd=[Duration]&wcal=[Calories]&wstart=[Start Date]`;
+  const Step=({n,children})=>html`<div style=${{display:"flex",gap:12,alignItems:"flex-start",marginBottom:12}}>
+    <div style=${{width:26,height:26,borderRadius:99,flexShrink:0,display:"grid",placeItems:"center",
+      background:"rgba(245,158,11,0.14)",border:"1px solid rgba(245,158,11,0.3)",
+      fontSize:12,fontWeight:800,color:T.accent}}>${n}</div>
+    <div style=${{fontSize:13,fontWeight:500,color:T.textSoft,lineHeight:1.5,paddingTop:3}}>${children}</div>
+  </div>`;
+  return html`<${BottomSheet} onClose=${onClose} title="Apple Watch sync">
+    <div style=${{fontSize:13,fontWeight:500,color:T.textSoft,lineHeight:1.5,marginBottom:16}}>
+      One-time setup. After this, every Watch workout lands in the app automatically — nothing to tap, ever.
+    </div>
+    <div style=${{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:99,marginBottom:18}}>
+      ${[["widget","⌚ Widget sync"],["shortcut","⚡ No extra apps"]].map(([id,label])=>html`
+        <button key=${id} onClick=${()=>setPath(id)} style=${{
+          flex:1,padding:"9px 0",borderRadius:99,fontFamily:"inherit",cursor:"pointer",
+          fontSize:12,fontWeight:800,letterSpacing:0.2,
+          background:path===id?"rgba(245,158,11,0.15)":"transparent",
+          border:path===id?"1px solid rgba(245,158,11,0.3)":"1px solid transparent",
+          color:path===id?T.accent:T.muted,
+        }}>${label}</button>`)}
+    </div>
+    ${path==="widget"?html`
+      <div style=${{fontSize:11,fontWeight:700,color:T.green,marginBottom:12}}>✓ Recommended — also gives you the lock-screen widget and Watch complication</div>
+      <${Step} n="1">Get <b>Scriptable</b> from the App Store (free).<//>
+      <${Step} n="2">
+        <a href=${`scriptable:///add-script?name=ScheduleKeeper&url=https://raw.githubusercontent.com/wj8kwtjyv5-coder/schedule-keeper/main/widget.js`} style=${{
+          display:"inline-flex",alignItems:"center",gap:6,padding:"10px 18px",borderRadius:12,
+          fontSize:13,fontWeight:800,textDecoration:"none",
+          background:"linear-gradient(135deg,rgba(245,158,11,0.18),rgba(245,158,11,0.08))",
+          border:"1px solid rgba(245,158,11,0.35)",color:T.accent,
+        }}>Open in Scriptable →</a>
+        <div style=${{marginTop:6}}>The script imports itself — just tap save.</div>
+      <//>
+      <${Step} n="3">Add the Scriptable widget to your lock screen and set its parameter to this app's URL. <b>Done — workouts sync themselves every 15 minutes.</b><//>
+    `:html`
+      <div style=${{fontSize:11,fontWeight:700,color:T.muted,marginBottom:12}}>Uses only the built-in Shortcuts app · runs silently in the background</div>
+      <${Step} n="1">Open <b>Shortcuts → Automation → +</b> and choose <b>"When any Workout ends"</b>, set to <b>Run Immediately</b>.<//>
+      <${Step} n="2">
+        Add one action: <b>Get Contents of URL</b>, then paste:
+        <button onClick=${()=>{navigator.clipboard?.writeText(shortcutURL).then(()=>showToast("Sync link copied")).catch(()=>{});}} style=${{
+          display:"block",marginTop:8,padding:"10px 14px",borderRadius:12,width:"100%",textAlign:"left",
+          fontFamily:"ui-monospace,monospace",fontSize:10.5,lineHeight:1.5,cursor:"pointer",
+          background:"rgba(45,212,191,0.07)",border:"1px solid rgba(45,212,191,0.25)",color:T.teal,
+          wordBreak:"break-all",
+        }}>${shortcutURL}<span style=${{display:"block",marginTop:6,fontSize:11,fontWeight:800,color:T.accent,fontFamily:"inherit"}}>⧉ Tap to copy</span></button>
+      <//>
+      <${Step} n="3">In the URL, replace each <b>[bracketed]</b> part with the matching variable from the workout (tap the token → select the automation's workout details). <b>Done — it fires after every workout, in the background.</b><//>
+    `}
+    <div style=${{marginTop:6,padding:"10px 12px",borderRadius:12,background:"rgba(255,255,255,0.03)",fontSize:11,color:T.muted,lineHeight:1.5}}>
+      The app checks for new workouts every time you open it — they appear as completed sessions with duration, calories and heart rate.
+    </div>
+  <//>`;
 }
 
 function TaskModal({task,initialDate,onSave,onDelete,onClose}){
@@ -2991,6 +3118,27 @@ function mapAppleWorkout(type){
   if(["sauna","steam","spa"].some(k=>t.includes(k)))return"sauna";
   if(["hiking","walking","walk","hike","mountainclimbing","stairclimbing"].some(k=>t.includes(k)))return"run";
   return"other";
+}
+const workoutTitle=t=>{const s=t||"Workout";return s.charAt(0).toUpperCase()+s.slice(1).replace(/[_-]+/g," ");};
+
+// Turn server-side Watch workouts into completed tasks (dedup by hkStart + legacy match)
+function ingestWorkouts(tasks,workouts){
+  const seen=new Set(tasks.map(t=>t.hkStart).filter(Boolean));
+  const cutoff=new Date(Date.now()-7*864e5).toISOString();
+  const out=[];
+  for(const w of workouts){
+    if(!w?.start||w.start<cutoff||seen.has(w.start))continue;
+    const date=w.start.slice(0,10),cat=mapAppleWorkout(w.type),title=workoutTitle(w.type);
+    if(tasks.some(t=>t.fromAppleHealth&&t.date===date&&t.category===cat&&t.title===title))continue;
+    const notes=[w.duration&&`${Math.round(w.duration)}min`,w.calories&&`${Math.round(w.calories)} kcal`,
+      w.avgHR&&`${Math.round(w.avgHR)}bpm avg`,w.distance&&`${(+w.distance).toFixed(1)}km`].filter(Boolean);
+    out.push({id:uid(),date,time:w.start.slice(11,16),title,category:cat,
+      notes:notes.join(" · ")+(notes.length?" [Apple Health]":"[Apple Health]"),
+      completed:true,completedAt:Date.parse(w.end||w.start)||Date.now(),createdAt:Date.now(),
+      fromAppleHealth:true,hkStart:w.start});
+    seen.add(w.start);
+  }
+  return out;
 }
 
 // ── Whole-food fuel plans per workout category ────────────────
@@ -3831,7 +3979,7 @@ function NutritionView({foodLogs,macroTargets,onUpsertFoodLog,tasks,settings,onU
         ...S.card,padding:"12px 14px",display:"flex",alignItems:"center",gap:10,
       }}>
         <div style=${{flex:1,minWidth:0}}>
-          <div style=${{fontSize:14,fontWeight:800,color:T.text,letterSpacing:-0.2,marginBottom:3}}>${m.name}</div>
+          <div style=${{...TYPE.headline,fontSize:14,marginBottom:3}}>${m.name}</div>
           <div style=${{display:"flex",gap:10,fontSize:11,color:T.muted,flexWrap:"wrap"}}>
             <span style=${{color:T.accent,fontWeight:700}}>${m.cal} kcal</span>
             <span>P <span style=${{color:T.green,fontWeight:700}}>${m.protein}g</span></span>
@@ -3935,8 +4083,9 @@ function NutritionView({foodLogs,macroTargets,onUpsertFoodLog,tasks,settings,onU
   </div>`;
 }
 
-function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFoodLog,onUpdateSettings}){
+function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFoodLog,onUpdateSettings,workouts=[],lastWorkoutSync,onOpenWatchSetup}){
   const[healthTab,setHealthTab]=useState("health");
+  
   const today=todayISO();
   const log=healthLogs[today]||{};
   const[sleepModal,setSleepModal]=useState(false);
@@ -3965,35 +4114,47 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
     ${healthTab==="nutrition"?html`<${NutritionView} foodLogs=${foodLogs||{}} macroTargets=${settings?.macroTargets} onUpsertFoodLog=${onUpsertFoodLog} tasks=${tasks} settings=${settings} onUpdateSettings=${onUpdateSettings}/>`:null}
     ${healthTab==="health"?html`<div style=${{display:"contents"}}>
 
-    <!-- Apple Health sync card -->
+    <!-- Watch status chip -->
     ${(()=>{
-      const syncedAt=log.syncedAt;
-      const syncLabel=syncedAt?`Last synced: ${new Date(syncedAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})} today`:"Not synced yet";
-      const shortcutUrl=`${window.location.origin}/?hk=1&date=DATE&hrv=HRV&rhr=RHR&sleep=BED-WAKE&sq=QUALITY`;
-      return html`<div style=${{...S.card,marginBottom:10,padding:"14px 16px"}}>
-        <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-          <div>
-            <div style=${{fontSize:11,fontWeight:900,color:T.muted,letterSpacing:1}}>APPLE HEALTH SYNC</div>
-            <div style=${{fontSize:11,color:syncedAt?T.green:T.muted,fontWeight:600,marginTop:2}}>${syncLabel}</div>
-          </div>
-          <button onClick=${()=>{
-            const origin=window.location.origin;
-            const info=`TWO SHORTCUTS SETUP\n\n──────────────────────────\nSHORTCUT 1 — Morning Health\n──────────────────────────\nRuns each morning after Apple Watch syncs.\n\n1. Open Shortcuts → New Shortcut\n2. Add Health actions:\n   • Get HRV Average\n   • Get Resting Heart Rate\n   • Get Last Sleep Analysis\n3. Open URL:\n${origin}/?hk=1&date=DATE&hrv=HRV&rhr=RHR&sleep=BED-WAKE&sq=QUALITY\n\nReplace DATE/HRV/RHR/BED/WAKE/QUALITY with the Health variables.\n\n──────────────────────────────\nSHORTCUT 2 — Workout Auto-Log\n──────────────────────────────\nWorks with ALL apps (Strava, Garmin, Nike, Apple Fitness+) — they all write to Apple Health.\n\n1. Open Shortcuts → Automation\n2. New Automation → "When Workout ends"\n3. Add action: Get Last Workout (from Health)\n4. Open URL:\n${origin}/?hk=1&date=DATE&wt=TYPE&wd=DURATION&wcal=CALORIES&whr=AVG_HR&wdist=DISTANCE_KM\n\nReplace with workout variables.\nwt = workout type (running, cycling, strength, swimming, football, pilates, yoga, basketball, hiking…)\n\nBoth can be combined in one URL for full sync.`;
-            alert(info);
-          }} style=${{
-            fontSize:11,fontWeight:800,padding:"7px 12px",borderRadius:9,cursor:"pointer",fontFamily:"inherit",
-            background:T.accentGlow,border:`1px solid ${T.accentBorder}`,color:T.accent,
-          }}>Setup Guide</button>
-        </div>
-        <div style=${{fontSize:10,color:T.muted,lineHeight:1.55}}>Two iOS Shortcuts: one for morning health data (HRV, HR, sleep), one for workouts. Workouts from any app — Strava, Garmin, Nike, Apple Fitness+ — auto-log as completed tasks and update strain.</div>
-      </div>`;
+      const fresh=lastWorkoutSync&&Date.now()-lastWorkoutSync<864e5;
+      return html`<button className="sk-press" onClick=${onOpenWatchSetup} style=${{
+        display:"inline-flex",alignItems:"center",gap:7,marginBottom:12,
+        padding:"7px 14px",borderRadius:999,fontFamily:"inherit",cursor:"pointer",
+        background:fresh?"rgba(52,211,153,0.08)":"rgba(255,255,255,0.04)",
+        border:fresh?"1px solid rgba(52,211,153,0.25)":"1px solid rgba(255,255,255,0.08)",
+        fontSize:11,fontWeight:700,color:fresh?T.green:T.muted,
+      }}>
+        <span style=${{width:6,height:6,borderRadius:99,background:fresh?T.green:T.muted,flexShrink:0}}/>
+        ⌚ ${fresh?`Watch · synced ${new Date(lastWorkoutSync).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}`:"Watch · tap to set up"}
+      </button>`;
     })()}
+
+
+    <!-- Recent Watch workouts -->
+    ${workouts.length>0?(()=>{
+      const cutoff=new Date(Date.now()-7*864e5).toISOString();
+      const recent=workouts.filter(w=>w.start>=cutoff).slice(0,7);
+      if(!recent.length)return"";
+      return html`<div style=${{marginBottom:14}}>
+        <div style=${{...S.section,marginBottom:8}}>FROM YOUR WATCH · 7 DAYS</div>
+        <${RowGroup}>
+          ${recent.map((w,i)=>{
+            const cat=mapAppleWorkout(w.type);
+            const sub=[w.duration&&`${Math.round(w.duration)} min`,w.calories&&`${Math.round(w.calories)} kcal`,w.avgHR&&`${Math.round(w.avgHR)} bpm`].filter(Boolean).join(" · ");
+            return html`<${Row} key=${w.start} first=${i===0}
+              icon=${CATS[cat]?.icon||"◇"} iconColor=${CATS[cat]?.color}
+              title=${workoutTitle(w.type)} sub=${sub}
+              right=${new Date(w.start).toLocaleDateString("en-GB",{weekday:"short"})}/>`;
+          })}
+        <//>
+      </div>`;
+    })():""}
 
     <!-- 3 metric rings -->
     <div style=${{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
       <div className="sk-card" style=${{...S.card,background:`rgba(${rCol==="green"?"16,185,129":rCol==="amber"?"245,158,11":"239,68,68"},0.07)`,border:`1px solid ${rCol==="green"?T.greenBorder:rCol==="amber"?"rgba(245,158,11,0.28)":T.redBorder}`,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.3s ease"}}>
         <${Ring} pct=${recovery??0} size=${58} stroke=${3.5} color=${recoveryColor(recovery)}/>
-        <div style=${{fontWeight:900,fontSize:recovery!=null?22:16,color:recoveryColor(recovery),marginTop:6,lineHeight:1}}>${recovery!=null?recovery:"-"}</div>
+        <div style=${{fontWeight:900,fontSize:recovery!=null?22:16,color:recoveryColor(recovery),marginTop:6,lineHeight:1,...TYPE.num}}>${recovery!=null?recovery:"-"}</div>
         <div style=${{fontSize:9,color:T.muted,fontWeight:800,marginTop:3,letterSpacing:1.2}}>RECOVERY</div>
       </div>
       <div className="sk-card" style=${{...S.card,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.35s ease"}}>
@@ -4003,7 +4164,7 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
       </div>
       <div className="sk-card" style=${{...S.card,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.4s ease"}}>
         <${Ring} pct=${Math.min(100,strain/21*100)} size=${58} stroke=${3.5} color=${sCol}/>
-        <div style=${{fontWeight:900,fontSize:22,color:sCol,marginTop:6,lineHeight:1}}>${strain.toFixed(1)}</div>
+        <div style=${{fontWeight:900,fontSize:22,color:sCol,marginTop:6,lineHeight:1,...TYPE.num}}>${strain.toFixed(1)}</div>
         <div style=${{fontSize:9,color:T.muted,fontWeight:800,marginTop:3,letterSpacing:1.2}}>STRAIN</div>
       </div>
     </div>
@@ -4011,7 +4172,7 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
     <!-- Sleep card -->
     <div className="sk-card" style=${{...S.card,marginBottom:10,animation:"fadeUp 0.3s ease"}}>
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:log.sleep?12:0}}>
-        <div style=${{fontWeight:800,fontSize:13,letterSpacing:0.2}}>Sleep</div>
+        <div style=${TYPE.headline}>Sleep</div>
         <button onClick=${()=>setSleepModal(true)} style=${{background:T.accentGlow,border:`1px solid ${T.accentBorder}`,borderRadius:9,padding:"5px 13px",color:T.accent,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>${log.sleep?"Edit":"Log"}</button>
       </div>
       ${log.sleep?html`<div style=${{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
@@ -4026,7 +4187,7 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
     <!-- Wellness card -->
     <div className="sk-card" style=${{...S.card,marginBottom:10,animation:"fadeUp 0.35s ease"}}>
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:(log.hrv||log.energy)?12:0}}>
-        <div style=${{fontWeight:800,fontSize:13,letterSpacing:0.2}}>Wellness</div>
+        <div style=${TYPE.headline}>Wellness</div>
         <button onClick=${()=>setWellnessModal(true)} style=${{background:T.greenGlow,border:`1px solid ${T.greenBorder}`,borderRadius:9,padding:"5px 13px",color:T.green,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>${(log.hrv||log.energy)?"Edit":"Check-in"}</button>
       </div>
       ${(log.hrv||log.energy)?html`<div style=${{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5}}>
@@ -4044,7 +4205,7 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
 
     <!-- Strain breakdown -->
     <div className="sk-card" style=${{...S.card,marginBottom:10,animation:"fadeUp 0.4s ease"}}>
-      <div style=${{fontWeight:800,fontSize:13,marginBottom:12,letterSpacing:0.2}}>Today's Strain</div>
+      <div style=${{...TYPE.headline,marginBottom:12}}>Today's Strain</div>
       ${tasks.filter(t=>t.date===today&&t.category!=="work").length===0
         ?html`<div style=${{color:T.muted,fontSize:12,textAlign:"center",padding:"8px 0"}}>No activities today.</div>`
         :html`<div style=${{display:"flex",flexDirection:"column",gap:8}}>
@@ -4071,7 +4232,7 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
 
     <!-- 7-day trend -->
     <div className="sk-card" style=${{...S.card,animation:"fadeUp 0.45s ease"}}>
-      <div style=${{fontWeight:800,fontSize:13,marginBottom:12,letterSpacing:0.2}}>7-Day Trend</div>
+      <div style=${{...TYPE.headline,marginBottom:12}}>7-Day Trend</div>
       <div style=${{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
         ${last7.map(date=>{
           const dl=healthLogs[date]||{};
@@ -4201,7 +4362,7 @@ function PlanWizardModal({onSave,onClose}){
           transition:"all 0.15s",textAlign:"left",
         }}>
           <div>
-            <div style=${{fontWeight:800,fontSize:14,color:T.text}}>${p.name}</div>
+            <div style=${{...TYPE.headline,fontSize:14}}>${p.name}</div>
             <div style=${{fontSize:12,color:T.muted,marginTop:2}}>${p.desc}</div>
           </div>
           <div style=${{fontSize:12,color:T.muted,textAlign:"right",flexShrink:0}}>
@@ -4277,14 +4438,14 @@ function PlansSection({trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
 
   return html`<div>
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-      <div style=${{fontSize:11,fontWeight:900,color:T.muted,letterSpacing:1.4}}>RUNNING PLANS</div>
+      <div style=${{...S.section,marginBottom:0}}>RUNNING PLANS</div>
       <${Btn} onClick=${()=>setWizardOpen(true)} variant="primary" style=${{fontSize:12,padding:"6px 14px"}}>+ New Plan<//>
     </div>
 
     ${(trainingPlans||[]).length===0?html`
       <div className="sk-card" style=${{...S.card,textAlign:"center",padding:24,marginBottom:12,background:T.accentGlow,border:`1px dashed ${T.accentBorder}`}}>
         <div style=${{fontSize:20,marginBottom:8,color:T.accent,fontWeight:900}}>▷</div>
-        <div style=${{fontWeight:800,fontSize:14,color:T.text}}>No active plan</div>
+        <div style=${{...TYPE.headline,fontSize:14}}>No active plan</div>
         <div style=${{fontSize:12,color:T.muted,marginTop:4}}>Start a progressive running plan — each week adds ${5}min</div>
       </div>
     `:""}
@@ -4351,15 +4512,14 @@ function PlansSection({trainingPlans,tasks,onUpsertPlan,onDeletePlan}){
 }
 
 // ── App ───────────────────────────────────────────────────────
-function MorningReadiness({onDone}){
+function MorningReadiness({onDone,onClose}){
   const [sleep,setSleep]=useState(0);
   const [legs,setLegs]=useState(null);
   const confirm=()=>{if(sleep&&legs)onDone({sleep,legs});};
   const stars=[1,2,3,4,5];
   const legOpts=[{v:"fresh",label:"Fresh 🟢"},{v:"ok",label:"OK 🟡"},{v:"heavy",label:"Heavy 🔴"}];
-  return html`<div style=${{position:"fixed",inset:0,background:"rgba(6,10,13,0.85)",zIndex:300,display:"grid",placeItems:"center",backdropFilter:"blur(8px)"}}>
-    <div style=${{...S.card,maxWidth:320,width:"90%",textAlign:"center",animation:"fadeUp 0.4s ease",padding:"28px 24px"}}>
-      <div style=${{fontSize:11,fontWeight:800,color:T.accent,letterSpacing:2,marginBottom:16}}>MORNING CHECK-IN</div>
+  return html`<${BottomSheet} onClose=${onClose} title="Morning check-in">
+    <div style=${{textAlign:"center"}}>
       <div style=${{fontSize:14,fontWeight:700,color:T.text,marginBottom:10}}>How did you sleep? 😴</div>
       <div style=${{display:"flex",gap:8,justifyContent:"center",marginBottom:20}}>
         ${stars.map(n=>html`<button key=${n} onClick=${()=>setSleep(n)} style=${{
@@ -4378,7 +4538,7 @@ function MorningReadiness({onDone}){
       </div>
       <${Btn} onClick=${confirm} variant="primary" disabled=${!sleep||!legs} style=${{width:"100%"}}>Start the day →</Btn>
     </div>
-  </div>`;
+  <//>`;
 }
 
 function useSwipeNav(onLeft,onRight){
@@ -4399,6 +4559,20 @@ function useSwipeNav(onLeft,onRight){
   return ref;
 }
 
+function useCollapsingHeader(threshold=72){
+  const[collapsed,setCollapsed]=useState(false);
+  useEffect(()=>{
+    let ticking=false;
+    const on=()=>{
+      if(!ticking){ticking=true;
+        requestAnimationFrame(()=>{setCollapsed(window.scrollY>threshold);ticking=false;});}
+    };
+    window.addEventListener("scroll",on,{passive:true});
+    return()=>window.removeEventListener("scroll",on);
+  },[threshold]);
+  return collapsed;
+}
+
 function App(){
   const [state,setState]=useState(null); const [ready,setReady]=useState(false);
   const [view,setView]=useState("today");
@@ -4409,6 +4583,7 @@ function App(){
   const [syncStatus,setSyncStatus]=useState(null);
   const [readiness,setReadiness]=useState(null);
   const [showCheckin,setShowCheckin]=useState(false);
+  const [watchSheet,setWatchSheet]=useState(false);
   const toastReady=useCallback(fn=>{ _toast.fn=fn; },[]);
   const xpToastReady=useCallback(fn=>{ _xpToast.fn=fn; });
 
@@ -4453,7 +4628,7 @@ function App(){
           // Workout auto-logging: ?hk=1&wt=running&wd=45&wcal=480&whr=158&wdist=7.2&wname=Morning+Run
           if(sp.get("wt")){
             const wType=sp.get("wt");
-            const wName=sp.get("wname")||(wType.charAt(0).toUpperCase()+wType.slice(1).replace(/[_-]/g," "));
+            const wName=sp.get("wname")||workoutTitle(wType);
             const wDur=sp.get("wd")?Number(sp.get("wd")):null;
             const wCal=sp.get("wcal")?Number(sp.get("wcal")):null;
             const wHR=sp.get("whr")?Number(sp.get("whr")):null;
@@ -4466,6 +4641,7 @@ function App(){
                 id:uid(),date:hkDate,time:"",title:wName,category:wCat,
                 notes:noteParts.join(" · ")+(noteParts.length?" [Apple Health]":"[Apple Health]"),
                 completed:true,completedAt:Date.now(),createdAt:Date.now(),fromAppleHealth:true,
+                hkStart:sp.get("wstart")||null,
               }];
               setTimeout(()=>showToast(`${wName} logged from Apple Health`),600);
             }
@@ -4495,6 +4671,26 @@ function App(){
   },[]);
 
   useEffect(()=>{ if(ready&&state) saveState(state); },[state,ready]);
+
+  // Auto-pull Watch workouts from server (widget pushes them every ~15min)
+  const pullWorkouts=useCallback(()=>{
+    fetch(WORKOUT_URL).then(r=>r.json()).then(ws=>{
+      if(!Array.isArray(ws)||!ws.length)return;
+      setState(s=>{
+        if(!s)return s;
+        const add=ingestWorkouts(s.tasks||[],ws);
+        if(add.length)setTimeout(()=>showToast(`⌚ ${add.length} workout${add.length>1?"s":""} synced from Watch`),400);
+        return{...s,tasks:add.length?[...s.tasks,...add]:s.tasks,lastWorkoutSync:Date.now(),workouts:ws};
+      });
+    }).catch(()=>{});
+  },[]);
+  useEffect(()=>{
+    if(!ready)return;
+    pullWorkouts();
+    const onVis=()=>{if(document.visibilityState==="visible")pullWorkouts();};
+    document.addEventListener("visibilitychange",onVis);
+    return()=>document.removeEventListener("visibilitychange",onVis);
+  },[ready,pullWorkouts]);
 
   // Milestone XP awards for retention streak
   useEffect(()=>{
@@ -4594,6 +4790,7 @@ function App(){
     if(i>0)navigateTo(NAV_ORDER[i-1]);
   },[view,navigateTo]);
   const swipeRef=useSwipeNav(goNext,goPrev);
+  const headerCollapsed=useCollapsingHeader(72);
   const [pillStyle,setPillStyle]=useState({});
   const navRef=useRef();
   useEffect(()=>{
@@ -4677,10 +4874,21 @@ function App(){
               <g transform="translate(7,19.5) scale(0.42)"><path d=${PALM} fill="#fbbf24"/></g>
             </svg>
           </div>
-          <div>
-            <div style=${{fontWeight:800,fontSize:15,color:T.text,letterSpacing:-0.5,lineHeight:1.1}}>Feliz Dias</div>
-            <div style=${{fontSize:9,color:T.muted,fontWeight:700,marginTop:2,letterSpacing:0.8,textTransform:"uppercase"}}>
-              ${wDone}<span style=${{color:"rgba(245,158,11,0.5)"}}>/${wTotal}</span> this week
+          <div style=${{position:"relative",minWidth:120}}>
+            <div style=${{transition:"opacity 0.25s var(--ease-out),transform 0.25s var(--ease-out)",
+              opacity:headerCollapsed&&view==="today"?0:1,
+              transform:headerCollapsed&&view==="today"?"translateY(-4px)":"none"}}>
+              <div style=${{fontWeight:800,fontSize:15,color:T.text,letterSpacing:-0.5,lineHeight:1.1}}>Feliz Dias</div>
+              <div style=${{fontSize:9,color:T.muted,fontWeight:700,marginTop:2,letterSpacing:0.8,textTransform:"uppercase"}}>
+                ${wDone}<span style=${{color:"rgba(245,158,11,0.5)"}}>/${wTotal}</span> this week
+              </div>
+            </div>
+            <div style=${{position:"absolute",inset:0,display:"flex",flexDirection:"column",justifyContent:"center",pointerEvents:"none",
+              transition:"opacity 0.25s var(--ease-out),transform 0.25s var(--ease-out)",
+              opacity:headerCollapsed&&view==="today"?1:0,
+              transform:headerCollapsed&&view==="today"?"none":"translateY(4px)"}}>
+              <div style=${{fontWeight:800,fontSize:13,color:T.text,letterSpacing:-0.2,lineHeight:1.1,whiteSpace:"nowrap"}}>${GREETINGS[dayPhase()]}</div>
+              <div style=${{fontSize:9,color:T.muted,fontWeight:700,marginTop:2,letterSpacing:0.8,textTransform:"uppercase",whiteSpace:"nowrap"}}>${fmtDayLong(todayISO())}</div>
             </div>
           </div>
         </div>
@@ -4699,14 +4907,14 @@ function App(){
         </div>
       </header>
 
-      <div key=${view} ref=${swipeRef} style=${{animation:`slide${slideDir==="right"?"InRight":"InLeft"} 0.22s cubic-bezier(0.22,1,0.36,1) both`}}>
+      <div key=${view} ref=${swipeRef} style=${{animation:`slide${slideDir==="right"?"InRight":"InLeft"} 0.22s var(--ease-out) both`}}>
         ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)} retentionDays=${retentionDays(state?.retentionStartDate)}/>`:""}
         ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
         ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})} retentionStartDate=${state?.retentionStartDate||null} onStartRetention=${startRetention} onResetRetention=${resetRetention}/>`:""}
-        ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog} onUpdateSettings=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}/>`:""}
+        ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog} onUpdateSettings=${changes=>mut(s=>({settings:{...s.settings,...changes}}))} workouts=${state.workouts||[]} lastWorkoutSync=${state.lastWorkoutSync} onOpenWatchSetup=${()=>setWatchSheet(true)}/>`:""}
         ${view==="journal"?html`<${JournalView} tasks=${state.tasks} notes=${state.notes||{}} onUpsertNote=${upsertNote} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} onBulkEditTasks=${bulkEditTasks}/>`:""}
         ${view==="body"?html`<${BodyView} bodyMap=${state.healthLogs?.[todayISO()]?.bodyMap||{}} onUpdateBodyMap=${zones=>upsertHealthLog(todayISO(),{bodyMap:{zones}})}/>`:""}
-        ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus}
+        ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus} lastWorkoutSync=${state.lastWorkoutSync} onOpenWatchSetup=${()=>setWatchSheet(true)}
           trainingPlans=${state.trainingPlans||[]} tasks=${state.tasks}
           onUpsertPlan=${upsertPlan} onDeletePlan=${deletePlan}
           onUpdate=${changes=>mut(s=>({settings:{...s.settings,...changes}}))}
@@ -4732,7 +4940,7 @@ function App(){
           background:"linear-gradient(145deg,rgba(245,158,11,0.16),rgba(245,158,11,0.08))",
           border:"1px solid rgba(245,158,11,0.28)",
           boxShadow:"0 0 16px rgba(245,158,11,0.12)",
-          transition:"left 0.28s cubic-bezier(0.34,1.2,0.64,1),width 0.28s cubic-bezier(0.34,1.2,0.64,1)",
+          transition:"left 0.28s var(--spring),width 0.28s var(--spring)",
           pointerEvents:"none",
           zIndex:0,
         }}/>
@@ -4755,6 +4963,7 @@ function App(){
       </nav>
     </div>
 
+    ${watchSheet?html`<${WatchSetupSheet} onClose=${()=>setWatchSheet(false)}/>`:""}
     ${taskModal?html`<${TaskModal} task=${taskModal.task} initialDate=${taskModal.date}
       onSave=${t=>{upsertTask(t);setTaskModal(null);showToast(taskModal.task?"Updated":"Added");}}
       onDelete=${id=>{deleteTask(id);setTaskModal(null);showToast("Deleted");}}
@@ -4777,7 +4986,7 @@ function App(){
       if(r.sleep<=2||r.legs==="heavy"){
         showToast("Recovery mode — Coach has adjusted today's plan");
       }
-    }}/>`:""}
+    }} onClose=${()=>setShowCheckin(false)}/>`:""}
   </div>`;
 }
 
