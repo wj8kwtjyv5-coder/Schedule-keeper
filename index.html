@@ -3004,13 +3004,13 @@ function WatchSetupSheet({onClose}){
       <div style=${{fontSize:11,fontWeight:700,color:T.green,marginBottom:12}}>✓ Recommended — also gives you the lock-screen widget and Watch complication</div>
       <${Step} n="1">Get <b>Scriptable</b> from the App Store (free).<//>
       <${Step} n="2">
-        <a href=${`scriptable:///add-script?name=ScheduleKeeper&url=https://raw.githubusercontent.com/wj8kwtjyv5-coder/schedule-keeper/main/widget.js`} style=${{
+        <a href="/api/scriptable" download="ScheduleKeeper.scriptable" style=${{
           display:"inline-flex",alignItems:"center",gap:6,padding:"10px 18px",borderRadius:12,
           fontSize:13,fontWeight:800,textDecoration:"none",
           background:"linear-gradient(135deg,rgba(245,158,11,0.18),rgba(245,158,11,0.08))",
           border:"1px solid rgba(245,158,11,0.35)",color:T.accent,
-        }}>Open in Scriptable →</a>
-        <div style=${{marginTop:6}}>The script imports itself — just tap save.</div>
+        }}>⬇ Get the widget →</a>
+        <div style=${{marginTop:6}}>Tap the downloaded file → <b>Open in Scriptable</b> → <b>Add to My Scripts</b>. That's it.</div>
       <//>
       <${Step} n="3">Add the Scriptable widget to your lock screen and set its parameter to this app's URL. <b>Done — workouts sync themselves every 15 minutes.</b><//>
     `:html`

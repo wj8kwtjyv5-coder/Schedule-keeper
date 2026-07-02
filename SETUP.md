@@ -15,7 +15,7 @@ Three steps. Everything after them is automatic.
 Open the app → **More** tab → **Apple Watch** card → **Set up**.
 Pick a path in the guided sheet:
 
-- **Widget sync (recommended)** — install the free Scriptable app, tap "Open in Scriptable" (the script imports itself), add the widget. Your Watch workouts upload every ~15 minutes and the app pulls them in automatically whenever you open it. You also get a lock-screen widget and Watch complication.
+- **Widget sync (recommended)** — install the free Scriptable app, tap **Get the widget** (downloads a tiny `.scriptable` file), open it and tap **Add to My Scripts**, then add the widget. Your Watch workouts upload every ~15 minutes and the app pulls them in automatically whenever you open it. You also get a lock-screen widget and Watch complication.
 - **No extra apps** — one iOS Shortcuts automation ("When any Workout ends" → one *Get Contents of URL* action, URL copied from the app). Runs silently in the background after every workout.
 
 Either way: workouts from **any** app that writes to Apple Health (Strava, Garmin, Nike Run Club, Apple Fitness+) appear as completed sessions with duration, calories and heart rate — no taps, ever.
