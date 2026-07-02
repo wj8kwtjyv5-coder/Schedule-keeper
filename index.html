@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <title>Feliz Dias</title>
-<meta name="theme-color" content="#09070a"/>
+<meta name="theme-color" content="#060a0d"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="FD"/>
@@ -21,13 +21,13 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{
   height:100%;margin:0;
-  background:#09070a;
+  background:#060a0d;
   color:#F1F5F9;
   font-family:ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif;
 }
 input,textarea,select,button{font-family:inherit}
 ::-webkit-scrollbar{width:3px;height:3px}
-::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(245,158,11,0.40),rgba(52,211,153,0.25));border-radius:99px}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(245,158,11,0.40),rgba(45,212,191,0.28));border-radius:99px}
 ::-webkit-scrollbar-track{background:transparent}
 input[type=date]::-webkit-calendar-picker-indicator,
 input[type=time]::-webkit-calendar-picker-indicator{filter:invert(0.5)}
@@ -44,6 +44,22 @@ textarea::placeholder,input::placeholder{color:rgba(241,245,249,0.16)}
 @keyframes slideInRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
 @keyframes slideInLeft{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:none}}
 @keyframes confettiFly{to{transform:translate(var(--dx),var(--dy)) scale(0);opacity:0}}
+@keyframes palmSway{0%,100%{transform:rotate(-1.6deg)}50%{transform:rotate(1.6deg)}}
+@keyframes waveDrift{from{transform:translateX(0)}to{transform:translateX(-360px)}}
+@keyframes sunPulse{0%,100%{opacity:0.55;transform:scale(1)}50%{opacity:0.85;transform:scale(1.06)}}
+@keyframes cloudDrift{from{transform:translateX(-60px)}to{transform:translateX(420px)}}
+@keyframes starTwinkle{0%,100%{opacity:0.2}50%{opacity:0.9}}
+@keyframes birdGlide{0%{transform:translate(-30px,6px);opacity:0}10%{opacity:0.7}80%{opacity:0.7}100%{transform:translate(400px,-10px);opacity:0}}
+@keyframes shimmerPulse{0%,100%{opacity:0.5;transform:scaleX(0.9)}50%{opacity:1;transform:scaleX(1)}}
+.fd-palm{animation:palmSway 7s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+.fd-wave{animation:waveDrift 13s linear infinite;will-change:transform}
+.fd-wave.slow{animation-duration:21s;animation-delay:-6s}
+.fd-cloud{animation:cloudDrift 60s linear infinite}
+.fd-star{animation:starTwinkle 4s ease-in-out infinite}
+.fd-bird{animation:birdGlide 26s linear infinite}
+.fd-sun{animation:sunPulse 8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.fd-shimmer{animation:shimmerPulse 6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@media (prefers-reduced-motion:reduce){.fd-palm,.fd-wave,.fd-cloud,.fd-star,.fd-bird,.fd-sun,.fd-shimmer,.fd-orb{animation:none!important}}
 button{transition:transform 0.14s cubic-bezier(0.34,1.56,0.64,1),opacity 0.14s,background 0.18s,border-color 0.18s,box-shadow 0.18s}
 button:active{transform:scale(0.93)!important}
 button:hover{opacity:0.88}
@@ -63,9 +79,24 @@ import { html } from 'htm/preact';
 const haptic=p=>{try{navigator.vibrate(p);}catch{}};
 const stagger=(i,base=0)=>({animation:`fadeUp 0.28s cubic-bezier(0.22,1,0.36,1) ${base+i*35}ms both`});
 
-// ── Design tokens — Ember & Earth ────────────────────────────
+// ── Island Dusk — time-of-day scenery system ─────────────────
+const dayPhase=(h=new Date().getHours())=>h>=5&&h<8?"dawn":h>=8&&h<17?"day":h>=17&&h<20?"sunset":"night";
+const GREETINGS={dawn:"Buenos días",day:"Buenos días",sunset:"Buenas tardes",night:"Buenas noches"};
+const SCENES={ // sky: 5 gradient stops top→horizon
+  dawn:  {sky:["#141d33","#1e2b4a","#5b4a6e","#c2703f","#f5b06a"], sun:{cx:120,cy:74,r:6,color:"#ffd9a0",glow:"rgba(255,200,120,0.5)"}, water:["#1b3d4d","#0c2530"], far:"#26364f", isle:"#0e1a24", palm:"#060f16", stars:false, clouds:0.10},
+  day:   {sky:["#123a52","#1c4966","#2b7a8c","#3ba8a0","#8fdac6"], sun:{cx:270,cy:26,r:7,color:"#fff3d6",glow:"rgba(255,240,200,0.45)"}, water:["#0f4a52","#093039"], far:"#1d4a58", isle:"#0c2531", palm:"#051219", stars:false, clouds:0.13},
+  sunset:{sky:["#1b0e2e","#2b1740","#6e2a4f","#c2503f","#f59e0b"], sun:{cx:196,cy:78,r:8,color:"#ffce7a",glow:"rgba(245,158,11,0.55)"}, water:["#20293f","#0c1422"], far:"#241a33", isle:"#110b1b", palm:"#070410", stars:false, clouds:0.08},
+  night: {sky:["#02060c","#040911","#081527","#0c2233","#143844"], sun:{cx:270,cy:28,r:5.5,color:"#e8f1f5",glow:"rgba(200,225,240,0.32)"}, water:["#0a1e2a","#040c13"], far:"#0a1722", isle:"#050d14", palm:"#02070c", stars:true, clouds:0.05},
+};
+// Palm silhouette: trunk base at local (0,0), canopy at (14,-26). Scale/mirror at use site.
+const PALM="M0 0 q4 -14 12 -27 l2.6 1.2 q-7 13 -9 26 z M14 -26 q-14 -6 -24 1 q11 -3 22 1 z M14 -26 q-13 -12 -25 -10 q12 1 22 7 z M14 -26 q2 -15 12 -19 q-6 10 -8 20 z M14 -26 q14 -10 25 -7 q-12 2 -22 9 z M14 -26 q15 -3 22 6 q-11 -5 -21 -2 z";
+// Wave: 720 wide = 2×360 tiles so translateX(-360px) loops seamlessly
+const WAVE="M0 8 Q22 2 45 8 T90 8 T135 8 T180 8 T225 8 T270 8 T315 8 T360 8 T405 8 T450 8 T495 8 T540 8 T585 8 T630 8 T675 8 T720 8 V24 H0 Z";
+const BIRD="M0 0 q3 -3.5 6 0 q3 -3.5 6 0";
+
+// ── Design tokens — Island Dusk ──────────────────────────────
 const T = {
-  bg:           "#09070a",
+  bg:           "#060a0d",
   surface:      "rgba(255,255,255,0.032)",
   surfaceHigh:  "rgba(255,255,255,0.062)",
   surfaceMid:   "rgba(255,255,255,0.047)",
@@ -87,6 +118,12 @@ const T = {
   green:        "#34d399",
   greenGlow:    "rgba(52,211,153,0.10)",
   greenBorder:  "rgba(52,211,153,0.28)",
+  // Island Dusk — ocean teal
+  teal:         "#2dd4bf",
+  tealDeep:     "#0d9488",
+  lagoon:       "#14b8a6",
+  tealGlow:     "rgba(45,212,191,0.10)",
+  tealBorder:   "rgba(45,212,191,0.28)",
   // Strain / alert
   amber:        "#fbbf24",
   amberGlow:    "rgba(251,191,36,0.10)",
@@ -98,8 +135,8 @@ const T = {
   shadow:       "0 2px 4px rgba(0,0,0,0.5),0 12px 40px rgba(0,0,0,0.4)",
   shadowDeep:   "0 4px 6px rgba(0,0,0,0.5),0 20px 60px rgba(0,0,0,0.5),0 0 0 1px rgba(255,255,255,0.04) inset",
   // Glass
-  glass:        "rgba(9,7,10,0.75)",
-  glassStrong:  "rgba(9,7,10,0.88)",
+  glass:        "rgba(6,10,13,0.75)",
+  glassStrong:  "rgba(6,10,13,0.88)",
 };
 // Premium symbol icons — no system emoji in UI chrome
 const ICONS = {
@@ -893,6 +930,134 @@ function Ring({pct=0,size=48,stroke=3,color=T.accent,glow=false}){
   </svg>`;
 }
 
+// ── IslandScene — animated tropical scenery (time-of-day aware) ──
+function IslandScene({phase,height=140,mini=false,uid="a",style={}}){
+  const[ph,setPh]=useState(phase||dayPhase());
+  const[flight,setFlight]=useState(false);
+  useEffect(()=>{
+    if(phase)return;
+    const t=setInterval(()=>setPh(dayPhase()),60000);
+    return()=>clearInterval(t);
+  },[phase]);
+  const c=SCENES[ph];
+  const skyStops=[0,30,55,78,100];
+  const releaseBird=()=>{
+    if(mini||flight)return;
+    haptic(15);
+    setFlight(true);
+    setTimeout(()=>setFlight(false),7200);
+  };
+  return html`<svg viewBox="0 0 360 140" preserveAspectRatio="xMidYMax slice" aria-hidden="true"
+    width="100%" height=${height} style=${{display:"block",shapeRendering:"geometricPrecision",...style}}
+    onClick=${releaseBird}>
+    <defs>
+      <linearGradient id=${`sky-${uid}`} x1="0" y1="0" x2="0" y2="0.62">
+        ${c.sky.map((col,i)=>html`<stop key=${i} offset=${skyStops[i]+"%"} stop-color=${col}/>`)}
+      </linearGradient>
+      <linearGradient id=${`sea-${uid}`} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color=${c.water[0]}/>
+        <stop offset="100%" stop-color=${c.water[1]}/>
+      </linearGradient>
+      <radialGradient id=${`halo-${uid}`}>
+        <stop offset="0%" stop-color=${c.sun.glow}/>
+        <stop offset="70%" stop-color="rgba(0,0,0,0)"/>
+      </radialGradient>
+    </defs>
+    <rect width="360" height="140" fill=${`url(#sky-${uid})`}/>
+    <!-- sun / moon -->
+    <g transform=${`translate(${c.sun.cx},${c.sun.cy})`}>
+      <g class="fd-sun">
+        <circle r="26" fill=${`url(#halo-${uid})`}/>
+        <circle r=${c.sun.r} fill=${c.sun.color}/>
+        ${ph==="night"?html`<circle cx=${-c.sun.r*0.3} cy=${-c.sun.r*0.25} r=${c.sun.r*0.32} fill="rgba(120,150,170,0.35)"/>`:""}
+      </g>
+    </g>
+    ${c.stars&&!mini?html`
+      <circle class="fd-star" cx="40" cy="18" r="1" fill="rgba(232,241,245,0.9)"/>
+      <circle class="fd-star" cx="95" cy="34" r="1" fill="rgba(232,241,245,0.9)" style=${{animationDelay:"0.8s"}}/>
+      <circle class="fd-star" cx="150" cy="14" r="1" fill="rgba(232,241,245,0.9)" style=${{animationDelay:"1.6s"}}/>
+      <circle class="fd-star" cx="205" cy="40" r="1" fill="rgba(232,241,245,0.9)" style=${{animationDelay:"2.4s"}}/>
+      <circle class="fd-star" cx="315" cy="20" r="1" fill="rgba(232,241,245,0.9)" style=${{animationDelay:"3.1s"}}/>
+      <circle class="fd-star" cx="255" cy="52" r="1" fill="rgba(232,241,245,0.9)" style=${{animationDelay:"3.7s"}}/>
+    `:""}
+    ${!mini?html`
+      <g transform="translate(0,24)"><g class="fd-cloud">
+        <path d="M0 6 q6 -8 16 -6 q5 -6 14 -3 q9 -2 12 5 q4 4 -3 6 H4 q-6 -2 -4 -8 z" fill=${`rgba(255,255,255,${c.clouds})`}/>
+      </g></g>
+      <g transform="translate(0,42)"><g class="fd-cloud" style=${{animationDuration:"85s",animationDelay:"-30s"}}>
+        <path d="M0 6 q6 -8 16 -6 q5 -6 14 -3 q9 -2 12 5 q4 4 -3 6 H4 q-6 -2 -4 -8 z" fill=${`rgba(255,255,255,${c.clouds*0.7})`} transform="scale(1.35)"/>
+      </g></g>
+    `:""}
+    <!-- distant island -->
+    <path d="M228 84 q10 -9 22 -7 q14 -4 26 3 q8 2 10 4 h-58 z" fill=${c.far} opacity="0.85"/>
+    ${!mini?html`
+      <g transform="translate(0,34)"><g class="fd-bird">
+        <path d=${BIRD} stroke=${c.far} stroke-width="1.2" fill="none" opacity="0.8"/>
+        <path d=${BIRD} stroke=${c.far} stroke-width="1.2" fill="none" opacity="0.8" transform="translate(10,-5) scale(0.7)"/>
+      </g></g>
+    `:""}
+    ${flight?html`
+      <g transform="translate(0,48)"><g class="fd-bird" style=${{animationDuration:"7s"}}>
+        <path d=${BIRD} stroke="rgba(255,255,255,0.85)" stroke-width="1.4" fill="none"/>
+      </g></g>
+    `:""}
+    <!-- sea -->
+    <rect y="84" width="360" height="56" fill=${`url(#sea-${uid})`}/>
+    <g transform="translate(0,82)"><g class="fd-wave">
+      <path d=${WAVE} fill="rgba(255,255,255,0.06)"/>
+    </g></g>
+    <g transform="translate(0,92)"><g class="fd-wave slow">
+      <path d=${WAVE} fill="rgba(45,212,191,0.09)"/>
+    </g></g>
+    ${!mini?html`
+      <g transform=${`translate(${c.sun.cx},96)`}>
+        <rect class="fd-shimmer" x="-20" y="0" width="40" height="2.4" rx="1.2" fill=${c.sun.color} opacity="0.16"/>
+        <rect class="fd-shimmer" x="-12" y="7" width="24" height="2.4" rx="1.2" fill=${c.sun.color} opacity="0.11" style=${{animationDelay:"1.4s"}}/>
+        <rect class="fd-shimmer" x="-6" y="14" width="12" height="2.4" rx="1.2" fill=${c.sun.color} opacity="0.07" style=${{animationDelay:"2.8s"}}/>
+      </g>
+    `:""}
+    <!-- foreground islets -->
+    <path d="M-6 140 V126 q40 -14 92 -8 q30 2 44 10 q10 6 12 12 z" fill=${c.isle}/>
+    <path d="M300 140 q14 -12 40 -12 q16 1 26 12 z" fill=${c.isle}/>
+    <!-- palms -->
+    <g transform="translate(52,124) scale(1.6)"><g class="fd-palm">
+      <path d=${PALM} fill=${c.palm} stroke=${c.palm} stroke-width="0.5" stroke-linejoin="round"/>
+    </g></g>
+    ${!mini?html`
+      <g transform="translate(320,128) scale(-1.3,1.3)"><g class="fd-palm" style=${{animationDuration:"9s",animationDelay:"-3s"}}>
+        <path d=${PALM} fill=${c.palm} stroke=${c.palm} stroke-width="0.5" stroke-linejoin="round"/>
+      </g></g>
+    `:""}
+  </svg>`;
+}
+
+// ── IslandGlyph — mini island mark for empty states ──────────
+function IslandGlyph({size=44}){
+  return html`<svg width=${size} height=${Math.round(size*40/48)} viewBox="0 0 48 40" aria-hidden="true">
+    <circle cx="36" cy="9" r="8" fill="rgba(245,158,11,0.12)"/>
+    <circle cx="36" cy="9" r="4" fill=${T.accent}/>
+    <path d="M6 36 q18 -12 36 0 z" fill="rgba(45,212,191,0.35)"/>
+    <path d="M2 36 H46" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+    <g transform="translate(16,35) scale(0.62)"><path d=${PALM} fill=${T.teal}/></g>
+  </svg>`;
+}
+
+// ── HorizonDivider — slim island flourish for section headers ──
+function HorizonDivider(){
+  return html`<svg width="100%" height="14" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true" style=${{display:"block",margin:"2px 0 10px"}}>
+    <line x1="0" y1="9" x2="360" y2="9" stroke="url(#fd-hz)" stroke-width="1"/>
+    <defs>
+      <linearGradient id="fd-hz" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="rgba(45,212,191,0)"/>
+        <stop offset="50%" stop-color="rgba(45,212,191,0.35)"/>
+        <stop offset="100%" stop-color="rgba(45,212,191,0)"/>
+      </linearGradient>
+    </defs>
+    <circle cx="223" cy="9" r="4.5" fill="rgba(245,158,11,0.15)"/>
+    <circle cx="223" cy="9" r="2.2" fill="#f59e0b"/>
+  </svg>`;
+}
+
 const S={
   card:{
     background:"linear-gradient(145deg,rgba(255,255,255,0.04) 0%,rgba(245,158,11,0.022) 50%,rgba(52,211,153,0.018) 100%)",
@@ -957,7 +1122,7 @@ function Toast({onReady}){
   useEffect(()=>{ onReady(m=>{setMsg(m);setVis(true);clearTimeout(t.current);t.current=setTimeout(()=>setVis(false),2600);}); },[]);
   if(!vis) return null;
   return html`<div style=${{position:"fixed",bottom:100,left:"50%",transform:"translateX(-50%)",
-    background:"rgba(9,7,10,0.95)",border:"1px solid rgba(245,158,11,0.22)",
+    background:"rgba(6,10,13,0.95)",border:"1px solid rgba(245,158,11,0.22)",
     borderRadius:16,padding:"11px 22px",zIndex:200,color:T.text,fontSize:13,
     fontWeight:700,maxWidth:320,textAlign:"center",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",
     boxShadow:"0 12px 48px rgba(0,0,0,0.6),0 0 0 1px rgba(245,158,11,0.06) inset",
@@ -1098,7 +1263,8 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
 
   if(!isOpen) return null;
   return html`<div style=${{position:"fixed",inset:0,zIndex:80,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick=${onClose}>
-    <div style=${{background:"rgba(9,7,10,0.98)",borderRadius:"22px 22px 0 0",border:"1px solid rgba(245,158,11,0.18)",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.8)"}} onClick=${e=>e.stopPropagation()}>
+    <div style=${{background:"rgba(6,10,13,0.98)",borderRadius:"22px 22px 0 0",border:"1px solid rgba(245,158,11,0.18)",display:"flex",flexDirection:"column",maxHeight:"90vh",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -24px 80px rgba(0,0,0,0.8)"}} onClick=${e=>e.stopPropagation()}>
+      <div style=${{height:1,background:"linear-gradient(90deg,transparent,rgba(45,212,191,0.3),transparent)",flexShrink:0}}/>
       <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px 10px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexShrink:0}}>
         <div style=${{display:"flex",alignItems:"center",gap:10}}>
           <div style=${{width:38,height:38,borderRadius:13,background:"linear-gradient(135deg,rgba(245,158,11,0.18),rgba(52,211,153,0.10))",border:"1px solid rgba(245,158,11,0.30)",display:"grid",placeItems:"center",fontSize:19}}>🤖</div>
@@ -1753,7 +1919,7 @@ function BodyView({bodyMap,onUpdateBodyMap}){
 
     <!-- Empty state -->
     ${markedZones.length===0?html`<div style=${{...S.card,padding:"24px",textAlign:"center",border:"1px dashed rgba(255,255,255,0.07)"}}>
-      <div style=${{fontSize:28,marginBottom:8}}>◍</div>
+      <div style=${{marginBottom:8,display:"grid",placeItems:"center"}}><${IslandGlyph} size=${40}/></div>
       <div style=${{fontWeight:700,fontSize:13,color:T.text,marginBottom:4}}>No areas marked</div>
       <div style=${{fontSize:11,color:T.muted}}>Tap any zone on the map above to mark pain, fatigue or tightness</div>
     </div>`:""}
@@ -2011,12 +2177,21 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
 
   const pctColor=pct>=80?T.green:pct>=50?T.accent:T.amber;
   return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
-    <${DailyQuote}/>
-    <${DailyPodcast}/>
-    <!-- hero card — WHOOP-style -->
-    <div className="sk-card" style=${{
-      background:"linear-gradient(145deg,rgba(245,158,11,0.09) 0%,rgba(180,100,0,0.05) 30%,rgba(52,211,153,0.05) 70%,rgba(56,189,248,0.03) 100%)",
-      border:"1px solid rgba(245,158,11,0.18)",borderRadius:22,padding:"22px 20px",marginBottom:16,
+    <!-- island scene crowning the hero -->
+    <div style=${{height:128,borderRadius:"22px 22px 0 0",overflow:"hidden",position:"relative",
+      border:"1px solid rgba(245,158,11,0.18)",borderBottom:"none"}}>
+      <${IslandScene} height=${128} uid="hero"/>
+      <div style=${{position:"absolute",inset:0,pointerEvents:"none",
+        background:"linear-gradient(180deg,transparent 50%,rgba(6,10,13,0.65) 100%)"}}/>
+      <div style=${{position:"absolute",left:18,bottom:12,pointerEvents:"none"}}>
+        <div style=${{fontSize:10,fontWeight:900,letterSpacing:2.6,textTransform:"uppercase",
+          color:"rgba(255,255,255,0.55)",textShadow:"0 1px 8px rgba(0,0,0,0.6)"}}>${GREETINGS[dayPhase()]}</div>
+      </div>
+    </div>
+    <!-- hero card — WHOOP-style (fused with island scene above; no hover-lift class) -->
+    <div style=${{
+      background:"linear-gradient(145deg,rgba(245,158,11,0.09) 0%,rgba(180,100,0,0.05) 30%,rgba(45,212,191,0.055) 70%,rgba(13,148,136,0.045) 100%)",
+      border:"1px solid rgba(245,158,11,0.18)",borderTop:"none",borderRadius:"0 0 22px 22px",padding:"22px 20px",marginBottom:16,
       backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",
       boxShadow:"0 1px 0 rgba(255,255,255,0.08) inset,0 12px 48px rgba(0,0,0,0.45),0 0 0 1px rgba(245,158,11,0.06) inset",
     }}>
@@ -2052,14 +2227,17 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
       </div>
     </div>
 
+    <${DailyQuote}/>
+    <${DailyPodcast}/>
+
     ${total===0?html`
       <div className="sk-card" onClick=${onOpenJournal} style=${{
         border:"1px dashed rgba(255,255,255,0.07)",borderRadius:16,padding:28,textAlign:"center",marginBottom:14,
         background:"rgba(255,255,255,0.02)",cursor:"pointer",backdropFilter:"blur(8px)",
       }}>
-        <div style=${{fontSize:22,marginBottom:8,color:T.accent,fontWeight:900}}>✦</div>
+        <div style=${{marginBottom:8,display:"grid",placeItems:"center"}}><${IslandGlyph} size=${46}/></div>
         <div style=${{fontWeight:700,fontSize:14,color:T.text}}>Nothing scheduled yet</div>
-        <div style=${{fontSize:12,color:T.muted,marginTop:4}}>Open journal to plan your day</div>
+        <div style=${{fontSize:12,color:T.muted,marginTop:4}}>A clear horizon — open the journal to plan your day</div>
       </div>`:""}
 
     ${total>0?html`
@@ -2386,7 +2564,8 @@ function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,onUpsertNo
   }
 
   return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
-    <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8,marginBottom:14}}>REVIEW</div>
+    <div style=${{fontSize:10,fontWeight:800,color:T.muted,letterSpacing:1.8,marginBottom:4}}>REVIEW</div>
+    <${HorizonDivider}/>
 
     <!-- Day strip -->
     <${DayStrip} tasks=${tasks} habits=${habits} habitLogs=${habitLogs} selectedDay=${selectedDay} onSelectDay=${setSelectedDay}/>
@@ -3770,6 +3949,7 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
   const rCol=recoveryColor(recovery);
   const sCol=strainColor(strain);
   return html`<div style=${{padding:"16px 14px 120px"}}>
+    <${HorizonDivider}/>
     <!-- Tab strip -->
     <div style=${{display:"flex",gap:6,marginBottom:18,padding:"4px",background:"rgba(255,255,255,0.03)",borderRadius:14,border:`1px solid ${T.border}`}}>
       ${[{id:"health",label:"Health ♦"},{id:"nutrition",label:"Nutrition ◈"}].map(tab=>html`
@@ -4177,7 +4357,7 @@ function MorningReadiness({onDone}){
   const confirm=()=>{if(sleep&&legs)onDone({sleep,legs});};
   const stars=[1,2,3,4,5];
   const legOpts=[{v:"fresh",label:"Fresh 🟢"},{v:"ok",label:"OK 🟡"},{v:"heavy",label:"Heavy 🔴"}];
-  return html`<div style=${{position:"fixed",inset:0,background:"rgba(9,7,10,0.85)",zIndex:300,display:"grid",placeItems:"center",backdropFilter:"blur(8px)"}}>
+  return html`<div style=${{position:"fixed",inset:0,background:"rgba(6,10,13,0.85)",zIndex:300,display:"grid",placeItems:"center",backdropFilter:"blur(8px)"}}>
     <div style=${{...S.card,maxWidth:320,width:"90%",textAlign:"center",animation:"fadeUp 0.4s ease",padding:"28px 24px"}}>
       <div style=${{fontSize:11,fontWeight:800,color:T.accent,letterSpacing:2,marginBottom:16}}>MORNING CHECK-IN</div>
       <div style=${{fontSize:14,fontWeight:700,color:T.text,marginBottom:10}}>How did you sleep? 😴</div>
@@ -4379,17 +4559,17 @@ function App(){
 
   if(!ready||!state) return html`<div style=${{
     height:"100vh",display:"grid",placeItems:"center",
-    background:"radial-gradient(ellipse 80% 70% at 30% 20%,rgba(245,158,11,0.10),transparent 60%),radial-gradient(ellipse 60% 60% at 80% 80%,rgba(52,211,153,0.08),transparent 60%),#09070a",
+    background:"radial-gradient(ellipse 80% 70% at 30% 20%,rgba(245,158,11,0.10),transparent 60%),radial-gradient(ellipse 60% 60% at 80% 80%,rgba(45,212,191,0.09),transparent 60%),#060a0d",
     color:T.muted}}>
     <div style=${{textAlign:"center",animation:"fadeUp 0.6s ease"}}>
       <div style=${{
-        width:56,height:56,borderRadius:18,margin:"0 auto 16px",
-        background:"linear-gradient(135deg,rgba(245,158,11,0.20),rgba(52,211,153,0.12))",
-        border:"1px solid rgba(245,158,11,0.30)",
-        display:"grid",placeItems:"center",
-        boxShadow:"0 0 32px rgba(245,158,11,0.20)",
+        width:150,height:96,borderRadius:20,margin:"0 auto 16px",overflow:"hidden",position:"relative",
+        border:"1px solid rgba(245,158,11,0.28)",
+        boxShadow:"0 0 40px rgba(245,158,11,0.16)",
       }}>
-        <span style=${{fontWeight:900,fontSize:16,color:T.accent}}>FD</span>
+        <${IslandScene} mini height=${96} uid="load"/>
+        <span style=${{position:"absolute",right:8,bottom:6,fontWeight:900,fontSize:10,
+          color:"rgba(255,255,255,0.85)",letterSpacing:1,textShadow:"0 1px 4px rgba(0,0,0,0.6)"}}>FD</span>
       </div>
       <div style=${{fontWeight:900,letterSpacing:-0.5,fontSize:17,color:T.text}}>Feliz Dias</div>
       <div style=${{fontSize:9,color:T.muted,marginTop:6,fontWeight:800,letterSpacing:2.2,textTransform:"uppercase"}}>Loading</div>
@@ -4431,34 +4611,34 @@ function App(){
   const wDone=state.tasks.filter(t=>weekDates.includes(t.date)&&t.completed&&t.category!=="work").length;
 
   return html`<div style=${{background:T.bg,minHeight:"100vh",color:T.text,fontFamily:"ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif"}}>
-    <!-- Opal ambient -->
+    <!-- Island Dusk ambient — sun above, lagoon below, horizon between -->
     <div style=${{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
-      <!-- Amber-ember — top left -->
-      <div style=${{position:"absolute",top:"-20%",left:"-10%",width:680,height:680,borderRadius:"50%",
-        background:"radial-gradient(ellipse,rgba(245,158,11,0.10) 0%,rgba(217,119,6,0.05) 40%,transparent 68%)",
+      <!-- Setting sun — top center -->
+      <div className="fd-orb" style=${{position:"absolute",top:"-14%",left:"50%",transform:"translateX(-50%)",width:680,height:680,borderRadius:"50%",
+        background:"radial-gradient(ellipse,rgba(245,158,11,0.11) 0%,rgba(217,119,6,0.05) 40%,transparent 68%)",
         animation:"emberShift 8s ease-in-out infinite"}}/>
-      <!-- Mint-teal — middle right -->
-      <div style=${{position:"absolute",top:"28%",right:"-14%",width:560,height:560,borderRadius:"50%",
-        background:"radial-gradient(ellipse,rgba(52,211,153,0.09) 0%,rgba(16,185,129,0.04) 45%,transparent 68%)",
+      <!-- Lagoon glow — bottom right -->
+      <div className="fd-orb" style=${{position:"absolute",bottom:"-18%",right:"-12%",width:560,height:560,borderRadius:"50%",
+        background:"radial-gradient(ellipse,rgba(45,212,191,0.10) 0%,rgba(13,148,136,0.05) 45%,transparent 68%)",
         animation:"emberShift 11s ease-in-out infinite 2s"}}/>
-      <!-- Rose-champagne — bottom left -->
-      <div style=${{position:"absolute",bottom:"-5%",left:"-5%",width:480,height:480,borderRadius:"50%",
-        background:"radial-gradient(ellipse,rgba(249,168,212,0.07) 0%,rgba(236,72,153,0.03) 45%,transparent 68%)",
+      <!-- Dusk haze — bottom left -->
+      <div className="fd-orb" style=${{position:"absolute",bottom:"-5%",left:"-5%",width:480,height:480,borderRadius:"50%",
+        background:"radial-gradient(ellipse,rgba(56,189,248,0.05) 0%,rgba(20,184,166,0.03) 45%,transparent 68%)",
         animation:"emberShift 13s ease-in-out infinite 1s"}}/>
-      <!-- Sky-blue — center -->
-      <div style=${{position:"absolute",top:"55%",left:"30%",width:440,height:440,borderRadius:"50%",
-        background:"radial-gradient(ellipse,rgba(56,189,248,0.06) 0%,rgba(14,165,233,0.03) 45%,transparent 68%)",
+      <!-- Horizon band — teal glow line across mid-screen -->
+      <div className="fd-orb" style=${{position:"absolute",top:"58%",left:"-15%",width:900,height:280,borderRadius:"50%",
+        background:"radial-gradient(ellipse,rgba(45,212,191,0.055) 0%,transparent 70%)",
         animation:"emberShift 9s ease-in-out infinite 3.5s"}}/>
-      <!-- Amber-gold — top right -->
-      <div style=${{position:"absolute",top:"8%",right:"8%",width:320,height:320,borderRadius:"50%",
+      <!-- Amber-gold — top right (sun halo companion) -->
+      <div className="fd-orb" style=${{position:"absolute",top:"8%",right:"8%",width:320,height:320,borderRadius:"50%",
         background:"radial-gradient(ellipse,rgba(251,191,36,0.07) 0%,transparent 65%)",
         animation:"emberShift 15s ease-in-out infinite 0.5s"}}/>
-      <!-- Earth-warm haze — bottom right -->
-      <div style=${{position:"absolute",bottom:"15%",right:"5%",width:380,height:380,borderRadius:"50%",
-        background:"radial-gradient(ellipse,rgba(251,146,60,0.06) 0%,transparent 65%)",
+      <!-- Deep lagoon haze — bottom right -->
+      <div className="fd-orb" style=${{position:"absolute",bottom:"15%",right:"5%",width:380,height:380,borderRadius:"50%",
+        background:"radial-gradient(ellipse,rgba(13,148,136,0.05) 0%,transparent 65%)",
         animation:"emberShift 10s ease-in-out infinite 4s"}}/>
       <!-- Fading cross — faith symbol -->
-      <div style=${{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-55%)",width:520,height:520,pointerEvents:"none",animation:"emberShift 22s ease-in-out infinite 6s"}}>
+      <div className="fd-orb" style=${{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-55%)",width:520,height:520,pointerEvents:"none",animation:"emberShift 22s ease-in-out infinite 6s"}}>
         <div style=${{position:"absolute",left:"50%",top:"6%",transform:"translateX(-50%)",width:22,height:"88%",
           background:"linear-gradient(180deg,transparent 0%,rgba(255,255,255,0.045) 15%,rgba(255,255,255,0.065) 50%,rgba(255,255,255,0.045) 85%,transparent 100%)",
           borderRadius:11}}/>
@@ -4466,6 +4646,12 @@ function App(){
           background:"linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.045) 15%,rgba(255,255,255,0.065) 50%,rgba(255,255,255,0.045) 85%,transparent 100%)",
           borderRadius:11}}/>
       </div>
+      <!-- Corner palm silhouette -->
+      <svg width="300" height="240" viewBox="0 0 44 40" style=${{position:"absolute",bottom:-30,right:-46,opacity:0.05}} aria-hidden="true">
+        <g transform="translate(6,38) scale(1.05)"><g class="fd-palm" style=${{animationDuration:"12s"}}>
+          <path d=${PALM} fill="#2dd4bf"/>
+        </g></g>
+      </svg>
       <!-- Subtle noise texture overlay -->
       <div style=${{position:"absolute",inset:0,opacity:0.025,
         backgroundImage:"url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E\")",
@@ -4476,16 +4662,20 @@ function App(){
       <!-- Header -->
       <header style=${{position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"space-between",
         padding:"calc(12px + env(safe-area-inset-top)) 18px 12px",
-        background:"rgba(9,7,10,0.82)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",
+        background:"rgba(6,10,13,0.82)",backdropFilter:"blur(32px)",WebkitBackdropFilter:"blur(32px)",
         borderBottom:"1px solid rgba(255,255,255,0.055)",
         boxShadow:"0 1px 0 rgba(245,158,11,0.06),0 8px 32px rgba(0,0,0,0.3)"}}>
         <div style=${{display:"flex",alignItems:"center",gap:11}}>
           <div style=${{width:38,height:38,borderRadius:14,
-            background:"linear-gradient(135deg,rgba(245,158,11,0.20) 0%,rgba(52,211,153,0.10) 100%)",
+            background:"linear-gradient(135deg,rgba(245,158,11,0.20) 0%,rgba(45,212,191,0.12) 100%)",
             border:"1px solid rgba(245,158,11,0.32)",
             display:"grid",placeItems:"center",
             boxShadow:"0 0 16px rgba(245,158,11,0.18),0 1px 0 rgba(255,255,255,0.08) inset"}}>
-            <span style=${{fontWeight:900,fontSize:11,color:T.accent,letterSpacing:-0.3}}>FD</span>
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="17.5" cy="6" r="2.6" fill="#f59e0b"/>
+              <path d="M3.5 19.5 q8.5 -6.5 17 0 z" fill="rgba(45,212,191,0.6)"/>
+              <g transform="translate(7,19.5) scale(0.42)"><path d=${PALM} fill="#fbbf24"/></g>
+            </svg>
           </div>
           <div>
             <div style=${{fontWeight:800,fontSize:15,color:T.text,letterSpacing:-0.5,lineHeight:1.1}}>Feliz Dias</div>
@@ -4528,7 +4718,7 @@ function App(){
       <nav ref=${navRef} style=${{
         position:"fixed",left:12,right:12,bottom:0,zIndex:25,display:"flex",gap:1,
         padding:"6px",marginBottom:"calc(12px + env(safe-area-inset-bottom))",
-        background:"rgba(9,7,10,0.88)",backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",
+        background:"rgba(6,10,13,0.88)",backdropFilter:"blur(40px)",WebkitBackdropFilter:"blur(40px)",
         border:"1px solid rgba(255,255,255,0.07)",borderRadius:26,
         boxShadow:"0 -2px 60px rgba(0,0,0,0.6),0 0 0 1px rgba(245,158,11,0.06) inset,0 2px 0 rgba(255,255,255,0.04) inset",
       }}>

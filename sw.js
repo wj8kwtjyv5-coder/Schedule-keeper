@@ -1,4 +1,4 @@
-const CACHE = "sk-v4";
+const CACHE = "sk-v5";
 const ASSETS = ["/", "/index.html", "/manifest.json"];
 
 self.addEventListener("install", e => {
