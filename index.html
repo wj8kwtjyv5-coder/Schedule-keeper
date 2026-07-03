@@ -1763,33 +1763,57 @@ function BodyView({bodyMap,onUpdateBodyMap}){
   const markedZones=Object.entries(zones);
 
   // SVG silhouette paths (front + back)
-  const frontSilhouette=html`<g filter="drop-shadow(0 0 12px rgba(245,158,11,0.06))" stroke="rgba(255,255,255,0.16)" fill="rgba(255,255,255,0.07)" strokeWidth="1.2">
-    <ellipse cx="80" cy="26" rx="20" ry="23"/>
-    <path d="M73,48 L73,60 Q80,63 87,60 L87,48 Q80,45 73,48Z"/>
-    <path d="M48,62 Q36,68 30,80 Q24,94 24,108 Q24,122 26,136 L22,160 L38,164 Q48,166 58,165 L60,163 Q62,168 80,168 Q98,168 100,163 L102,165 Q112,166 122,164 L138,160 L134,136 Q136,122 136,108 Q136,94 130,80 Q124,68 112,62 Q96,75 80,75 Q64,75 48,62Z"/>
-    <path d="M48,62 Q36,68 28,84 L20,120 L20,158 L28,160 L36,120 L44,84 Q46,74 50,68Z"/>
-    <path d="M112,62 Q124,68 132,84 L140,120 L140,158 L132,160 L124,120 L116,84 Q114,74 110,68Z"/>
-    <path d="M60,163 L54,165 L48,210 L47,252 Q51,268 60,272 Q68,274 72,268 L73,252 L72,210 L68,165Z"/>
-    <path d="M100,163 L106,165 L112,210 L113,252 Q109,268 100,272 Q92,274 88,268 L87,252 L88,210 L92,165Z"/>
+  // Écorché base figure — shared muscular outline
+  const bodyOutline=html`<g stroke="rgba(255,255,255,0.18)" fill="rgba(255,255,255,0.05)" strokeWidth="1">
+    <path d="M80,6 Q96,6 99,21 Q101,32 93,41 Q87,47 80,47 Q73,47 67,41 Q59,32 61,21 Q64,6 80,6Z"/>
+    <path d="M73,46 L72,58 Q80,62 88,58 L87,46 Q80,49 73,46Z"/>
+    <path d="M72,52 Q60,59 50,62 Q40,67 36,77 Q31,88 33,100 Q35,114 41,126 Q45,134 44,143 L42,156 Q46,166 58,168 L61,165 Q66,171 80,171 Q94,171 99,165 L102,168 Q114,166 118,156 L116,143 Q115,134 119,126 Q125,114 127,100 Q129,88 124,77 Q120,67 110,62 Q100,59 88,52 Q80,57 72,52Z"/>
+    <path d="M38,64 Q30,72 27,84 Q25,96 26,107 Q24,119 21,131 Q18,143 19,151 Q21,157 27,157 Q32,156 33,149 Q35,137 37,127 Q40,116 39,105 Q42,93 45,81 Q46,72 44,66 Q41,62 38,64Z"/>
+    <path d="M122,64 Q130,72 133,84 Q135,96 134,107 Q136,119 139,131 Q142,143 141,151 Q139,157 133,157 Q128,156 127,149 Q125,137 123,127 Q120,116 121,105 Q118,93 115,81 Q114,72 116,66 Q119,62 122,64Z"/>
+    <path d="M61,165 Q53,168 51,178 Q47,196 49,211 Q50,219 48,228 Q45,243 47,255 Q49,265 57,268 Q65,268 68,260 L69,245 Q71,231 69,217 Q73,199 72,181 Q71,168 66,164Z"/>
+    <path d="M99,165 Q107,168 109,178 Q113,196 111,211 Q110,219 112,228 Q115,243 113,255 Q111,265 103,268 Q95,268 92,260 L91,245 Q89,231 91,217 Q87,199 88,181 Q89,168 94,164Z"/>
     <ellipse cx="59" cy="268" rx="14" ry="7" fill="rgba(255,255,255,0.025)"/>
     <ellipse cx="101" cy="268" rx="14" ry="7" fill="rgba(255,255,255,0.025)"/>
-    <path d="M73,60 Q64,63 52,68" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.8"/>
-    <path d="M87,60 Q96,63 108,68" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.8"/>
   </g>`;
-  const backSilhouette=html`<g filter="drop-shadow(0 0 12px rgba(245,158,11,0.06))" stroke="rgba(255,255,255,0.16)" fill="rgba(255,255,255,0.07)" strokeWidth="1.2">
-    <ellipse cx="80" cy="26" rx="20" ry="23"/>
-    <path d="M73,48 L73,60 Q80,63 87,60 L87,48 Q80,45 73,48Z"/>
-    <path d="M48,62 Q36,68 30,80 Q24,94 24,108 Q24,122 26,136 L22,160 L38,164 Q48,166 58,165 L60,163 Q62,168 80,168 Q98,168 100,163 L102,165 Q112,166 122,164 L138,160 L134,136 Q136,122 136,108 Q136,94 130,80 Q124,68 112,62 Q96,75 80,75 Q64,75 48,62Z"/>
-    <path d="M48,62 Q36,68 28,84 L20,120 L20,158 L28,160 L36,120 L44,84 Q46,74 50,68Z"/>
-    <path d="M112,62 Q124,68 132,84 L140,120 L140,158 L132,160 L124,120 L116,84 Q114,74 110,68Z"/>
-    <path d="M60,163 L54,165 L48,210 L47,252 Q51,268 60,272 Q68,274 72,268 L73,252 L72,210 L68,165Z"/>
-    <path d="M100,163 L106,165 L112,210 L113,252 Q109,268 100,272 Q92,274 88,268 L87,252 L88,210 L92,165Z"/>
-    <ellipse cx="59" cy="268" rx="14" ry="7" fill="rgba(255,255,255,0.025)"/>
-    <ellipse cx="101" cy="268" rx="14" ry="7" fill="rgba(255,255,255,0.025)"/>
-    <path d="M80,50 L80,155" fill="none" stroke="rgba(255,255,255,0.13)" strokeWidth="0.9"/>
-    <path d="M62,64 Q56,72 58,84 Q62,88 68,84 Q72,76 70,66 Q67,62 62,64Z" fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
-    <path d="M98,64 Q104,72 102,84 Q98,88 92,84 Q88,76 90,66 Q93,62 98,64Z" fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8"/>
-    <path d="M80,140 L80,165" fill="none" stroke="rgba(255,255,255,0.13)" strokeWidth="0.9"/>
+  const frontSilhouette=html`<g filter="drop-shadow(0 0 12px rgba(245,158,11,0.06))">
+    ${bodyOutline}
+    <g fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.6">
+      <path d="M60,64 Q70,67 78,66" stroke="rgba(255,255,255,0.08)"/><path d="M100,64 Q90,67 82,66" stroke="rgba(255,255,255,0.08)"/>
+      <path d="M63,78 Q71,82 78,84" opacity="0.85"/><path d="M97,78 Q89,82 82,84" opacity="0.85"/>
+      <path d="M61,85 Q70,89 78,90" opacity="0.85"/><path d="M99,85 Q90,89 82,90" opacity="0.85"/>
+      <path d="M63,92 Q71,95 78,95" opacity="0.85"/><path d="M97,92 Q89,95 82,95" opacity="0.85"/>
+      <path d="M80,97 L80,132" stroke="rgba(255,255,255,0.09)"/>
+      <path d="M71,105 Q80,107 89,105"/><path d="M70,113 Q80,115 90,113"/><path d="M70,121 Q80,123 90,121"/>
+      <path d="M64,103 Q60,115 63,127" opacity="0.7"/><path d="M96,103 Q100,115 97,127" opacity="0.7"/>
+      <path d="M42,63 Q39,71 42,78" opacity="0.85"/><path d="M48,61 Q45,71 48,79" opacity="0.85"/>
+      <path d="M118,63 Q121,71 118,78" opacity="0.85"/><path d="M112,61 Q115,71 112,79" opacity="0.85"/>
+      <path d="M36,90 Q34,102 37,114" opacity="0.85"/><path d="M124,90 Q126,102 123,114" opacity="0.85"/>
+      <path d="M29,126 Q27,138 27,148" opacity="0.7"/><path d="M131,126 Q133,138 133,148" opacity="0.7"/>
+      <path d="M52,141 Q64,152 78,159"/><path d="M108,141 Q96,152 82,159"/>
+      <path d="M59,168 Q56,186 60,202" opacity="0.85"/><path d="M67,169 Q69,186 66,202" opacity="0.85"/>
+      <path d="M101,168 Q104,186 100,202" opacity="0.85"/><path d="M93,169 Q91,186 94,202" opacity="0.85"/>
+      <path d="M61,227 Q63,238 62,249" opacity="0.7"/><path d="M99,227 Q97,238 98,249" opacity="0.7"/>
+    </g>
+  </g>`;
+  const backSilhouette=html`<g filter="drop-shadow(0 0 12px rgba(245,158,11,0.06))">
+    ${bodyOutline}
+    <g fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.6">
+      <path d="M80,50 L80,140" stroke="rgba(255,255,255,0.10)"/>
+      <path d="M80,50 Q72,60 62,64 Q74,72 80,90 Q86,72 98,64 Q88,60 80,50Z" stroke="rgba(255,255,255,0.08)"/>
+      <path d="M60,70 Q56,80 61,90" opacity="0.85"/><path d="M100,70 Q104,80 99,90" opacity="0.85"/>
+      <path d="M58,76 Q64,80 70,79" opacity="0.7"/><path d="M102,76 Q96,80 90,79" opacity="0.7"/>
+      <path d="M62,92 Q68,106 76,116"/><path d="M98,92 Q92,106 84,116"/>
+      <path d="M76,96 L76,138" opacity="0.85"/><path d="M84,96 L84,138" opacity="0.85"/>
+      <path d="M64,118 Q62,127 65,135" opacity="0.7"/><path d="M96,118 Q98,127 95,135" opacity="0.7"/>
+      <path d="M80,140 L80,162" stroke="rgba(255,255,255,0.08)"/>
+      <path d="M52,159 Q62,164 74,160"/><path d="M108,159 Q98,164 86,160"/>
+      <path d="M63,168 Q64,187 64,205" opacity="0.85"/><path d="M97,168 Q96,187 96,205" opacity="0.85"/>
+      <path d="M56,172 Q54,188 57,202" opacity="0.85"/><path d="M104,172 Q106,188 103,202" opacity="0.85"/>
+      <path d="M57,212 Q64,215 71,212" opacity="0.85"/><path d="M103,212 Q96,215 89,212" opacity="0.85"/>
+      <path d="M64,213 L64,236" opacity="0.85"/><path d="M96,213 L96,236" opacity="0.85"/>
+      <path d="M58,236 Q64,240 70,236" opacity="0.85"/><path d="M102,236 Q96,240 90,236" opacity="0.85"/>
+      <path d="M63,244 L62,254"/><path d="M97,244 L98,254"/>
+    </g>
   </g>`;
 
   return html`<div style=${{padding:"16px 14px",paddingBottom:120}}>
@@ -1818,13 +1842,23 @@ function BodyView({bodyMap,onUpdateBodyMap}){
       <div style=${{display:"flex",justifyContent:"center"}} onClick=${()=>{setPickerZone(null);}}>
         <svg viewBox="0 0 160 286" style=${{width:200,height:357,maxWidth:"100%"}}>
           <defs>
+            <linearGradient id="muscleShade" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#fff" stop-opacity="0.10"/>
+              <stop offset="55%" stop-color="#fff" stop-opacity="0.05"/>
+              <stop offset="100%" stop-color="#fff" stop-opacity="0.02"/>
+            </linearGradient>
+            <linearGradient id="muscleShadeSide" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#fff" stop-opacity="0.09"/>
+              <stop offset="50%" stop-color="#fff" stop-opacity="0.03"/>
+              <stop offset="100%" stop-color="#fff" stop-opacity="0.09"/>
+            </linearGradient>
             ${Object.entries(zones).map(([id,z])=>{
               const base=BODY_TYPE_COLORS[z.type]||T.accent;
               const centerOpacities=[0,0.5,0.6,0.72,0.85,0.98];
               const co=centerOpacities[z.level]||0.5;
               return html`<radialGradient key=${id} id=${"hg-"+id} cx="50%" cy="35%" r="70%" gradientUnits="objectBoundingBox">
-                <stop offset="0%" stopColor=${base} stopOpacity=${co}/>
-                <stop offset="100%" stopColor=${base} stopOpacity="0.08"/>
+                <stop offset="0%" stop-color=${base} stop-opacity=${co}/>
+                <stop offset="100%" stop-color=${base} stop-opacity="0.08"/>
               </radialGradient>`;
             })}
           </defs>
@@ -1850,13 +1884,9 @@ function BodyView({bodyMap,onUpdateBodyMap}){
             const pulseAnim=shouldPulse?"heatPulse 2s ease-in-out infinite":isSelected?"pulseGlow 1.5s ease-in-out infinite":"none";
             const dropFilter=isSelected?`drop-shadow(0 0 8px rgba(245,158,11,0.7))`:isConnected?`drop-shadow(0 0 4px rgba(245,158,11,0.5))`:"none";
             return html`<g key=${z.id} onClick=${(e)=>openPicker(z.id,e)} style=${{cursor:"pointer"}}>
-              <ellipse
-                cx=${z.cx} cy=${z.cy} rx=${z.rx+2} ry=${z.ry+2}
-                fill="transparent" stroke="transparent"
-              />
-              <ellipse
-                cx=${z.cx} cy=${z.cy} rx=${z.rx} ry=${z.ry}
-                fill=${col?col.fill:"rgba(255,255,255,0.03)"}
+              <path d=${z.d} fill="transparent" stroke="transparent" strokeWidth="5"/>
+              <path d=${z.d}
+                fill=${col?col.fill:(SIDE_SHADE.has(z.id)?"url(#muscleShadeSide)":"url(#muscleShade)")}
                 stroke=${isPickerOpen?"#fff":isSelected?"#f59e0b":isConnected?"#f59e0b":col?.stroke||"rgba(255,255,255,0.10)"}
                 strokeWidth=${isPickerOpen?2.5:isSelected?2:isConnected?1.5:0.8}
                 strokeOpacity=${isConnected&&!isSelected?0.5:1}
@@ -3272,40 +3302,41 @@ const HERB_DB=[
 
 // ── Body Map Data ─────────────────────────────────────────────
 const BODY_ZONES=[
-  // Front view
-  {id:"head",label:"Head",view:"f",cx:80,cy:26,rx:18,ry:20},
-  {id:"neck",label:"Neck",view:"f",cx:80,cy:52,rx:9,ry:8},
-  {id:"l_shoulder",label:"L Shoulder",view:"f",cx:46,cy:68,rx:13,ry:10},
-  {id:"r_shoulder",label:"R Shoulder",view:"f",cx:114,cy:68,rx:13,ry:10},
-  {id:"chest",label:"Chest",view:"f",cx:80,cy:85,rx:22,ry:18},
-  {id:"l_arm",label:"L Bicep",view:"f",cx:36,cy:102,rx:9,ry:18},
-  {id:"r_arm",label:"R Bicep",view:"f",cx:124,cy:102,rx:9,ry:18},
-  {id:"l_forearm",label:"L Forearm",view:"f",cx:28,cy:136,rx:8,ry:16},
-  {id:"r_forearm",label:"R Forearm",view:"f",cx:132,cy:136,rx:8,ry:16},
-  {id:"core",label:"Core",view:"f",cx:80,cy:112,rx:18,ry:21},
-  {id:"l_hip",label:"L Hip",view:"f",cx:63,cy:150,rx:17,ry:13},
-  {id:"r_hip",label:"R Hip",view:"f",cx:97,cy:150,rx:17,ry:13},
-  {id:"l_quad",label:"L Quad",view:"f",cx:63,cy:184,rx:15,ry:24},
-  {id:"r_quad",label:"R Quad",view:"f",cx:97,cy:184,rx:15,ry:24},
-  {id:"l_knee",label:"L Knee",view:"f",cx:63,cy:215,rx:12,ry:9},
-  {id:"r_knee",label:"R Knee",view:"f",cx:97,cy:215,rx:12,ry:9},
-  {id:"l_shin",label:"L Shin",view:"f",cx:63,cy:237,rx:10,ry:15},
-  {id:"r_shin",label:"R Shin",view:"f",cx:97,cy:237,rx:10,ry:15},
-  {id:"l_foot",label:"L Foot",view:"f",cx:60,cy:260,rx:15,ry:8},
-  {id:"r_foot",label:"R Foot",view:"f",cx:100,cy:260,rx:15,ry:8},
+  // Front view — muscle-shaped zones (écorché)
+  {id:"head",label:"Head",view:"f",cx:80,cy:26,d:"M80,9 Q93,9 96,21 Q98,31 92,39 Q86,44 80,44 Q74,44 68,39 Q62,31 64,21 Q67,9 80,9Z"},
+  {id:"neck",label:"Neck",view:"f",cx:80,cy:52,d:"M74,45 L73,57 Q76,60 80,60 Q84,60 87,57 L86,45 Q80,48 74,45Z"},
+  {id:"l_shoulder",label:"L Shoulder",view:"f",cx:46,cy:68,d:"M52,60 Q42,60 36,68 Q33,74 35,79 Q40,83 47,80 Q54,76 56,68 Q56,62 52,60Z"},
+  {id:"r_shoulder",label:"R Shoulder",view:"f",cx:114,cy:68,d:"M108,60 Q118,60 124,68 Q127,74 125,79 Q120,83 113,80 Q106,76 104,68 Q104,62 108,60Z"},
+  {id:"chest",label:"Chest",view:"f",cx:80,cy:85,d:"M79,69 Q64,69 59,79 Q57,90 65,96 Q73,99 79,95 L79,69Z M81,69 Q96,69 101,79 Q103,90 95,96 Q87,99 81,95 L81,69Z"},
+  {id:"l_arm",label:"L Bicep",view:"f",cx:36,cy:102,d:"M39,86 Q43,90 43,101 Q43,113 39,118 Q32,120 29,113 Q27,101 30,92 Q33,85 39,86Z"},
+  {id:"r_arm",label:"R Bicep",view:"f",cx:124,cy:102,d:"M121,86 Q117,90 117,101 Q117,113 121,118 Q128,120 131,113 Q133,101 130,92 Q127,85 121,86Z"},
+  {id:"l_forearm",label:"L Forearm",view:"f",cx:28,cy:136,d:"M34,122 Q37,128 35,140 Q33,150 29,153 Q24,153 22,148 Q21,138 24,128 Q27,120 34,122Z"},
+  {id:"r_forearm",label:"R Forearm",view:"f",cx:132,cy:136,d:"M126,122 Q123,128 125,140 Q127,150 131,153 Q136,153 138,148 Q139,138 136,128 Q133,120 126,122Z"},
+  {id:"core",label:"Core",view:"f",cx:80,cy:112,d:"M67,97 Q80,93 93,97 Q96,112 93,126 Q88,132 80,133 Q72,132 67,126 Q64,112 67,97Z"},
+  {id:"l_hip",label:"L Hip",view:"f",cx:63,cy:150,d:"M52,139 Q62,143 72,141 Q77,147 74,156 Q68,162 59,161 Q50,158 49,149 Q49,141 52,139Z"},
+  {id:"r_hip",label:"R Hip",view:"f",cx:97,cy:150,d:"M108,139 Q98,143 88,141 Q83,147 86,156 Q92,162 101,161 Q110,158 111,149 Q111,141 108,139Z"},
+  {id:"l_quad",label:"L Quad",view:"f",cx:63,cy:184,d:"M52,163 Q62,158 71,164 Q76,176 74,192 Q72,203 66,207 Q57,208 53,200 Q48,185 50,170 Q50,165 52,163Z"},
+  {id:"r_quad",label:"R Quad",view:"f",cx:97,cy:184,d:"M108,163 Q98,158 89,164 Q84,176 86,192 Q88,203 94,207 Q103,208 107,200 Q112,185 110,170 Q110,165 108,163Z"},
+  {id:"l_knee",label:"L Knee",view:"f",cx:63,cy:215,d:"M57,209 Q63,206 69,209 Q72,214 69,220 Q66,223 63,223 Q60,223 57,220 Q54,214 57,209Z"},
+  {id:"r_knee",label:"R Knee",view:"f",cx:97,cy:215,d:"M103,209 Q97,206 91,209 Q88,214 91,220 Q94,223 97,223 Q100,223 103,220 Q106,214 103,209Z"},
+  {id:"l_shin",label:"L Shin",view:"f",cx:63,cy:237,d:"M57,225 Q63,222 69,226 Q71,235 69,245 Q67,251 63,252 Q58,251 56,244 Q54,234 57,225Z"},
+  {id:"r_shin",label:"R Shin",view:"f",cx:97,cy:237,d:"M103,225 Q97,222 91,226 Q89,235 91,245 Q93,251 97,252 Q102,251 104,244 Q106,234 103,225Z"},
+  {id:"l_foot",label:"L Foot",view:"f",cx:60,cy:260,d:"M57,253 Q62,251 66,254 L67,261 Q64,267 55,268 Q48,267 47,263 Q49,258 57,253Z"},
+  {id:"r_foot",label:"R Foot",view:"f",cx:100,cy:260,d:"M103,253 Q98,251 94,254 L93,261 Q96,267 105,268 Q112,267 113,263 Q111,258 103,253Z"},
   // Back view
-  {id:"upper_back",label:"Upper Back",view:"b",cx:80,cy:75,rx:26,ry:18},
-  {id:"mid_back",label:"Mid Back",view:"b",cx:80,cy:103,rx:20,ry:14},
-  {id:"lower_back",label:"Lower Back",view:"b",cx:80,cy:126,rx:18,ry:12},
-  {id:"l_glute",label:"L Glute",view:"b",cx:64,cy:148,rx:17,ry:15},
-  {id:"r_glute",label:"R Glute",view:"b",cx:96,cy:148,rx:17,ry:15},
-  {id:"l_ham",label:"L Hamstring",view:"b",cx:64,cy:186,rx:14,ry:26},
-  {id:"r_ham",label:"R Hamstring",view:"b",cx:96,cy:186,rx:14,ry:26},
-  {id:"l_calf",label:"L Calf",view:"b",cx:64,cy:227,rx:12,ry:20},
-  {id:"r_calf",label:"R Calf",view:"b",cx:96,cy:227,rx:12,ry:20},
-  {id:"l_heel",label:"L Heel",view:"b",cx:62,cy:254,rx:12,ry:8},
-  {id:"r_heel",label:"R Heel",view:"b",cx:98,cy:254,rx:12,ry:8},
+  {id:"upper_back",label:"Upper Back",view:"b",cx:80,cy:75,d:"M80,49 Q90,58 103,62 Q108,70 102,80 Q92,90 80,92 Q68,90 58,80 Q52,70 57,62 Q70,58 80,49Z"},
+  {id:"mid_back",label:"Mid Back",view:"b",cx:80,cy:103,d:"M62,93 Q80,97 98,93 Q102,103 96,113 Q88,118 80,118 Q72,118 64,113 Q58,103 62,93Z"},
+  {id:"lower_back",label:"Lower Back",view:"b",cx:80,cy:126,d:"M68,119 Q80,122 92,119 Q96,127 93,135 Q87,139 80,139 Q73,139 67,135 Q64,127 68,119Z"},
+  {id:"l_glute",label:"L Glute",view:"b",cx:64,cy:148,d:"M52,138 Q62,134 72,139 Q78,147 75,156 Q70,163 61,163 Q51,160 49,151 Q49,142 52,138Z"},
+  {id:"r_glute",label:"R Glute",view:"b",cx:96,cy:148,d:"M108,138 Q98,134 88,139 Q82,147 85,156 Q90,163 99,163 Q109,160 111,151 Q111,142 108,138Z"},
+  {id:"l_ham",label:"L Hamstring",view:"b",cx:64,cy:186,d:"M53,166 Q63,162 73,167 Q76,180 74,196 Q71,207 64,210 Q56,208 53,199 Q49,182 53,166Z"},
+  {id:"r_ham",label:"R Hamstring",view:"b",cx:96,cy:186,d:"M107,166 Q97,162 87,167 Q84,180 86,196 Q89,207 96,210 Q104,208 107,199 Q111,182 107,166Z"},
+  {id:"l_calf",label:"L Calf",view:"b",cx:64,cy:227,d:"M56,211 Q64,208 71,213 Q75,222 73,233 Q70,243 64,246 Q58,244 55,236 Q52,225 56,211Z"},
+  {id:"r_calf",label:"R Calf",view:"b",cx:96,cy:227,d:"M104,211 Q96,208 89,213 Q85,222 87,233 Q90,243 96,246 Q102,244 105,236 Q108,225 104,211Z"},
+  {id:"l_heel",label:"L Heel",view:"b",cx:62,cy:254,d:"M58,247 Q62,245 66,248 Q68,253 66,258 Q62,261 58,260 Q54,257 54,252 Q55,248 58,247Z"},
+  {id:"r_heel",label:"R Heel",view:"b",cx:98,cy:254,d:"M102,247 Q98,245 94,248 Q92,253 94,258 Q98,261 102,260 Q106,257 106,252 Q105,248 102,247Z"},
 ];
+const SIDE_SHADE=new Set(["l_arm","r_arm","l_forearm","r_forearm","l_shin","r_shin","l_calf","r_calf","l_ham","r_ham"]);
 const FASCIA_CONNECTIONS={
   head:["neck","upper_back"],
   neck:["head","chest","upper_back","l_shoulder","r_shoulder"],
