@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/scriptable.js": {
+      "includeFiles": "widget.js"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
