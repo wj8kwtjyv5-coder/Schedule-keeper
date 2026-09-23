@@ -442,27 +442,6 @@ function dayCompletionPct(tasks,date){
   if(!all.length) return null;
   return Math.round(all.filter(t=>t.completed).length/all.length*100);
 }
-// Habit completion % for a habit over a set of dates
-function habitPctForDates(habit,habitLogs,dates){
-  const scheduled=dates.filter(d=>habit.days.includes(new Date(d+"T12:00:00").getDay()));
-  if(!scheduled.length) return null;
-  return Math.round(scheduled.filter(d=>habitLogs[`${habit.id}_${d}`]).length/scheduled.length*100);
-}
-// Generate improvement callouts for a given week
-function getCallouts(tasks,habits,habitLogs,settings,weekDates){
-  const out=[];
-  Object.entries(settings.weekTargets||{}).forEach(([cat,target])=>{
-    if(!target) return;
-    const done=tasks.filter(t=>weekDates.includes(t.date)&&t.category===cat&&t.completed).length;
-    const pct=Math.round(done/target*100);
-    if(pct<80) out.push({type:"cat",cat,done,target,pct});
-  });
-  habits.forEach(h=>{
-    const pct=habitPctForDates(h,habitLogs,weekDates);
-    if(pct!==null&&pct<70) out.push({type:"habit",habit:h,pct});
-  });
-  return out.sort((a,b)=>a.pct-b.pct);
-}
 function detectCat(title=""){
   const t=title.toLowerCase();
   if(/\bgame\b|\bmatch\b|\bvs\b/.test(t))return"game";
@@ -2676,80 +2655,325 @@ function DayDetailPanel({date,tasks,habits,habitLogs,healthLogs,notes,onToggleTa
 }
 
 // ── Weekly Review ─────────────────────────────────────────────
-function WeeklyReview({tasks,habits,habitLogs,healthLogs,settings}){
-  const weekDates=getWeekDates(),todayStr=todayISO();
-  const cats=Object.entries(settings.weekTargets||{}).filter(([,t])=>t>0);
-  const callouts=getCallouts(tasks,habits,habitLogs,settings,weekDates);
-  // Avg recovery this week
-  const recoveries=weekDates.map(d=>healthLogs[d]?calcRecovery(healthLogs[d]):null).filter(v=>v!=null);
-  const avgRecovery=recoveries.length?Math.round(recoveries.reduce((a,b)=>a+b,0)/recoveries.length):null;
-  // Habit consistency
-  const allScheduled=habits.flatMap(h=>weekDates.filter(d=>h.days.includes(new Date(d+"T12:00:00").getDay())));
-  const allDone=habits.flatMap(h=>weekDates.filter(d=>h.days.includes(new Date(d+"T12:00:00").getDay())&&habitLogs[`${h.id}_${d}`]));
-  const habitScore=allScheduled.length?Math.round(allDone.length/allScheduled.length*100):null;
+// ── Performance Report (weekly / monthly) ─────────────────────
+const DOW_LONG=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function periodDates(mode,offset){
+  if(mode==="week") return getWeekDates(addDays(new Date(),offset*7));
+  const n=new Date();const first=new Date(n.getFullYear(),n.getMonth()+offset,1);
+  const days=new Date(first.getFullYear(),first.getMonth()+1,0).getDate();
+  return Array.from({length:days},(_,i)=>isoDate(new Date(first.getFullYear(),first.getMonth(),i+1)));
+}
+function periodLabel(mode,dates,offset){
+  if(mode==="month"){const d=parseDate(dates[0]);return d.toLocaleDateString("en-GB",{month:"long",year:"numeric"});}
+  const a=parseDate(dates[0]),b=parseDate(dates[6]);
+  const f=d=>d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+  return offset===0?`This week · ${f(a)} – ${f(b)}`:offset===-1?`Last week · ${f(a)} – ${f(b)}`:`${f(a)} – ${f(b)}`;
+}
+const pctOf=(a,b)=>b>0?Math.round(a/b*100):null;
+const bedMins=t=>{if(!t)return null;const[h,m]=t.split(":").map(Number);const v=h*60+m;return v<12*60?v+1440:v;}; // after-midnight bedtimes count as late
 
-  return html`<div style=${{marginBottom:20}}>
-    <div style=${S.section}>THIS WEEK</div>
+// First day with any recorded activity — days before it are "no data", not "missed"
+function firstActivityDate(tasks,habitLogs,choreLogs,healthLogs){
+  let min=null;const see=d=>{if(d&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&(!min||d<min))min=d;};
+  tasks.forEach(t=>{if(t.completed)see(t.date);});
+  Object.keys(habitLogs||{}).forEach(k=>{if(habitLogs[k])see(k.slice(-10));});
+  Object.keys(choreLogs||{}).forEach(k=>{if(choreLogs[k])see(k.slice(-10));});
+  Object.keys(healthLogs||{}).forEach(see);
+  return min;
+}
+function computePeriodStats({dates,tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings,since}){
+  const todayStr=todayISO();
+  const start=since||todayStr;
+  const elapsed=dates.filter(d=>d<=todayStr&&d>=start);
+  const frac=dates.length?elapsed.length/dates.length:0;
+  const dateSet=new Set(elapsed);
+  const scale=dates.length/7;
+  // Training plan
+  const pTasks=tasks.filter(t=>dateSet.has(t.date)&&t.category!=="work");
+  const planDone=pTasks.filter(t=>t.completed).length;
+  const missed=pTasks.filter(t=>!t.completed&&t.date<todayStr);
+  // Categories vs targets (month targets = weekly × weeks)
+  const cats=Object.entries(settings.weekTargets||{}).filter(([,t])=>t>0).map(([cat,wt])=>{
+    const target=Math.max(1,Math.round(wt*scale));
+    const done=tasks.filter(t=>dates.includes(t.date)&&t.category===cat&&t.completed).length;
+    const expected=Math.max(0,target*frac);
+    return{cat,target,done,pct:pctOf(done,target),pace:expected>0?Math.round(done/expected*100):null,remaining:Math.max(0,target-done)};
+  });
+  // Habits
+  const habitRows=habits.map(h=>{
+    const sched=elapsed.filter(d=>h.days.includes(parseDate(d).getDay()));
+    const done=sched.filter(d=>habitLogs[`${h.id}_${d}`]).length;
+    return{h,sched:sched.length,done,pct:pctOf(done,sched.length)};
+  }).filter(r=>r.sched>0);
+  const hSched=habitRows.reduce((a,r)=>a+r.sched,0),hDone=habitRows.reduce((a,r)=>a+r.done,0);
+  // Chores (only count days after the chore was created)
+  let cSched=0,cDone=0;
+  (chores||[]).forEach(c=>{const from=c.createdAt?isoDate(new Date(c.createdAt)):"0000";
+    elapsed.forEach(d=>{if(d>=from){cSched++;if(choreLogs?.[`${c.id}_${d}`])cDone++;}});});
+  // Sleep / recovery / energy
+  const sleepMins=[],beds=[],recs=[],energy=[];
+  elapsed.forEach(d=>{const l=healthLogs[d];if(!l)return;
+    if(l.sleep?.bedtime&&l.sleep?.wakeTime){const m=calcSleepMins(l.sleep.bedtime,l.sleep.wakeTime);if(m!=null){sleepMins.push(m);beds.push(bedMins(l.sleep.bedtime));}}
+    const r=calcRecovery(l);if(r!=null)recs.push(r);
+    if(l.energy)energy.push(l.energy);});
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+  // Pain from the body map
+  const pain={};
+  elapsed.forEach(d=>Object.entries(healthLogs[d]?.bodyMap?.zones||{}).forEach(([z,v])=>{if(v.type==="pain"){pain[z]=(pain[z]||0)+1;}}));
+  // Per-day score (plan + habits + chores)
+  const days=dates.map(d=>{
+    if(d>todayStr)return{d,future:true};
+    if(d<start)return{d,noData:true};
+    const dow=parseDate(d).getDay();
+    const t=tasks.filter(x=>x.date===d&&x.category!=="work");
+    const hs=habits.filter(h=>h.days.includes(dow));
+    const cs=(chores||[]).filter(c=>!c.createdAt||isoDate(new Date(c.createdAt))<=d);
+    const tot=t.length+hs.length+cs.length;
+    const dn=t.filter(x=>x.completed).length+hs.filter(h=>habitLogs[`${h.id}_${d}`]).length+cs.filter(c=>choreLogs?.[`${c.id}_${d}`]).length;
+    return{d,tot,dn,pct:tot?Math.round(dn/tot*100):null,tDone:t.filter(x=>x.completed).length,tTot:t.length,hDone:hs.filter(h=>habitLogs[`${h.id}_${d}`]).length,hTot:hs.length};
+  });
+  const plan=pctOf(planDone,pTasks.length),habitsPct=pctOf(hDone,hSched),choresPct=pctOf(cDone,cSched);
+  const parts=[plan,habitsPct,choresPct].filter(v=>v!=null);
+  return{elapsed:elapsed.length,total:dates.length,frac,daysLeft:dates.filter(d=>d>todayStr).length,
+    score:parts.length?Math.round(parts.reduce((a,b)=>a+b,0)/parts.length):null,
+    plan,planDone,planTotal:pTasks.length,missed,cats,habitRows,habitsPct,hDone,hSched,choresPct,cDone,cSched,
+    sleepAvg:avg(sleepMins),sleepNights:sleepMins.length,bedAvg:avg(beds),recovery:avg(recs),energy:avg(energy),pain,days};
+}
 
-    <!-- Category bars -->
-    <div style=${{...S.card,marginBottom:10}}>
-      ${cats.map(([cat,target])=>{
-        const done=tasks.filter(t=>weekDates.includes(t.date)&&t.category===cat&&t.completed).length;
-        const pct=Math.min(100,Math.round(done/target*100));
-        const color=pct>=80?T.green:pct>=50?T.amber:T.red;
-        const catColor=CATS[cat]?.color||T.muted;
-        return html`<div key=${cat} style=${{marginBottom:14}}>
-          <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <div style=${{display:"flex",alignItems:"center",gap:8}}>
-              <span style=${{fontSize:13,color:catColor,filter:`drop-shadow(0 0 4px ${catColor}66)`}}>${CATS[cat]?.icon||cat}</span>
-              <span style=${{fontSize:12,fontWeight:800,color:T.textSoft,letterSpacing:-0.1}}>${CATS[cat]?.label||cat}</span>
-            </div>
-            <span style=${{fontSize:12,fontWeight:800,color,fontVariantNumeric:"tabular-nums"}}>${done}<span style=${{color:T.muted,fontWeight:600}}>/${target}</span></span>
-          </div>
-          <div style=${{height:4,borderRadius:99,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}>
-            <div style=${{
-              height:"100%",borderRadius:99,width:pct+"%",transition:"width 0.6s var(--spring)",
-              background:pct>=80
-                ?`linear-gradient(90deg,${T.green},rgba(52,211,153,0.7))`
-                :pct>=50
-                ?`linear-gradient(90deg,${T.amber},rgba(251,191,36,0.7))`
-                :`linear-gradient(90deg,${T.red},rgba(248,113,113,0.7))`,
-              boxShadow:pct>0?`0 0 8px ${color}66`:"none",
-            }}></div>
-          </div>
-        </div>`;
-      })}
-      <div style=${{display:"flex",gap:16,marginTop:4}}>
-        ${habitScore!=null?html`<span style=${{fontSize:11,color:T.muted}}>Habits <span style=${{color:habitScore>=70?T.green:T.amber,fontWeight:700}}>${habitScore}%</span></span>`:""}
-        ${avgRecovery!=null?html`<span style=${{fontSize:11,color:T.muted}}>Recovery <span style=${{color:avgRecovery>=67?T.green:avgRecovery>=34?T.amber:T.red,fontWeight:700}}>${avgRecovery}%</span></span>`:""}
+function buildInsights(cur,prev,mode,settings,likeForLike=false){
+  const pos=[],neg=[];const per=mode==="week"?"week":"month";const last=likeForLike?`this point last ${per}`:`last ${per}`;
+  const inProgress=cur.daysLeft>0;
+  const delta=(a,b)=>a!=null&&b!=null?a-b:null;
+  if(cur.score!=null&&cur.score>=80)pos.push({icon:"★",title:`Strong ${per}: ${cur.score}% consistency`,detail:"Plan, habits and chores are mostly getting done."});
+  [["Consistency",cur.score,prev.score],["Training plan",cur.plan,prev.plan],["Habits",cur.habitsPct,prev.habitsPct],["Chores",cur.choresPct,prev.choresPct]].forEach(([n,a,b])=>{
+    const d=delta(a,b);if(d==null)return;
+    if(d>=10)pos.push({icon:"▲",title:`${n} up ${d} pts vs ${last}`,detail:`${b}% → ${a}%`});
+    else if(d<=-10)neg.push({icon:"▼",title:`${n} down ${-d} pts vs ${last}`,detail:`${b}% → ${a}%`,fix:n==="Habits"?"Stack one habit onto something you already do daily.":n==="Chores"?"Do chores at a fixed time — e.g. straight after training.":"Look at what changed — schedule, sleep or match load."});
+  });
+  const behind=[];
+  cur.cats.forEach(c=>{const lab=CATS[c.cat]?.label||c.cat;
+    if(c.done>=c.target)pos.push({icon:"✓",title:`${lab} target hit: ${c.done}/${c.target}`,detail:c.done>c.target?`${c.done-c.target} extra session${c.done-c.target>1?"s":""}.`:"Right on target."});
+    else if(c.pace!=null&&c.pace>=100&&inProgress)pos.push({icon:"✓",title:`${lab} on pace: ${c.done}/${c.target}`,detail:`${c.remaining} to go.`});
+    else if(c.pace!=null&&c.pace<50&&cur.elapsed>=2)behind.push(c);
+  });
+  const daysLeft=cur.daysLeft;
+  if(behind.length>2){
+    behind.sort((a,b)=>(a.done/a.target)-(b.done/b.target));
+    const top=CATS[behind[0].cat]?.label||behind[0].cat;
+    neg.push({icon:"!",title:`${behind.length} training targets behind`,detail:behind.map(c=>`${CATS[c.cat]?.label||c.cat} ${c.done}/${c.target}`).join(" · ")+(inProgress?` — ${daysLeft} day${daysLeft===1?"":"s"} left.`:"."),
+      fix:`Close the biggest gap first: add ${top.toLowerCase()} sessions to your plan.`});
+  }else behind.forEach(c=>{const lab=CATS[c.cat]?.label||c.cat;
+    neg.push({icon:"!",title:`${lab} behind: ${c.done}/${c.target}`,detail:inProgress?`${c.remaining} more needed in ${daysLeft} day${daysLeft===1?"":"s"}.`:`Missed target by ${c.remaining}.`,fix:`Add ${Math.min(c.remaining,3)} ${lab.toLowerCase()} session${Math.min(c.remaining,3)>1?"s":""} to your plan now.`});});
+  const hr=cur.habitRows.filter(r=>r.sched>=3);
+  if(hr.length){
+    const best=[...hr].sort((a,b)=>b.pct-a.pct)[0],worst=[...hr].sort((a,b)=>a.pct-b.pct)[0];
+    if(best.pct>=80)pos.push({icon:best.h.emoji||"✓",title:`Most consistent: ${best.h.title}`,detail:`${best.done}/${best.sched} days (${best.pct}%).`});
+    if(worst.pct<50&&worst!==best)neg.push({icon:worst.h.emoji||"!",title:`Slipping: ${worst.h.title}`,detail:`${worst.done}/${worst.sched} days (${worst.pct}%).`,fix:"Set a reminder or tie it to a fixed trigger (e.g. after breakfast)."});
+  }
+  if(cur.cSched>=3){
+    if(cur.choresPct>=90)pos.push({icon:"🧹",title:`Chores on lock: ${cur.choresPct}%`,detail:`${cur.cDone}/${cur.cSched} done.`});
+    else if(cur.choresPct<60)neg.push({icon:"🧹",title:`Chores falling behind: ${cur.choresPct}%`,detail:`${cur.cDone}/${cur.cSched} done.`,fix:"Pick a 10-minute chore slot each day."});
+  }
+  if(cur.sleepNights>=3){
+    const h=cur.sleepAvg/60,hs=h.toFixed(1);
+    if(h>=7.5)pos.push({icon:"☾",title:`Sleep averaging ${hs}h`,detail:`${cur.sleepNights} nights logged — good recovery base.`});
+    else if(h<7)neg.push({icon:"☾",title:`Sleep short: ${hs}h average`,detail:`${cur.sleepNights} nights logged.`,fix:"Athletes recover best on 8h+. Start wind-down 30 min earlier."});
+    const target=bedMins(settings.constraints?.bed||"21:00");
+    if(cur.bedAvg!=null&&target!=null&&cur.bedAvg-target>45){const late=Math.round(cur.bedAvg-target);neg.push({icon:"◷",title:`Bedtime ${Math.floor(late/60)?Math.floor(late/60)+"h ":""}${late%60}m later than target`,detail:`Target ${settings.constraints?.bed||"21:00"}.`,fix:"Red-light glasses + phone away at 8:30pm."});}
+  }else if(cur.elapsed>=3)neg.push({icon:"☾",title:"Sleep barely logged",detail:`${cur.sleepNights} night${cur.sleepNights===1?"":"s"} this ${per}.`,fix:"Log sleep each morning (Health → Sleep) so trends are reliable."});
+  if(cur.recovery!=null&&prev.recovery!=null){const d=Math.round(cur.recovery-prev.recovery);
+    if(d>=8)pos.push({icon:"♥",title:`Recovery up ${d} pts`,detail:`Average ${Math.round(cur.recovery)}%.`});
+    else if(d<=-8)neg.push({icon:"♥",title:`Recovery down ${-d} pts`,detail:`Average ${Math.round(cur.recovery)}%.`,fix:"Consider swapping one hard session for recovery."});}
+  const painZones=Object.entries(cur.pain).filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]);
+  painZones.slice(0,2).forEach(([z,n])=>neg.push({icon:"✚",title:`${BODY_ZONES.find(b=>b.id===z)?.label||z} pain on ${n} days`,detail:"Recurring — check its fascia lines in the Body tab.",fix:"Reduce load on it and see a physio if it persists."}));
+  const prevPain=Object.keys(prev.pain||{});
+  const cleared=prevPain.filter(z=>!cur.pain[z]);
+  if(cleared.length&&cur.elapsed>=3)pos.push({icon:"✚",title:`Pain cleared: ${cleared.slice(0,2).map(z=>BODY_ZONES.find(b=>b.id===z)?.label||z).join(", ")}`,detail:`Marked ${last}, not this ${per}.`});
+  if(cur.missed.length>=2)neg.push({icon:"✕",title:`${cur.missed.length} sessions missed`,detail:cur.missed.slice(0,3).map(t=>t.title).join(" · ")+(cur.missed.length>3?" …":""),fix:mode==="week"?"Use Journal → Move to Today, or ask Coach to rebuild the week.":"Ask Coach to rebuild next week around the sessions you keep missing."});
+  // Best / weakest day
+  const scored=cur.days.filter(x=>!x.future&&x.pct!=null&&x.tot>0);
+  if(mode==="week"&&scored.length>=3){
+    const best=[...scored].sort((a,b)=>b.pct-a.pct)[0],worst=[...scored].sort((a,b)=>a.pct-b.pct)[0];
+    if(best.pct>=60)pos.push({icon:"◉",title:`Best day: ${DOW_LONG[parseDate(best.d).getDay()]} (${best.pct}%)`,detail:`${best.dn}/${best.tot} done.`});
+    if(worst.pct<50&&worst!==best)neg.push({icon:"◌",title:`Weakest day: ${DOW_LONG[parseDate(worst.d).getDay()]} (${worst.pct}%)`,detail:`${worst.dn}/${worst.tot} done.`,fix:"Plan a lighter version of that day so something still gets done."});
+  }else if(mode==="month"&&scored.length>=10){
+    const byDow={};scored.forEach(x=>{const k=parseDate(x.d).getDay();(byDow[k]=byDow[k]||[]).push(x.pct);});
+    const avgs=Object.entries(byDow).filter(([,v])=>v.length>=2).map(([k,v])=>[+k,Math.round(v.reduce((a,b)=>a+b,0)/v.length)]).sort((a,b)=>b[1]-a[1]);
+    if(avgs.length>=3){const[bd,bv]=avgs[0],[wd,wv]=avgs[avgs.length-1];
+      if(bv>=60)pos.push({icon:"◉",title:`${DOW_LONG[bd]}s are your strongest day (${bv}%)`,detail:"Average across the month."});
+      if(wv<50&&wd!==bd)neg.push({icon:"◌",title:`${DOW_LONG[wd]}s are your weakest day (${wv}%)`,detail:"Average across the month.",fix:`Make ${DOW_LONG[wd]} a simpler, lower-volume day.`});}
+  }
+  return{pos,neg};
+}
+
+function DeltaChip({d,unit="pts",invert=false}){
+  if(d==null)return html`<span style=${{fontSize:10,color:T.muted,fontWeight:700}}>— no data</span>`;
+  const good=invert?d<0:d>0,flat=Math.abs(d)<1;
+  const c=flat?T.muted:good?T.green:T.red;
+  return html`<span style=${{fontSize:10,fontWeight:800,color:c,whiteSpace:"nowrap"}}>${flat?"● same":`${d>0?"▲":"▼"} ${Math.abs(d)}${unit==="pts"?" pts":unit}`}</span>`;
+}
+
+function PerformanceReport({tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings,mode,setMode,offset,setOffset}){
+  const dates=useMemo(()=>periodDates(mode,offset),[mode,offset]);
+  // Like-for-like: while a period is in progress, compare with the same number of days of the previous one
+  const elapsedNow=dates.filter(x=>x<=todayISO()).length;
+  const likeForLike=elapsedNow<dates.length;
+  const prevDates=useMemo(()=>{const pd=periodDates(mode,offset-1);return likeForLike?pd.slice(0,elapsedNow):pd;},[mode,offset,elapsedNow,likeForLike]);
+  const since=useMemo(()=>firstActivityDate(tasks,habitLogs,choreLogs,healthLogs),[tasks,habitLogs,choreLogs,healthLogs]);
+  const args={tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings,since};
+  const cur=useMemo(()=>computePeriodStats({...args,dates}),[dates,since,tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings]);
+  const prev=useMemo(()=>computePeriodStats({...args,dates:prevDates}),[prevDates,since,tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings]);
+  const{pos,neg}=useMemo(()=>buildInsights(cur,prev,mode,settings,likeForLike),[cur,prev,mode,likeForLike]);
+  const [tip,setTip]=useState(null);
+  const per=mode==="week"?"week":"month";
+  const vsLabel=likeForLike?`vs same point last ${per}`:`vs last ${per}`;
+  const d=(a,b)=>a!=null&&b!=null?a-b:null;
+  const status=v=>v==null?{c:T.muted,l:"No data"}:v>=80?{c:T.green,l:"On track"}:v>=50?{c:T.amber,l:"Mixed"}:{c:T.red,l:"Off track"};
+  const st=status(cur.score);
+  const sleepH=cur.sleepAvg!=null?cur.sleepAvg/60:null,prevSleepH=prev.sleepAvg!=null?prev.sleepAvg/60:null;
+  const tiles=[
+    {k:"Training",v:cur.plan,sub:`${cur.planDone}/${cur.planTotal} sessions`,d:d(cur.plan,prev.plan)},
+    {k:"Habits",v:cur.habitsPct,sub:`${cur.hDone}/${cur.hSched} check-ins`,d:d(cur.habitsPct,prev.habitsPct)},
+    {k:"Chores",v:cur.choresPct,sub:cur.cSched?`${cur.cDone}/${cur.cSched} done`:"None set",d:d(cur.choresPct,prev.choresPct)},
+    {k:"Sleep",v:sleepH,fmt:v=>v.toFixed(1)+"h",sub:`${cur.sleepNights} night${cur.sleepNights===1?"":"s"} logged`,d:sleepH!=null&&prevSleepH!=null?Math.round((sleepH-prevSleepH)*10)/10:null,unit:"h"},
+  ];
+  const segBtn=(v,l)=>html`<button onClick=${()=>{setMode(v);setOffset(0);setTip(null);}} style=${{
+    flex:1,padding:"7px 0",borderRadius:999,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,
+    border:`1px solid ${mode===v?T.accentBorder:"transparent"}`,background:mode===v?"rgba(245,158,11,0.15)":"transparent",color:mode===v?T.accent:T.muted}}>${l}</button>`;
+  const navBtn={width:32,height:32,borderRadius:10,border:`1px solid ${T.border}`,background:"rgba(255,255,255,0.03)",color:T.text,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:900};
+  const barW=mode==="week"?100/7:100/dates.length;
+  const tipDay=tip!=null?cur.days[tip]:null;
+
+  const insightList=(items,kind)=>html`<div style=${{display:"flex",flexDirection:"column",gap:6}}>
+    ${items.length?items.map((it,i)=>html`<div key=${i} style=${{display:"flex",gap:10,alignItems:"flex-start",padding:"9px 10px",borderRadius:11,
+      background:kind==="pos"?"rgba(52,211,153,0.06)":"rgba(251,191,36,0.05)",border:`1px solid ${kind==="pos"?"rgba(52,211,153,0.16)":"rgba(251,191,36,0.16)"}`,...stagger(i,40)}}>
+      <span style=${{width:22,height:22,borderRadius:7,flexShrink:0,display:"grid",placeItems:"center",fontSize:11,fontWeight:900,
+        background:kind==="pos"?"rgba(52,211,153,0.15)":"rgba(251,191,36,0.14)",color:kind==="pos"?T.green:T.amber}}>${it.icon}</span>
+      <div style=${{flex:1,minWidth:0}}>
+        <div style=${{fontSize:12.5,fontWeight:800,color:T.text,lineHeight:1.3}}>${it.title}</div>
+        ${it.detail?html`<div style=${{fontSize:11,color:T.muted,marginTop:2,lineHeight:1.4}}>${it.detail}</div>`:""}
+        ${it.fix?html`<div style=${{fontSize:11,color:T.textSoft,marginTop:4,lineHeight:1.4}}><span style=${{color:T.accent,fontWeight:800}}>→ </span>${it.fix}</div>`:""}
+      </div>
+    </div>`):html`<div style=${{fontSize:11.5,color:T.muted,padding:"6px 2px"}}>${kind==="pos"?"Nothing stands out yet — tick off a few sessions and habits.":"Nothing flagged — keep it up."}</div>`}
+  </div>`;
+
+  return html`<div style=${{marginBottom:18}}>
+    <!-- Period controls -->
+    <div style=${{display:"flex",background:"rgba(255,255,255,0.04)",borderRadius:999,padding:3,gap:2,marginBottom:10}}>
+      ${segBtn("week","Weekly")}${segBtn("month","Monthly")}
+    </div>
+    <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:12}}>
+      <button aria-label="Previous period" onClick=${()=>{setOffset(o=>o-1);setTip(null);}} style=${navBtn}>‹</button>
+      <div style=${{fontSize:13,fontWeight:800,color:T.text,textAlign:"center"}}>${periodLabel(mode,dates,offset)}</div>
+      <button aria-label="Next period" disabled=${offset>=0} onClick=${()=>{setOffset(o=>Math.min(0,o+1));setTip(null);}} style=${{...navBtn,opacity:offset>=0?0.3:1,cursor:offset>=0?"default":"pointer"}}>›</button>
+    </div>
+
+    <!-- Hero score -->
+    <div className="sk-card" style=${{...S.card,marginBottom:10,display:"flex",alignItems:"center",gap:14}}>
+      <div style=${{position:"relative",width:72,height:72,flexShrink:0}}>
+        <${Ring} pct=${cur.score||0} size=${72} stroke=${5} color=${st.c}/>
+        <div style=${{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:20,fontWeight:900,color:T.text,...TYPE.num}}>${cur.score!=null?cur.score:"–"}</div>
+      </div>
+      <div style=${{flex:1,minWidth:0}}>
+        <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,textTransform:"uppercase"}}>Consistency score</div>
+        <div style=${{display:"flex",alignItems:"center",gap:6,marginTop:4}}>
+          <span style=${{fontSize:10,fontWeight:900,padding:"2px 8px",borderRadius:999,background:st.c+"1f",color:st.c}}>${cur.score==null?"○":cur.score>=80?"✓":cur.score>=50?"◐":"!"} ${st.l}</span>
+          <${DeltaChip} d=${d(cur.score,prev.score)}/>
+        </div>
+        <div style=${{fontSize:11,color:T.muted,marginTop:5,lineHeight:1.4}}>Average of training, habits and chores completion${cur.frac<1&&cur.elapsed?` · ${cur.elapsed}/${cur.total} days ${cur.daysLeft>0?"so far":"tracked"}`:""}. Changes are ${vsLabel.replace("vs ","against the ")}.</div>
       </div>
     </div>
 
-    <!-- Callouts -->
-    ${callouts.length>0?html`
-      <div style=${{...S.section,marginBottom:8}}>NEEDS IMPROVEMENT</div>
-      ${callouts.map((c,i)=>html`<div key=${i} style=${{
-        display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:12,marginBottom:6,
-        background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.14)",
-      }}>
-        <span style=${{fontSize:13,color:c.type==="cat"?CATS[c.cat]?.color:T.amber}}>
-          ${c.type==="cat"?CATS[c.cat]?.icon:c.habit.emoji}
-        </span>
-        <div style=${{flex:1}}>
-          <div style=${{fontSize:12,fontWeight:700,color:T.text}}>
-            ${c.type==="cat"?`${CATS[c.cat]?.label}: ${c.done}/${c.target} sessions`:c.habit.title}
-          </div>
-          <div style=${{fontSize:10,color:T.muted,marginTop:1}}>
-            ${c.pct}% complete — ${c.type==="cat"?`add ${c.target-c.done} more this week`:"habit consistency low"}
-          </div>
+    <!-- KPI tiles -->
+    <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+      ${tiles.map(t=>html`<div key=${t.k} className="sk-card" style=${{...S.card,padding:"12px 12px 10px"}}>
+        <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:1.5,textTransform:"uppercase"}}>${t.k}</div>
+        <div style=${{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:6,marginTop:4}}>
+          <span style=${{fontSize:22,fontWeight:900,color:T.text,...TYPE.num}}>${t.v==null?"–":t.fmt?t.fmt(t.v):t.v+"%"}</span>
+          <${DeltaChip} d=${t.d} unit=${t.unit||"pts"}/>
         </div>
-        <span style=${{fontSize:11,fontWeight:800,color:T.red}}>${c.pct}%</span>
+        <div style=${{fontSize:10.5,color:T.muted,marginTop:2}}>${t.sub}</div>
       </div>`)}
-    `:""}
-    ${callouts.length===0?html`
-      <div style=${{...S.card,textAlign:"center",padding:"14px",color:T.green,fontSize:12,fontWeight:700}}>
-        ◉ On track — all targets at 80%+
+    </div>
+
+    <!-- Daily completion chart -->
+    <div className="sk-card" style=${{...S.card,marginBottom:10}}>
+      <div style=${{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+        <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,textTransform:"uppercase"}}>Daily completion</div>
+        <div style=${{fontSize:10,color:T.muted}}>Tap a bar</div>
+      </div>
+      <div style=${{position:"relative",height:96,display:"flex",alignItems:"flex-end",borderBottom:"1px solid rgba(255,255,255,0.08)",marginRight:30}}>
+        ${[50,100].map(g=>html`<div key=${g} style=${{position:"absolute",left:0,right:0,bottom:g*0.88+"%",borderTop:"1px dashed rgba(255,255,255,0.06)",pointerEvents:"none"}}>
+          <span style=${{position:"absolute",right:-30,top:-6,width:26,textAlign:"right",fontSize:8.5,color:T.muted}}>${g}%</span></div>`)}
+        ${cur.days.map((x,i)=>{const h=x.future||x.noData||x.pct==null?0:Math.max(3,x.pct*0.88);const isToday=x.d===todayISO();const sel=tip===i;
+          return html`<button key=${x.d} aria-label=${`${x.d}: ${x.future?"upcoming":x.noData?"before tracking started":x.pct==null?"nothing scheduled":x.pct+"%"}`}
+            onClick=${()=>setTip(sel?null:i)} style=${{width:barW+"%",height:"100%",display:"flex",alignItems:"flex-end",justifyContent:"center",
+            padding:`0 ${mode==="week"?5:1}px`,background:"transparent",border:"none",cursor:"pointer"}}>
+            <div style=${{width:"100%",height:x.future?"100%":x.noData?"2px":h+"%",borderRadius:x.noData?0:"4px 4px 0 0",
+              background:x.future?"transparent":x.noData?"rgba(255,255,255,0.08)":sel?T.text:T.accent,opacity:x.future||x.noData?1:sel?1:(x.pct==null?0.2:0.55+0.45*(x.pct/100)),
+              border:x.future?"1px dashed rgba(255,255,255,0.08)":isToday?`1px solid ${T.text}`:"none",borderBottom:"none",
+              transition:"height 0.5s var(--ease-out)"}}/>
+          </button>`;})}
+      </div>
+      <div style=${{display:"flex",marginTop:5,marginRight:30}}>
+        ${cur.days.map((x,i)=>{const dt=parseDate(x.d);const show=mode==="week"||dt.getDate()===1||dt.getDate()%7===1;
+          return html`<div key=${x.d} style=${{width:barW+"%",textAlign:"center",fontSize:9,fontWeight:800,color:x.d===todayISO()?T.accent:T.muted,overflow:"visible",whiteSpace:"nowrap"}}>
+            ${show?(mode==="week"?"MTWTFSS"[i]:dt.getDate()):""}</div>`;})}
+      </div>
+      ${tipDay?html`<div style=${{marginTop:10,padding:"8px 10px",borderRadius:10,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",fontSize:11.5,color:T.textSoft,lineHeight:1.5}}>
+        <b style=${{color:T.text}}>${fmtDayLong(tipDay.d)}</b> · ${tipDay.future?"upcoming":tipDay.noData?"before you started tracking":tipDay.pct==null?"nothing scheduled":`${tipDay.pct}% (${tipDay.dn}/${tipDay.tot})`}
+        ${!tipDay.future&&!tipDay.noData&&tipDay.tot?html`<div style=${{color:T.muted}}>Training ${tipDay.tDone}/${tipDay.tTot} · Habits ${tipDay.hDone}/${tipDay.hTot}</div>`:""}
       </div>`:""}
+    </div>
+
+    <!-- Positives / negatives -->
+    <div className="sk-card" style=${{...S.card,marginBottom:10}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.green,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>✓ What's working · ${pos.length}</div>
+      ${insightList(pos,"pos")}
+      <div style=${{fontSize:9,fontWeight:900,color:T.amber,letterSpacing:2,textTransform:"uppercase",margin:"14px 0 8px"}}>! Needs work · ${neg.length}</div>
+      ${insightList(neg,"neg")}
+    </div>
+
+    <!-- Category performance -->
+    ${cur.cats.length?html`<div className="sk-card" style=${{...S.card,marginBottom:10}}>
+      <div style=${{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+        <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,textTransform:"uppercase"}}>Training vs target</div>
+        <div style=${{fontSize:9,color:T.muted}}>${vsLabel}</div>
+      </div>
+      ${[...cur.cats].sort((a,b)=>(b.done/b.target)-(a.done/a.target)).map(c=>{
+        const p=prev.cats.find(x=>x.cat===c.cat);const pct=Math.min(100,c.pct);const s=status(cur.frac<1&&c.pace!=null?Math.min(c.pace,100):c.pct);
+        return html`<div key=${c.cat} style=${{marginBottom:11}}>
+          <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+            <span style=${{fontSize:12,color:CATS[c.cat]?.color,width:14,textAlign:"center"}}>${CATS[c.cat]?.icon}</span>
+            <span style=${{fontSize:12,fontWeight:800,color:T.textSoft,flex:1}}>${CATS[c.cat]?.label||c.cat}</span>
+            <span style=${{fontSize:9.5,fontWeight:800,color:s.c}}>${s.l}</span>
+            <span style=${{fontSize:12,fontWeight:800,color:T.text,minWidth:34,textAlign:"right",...TYPE.num}}>${c.done}<span style=${{color:T.muted,fontWeight:600}}>/${c.target}</span></span>
+            <span style=${{minWidth:54,textAlign:"right"}}><${DeltaChip} d=${p?c.done-p.done:null} unit=""/></span>
+          </div>
+          <div style=${{height:4,borderRadius:99,background:"rgba(255,255,255,0.06)",overflow:"hidden",marginLeft:22}}>
+            <div style=${{height:"100%",width:pct+"%",borderRadius:99,background:s.c,transition:"width 0.6s var(--ease-out)"}}/>
+          </div>
+        </div>`;})}
+    </div>`:""}
+
+    <!-- Habit consistency -->
+    ${cur.habitRows.length?html`<div className="sk-card" style=${{...S.card,marginBottom:10}}>
+      <div style=${{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+        <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,textTransform:"uppercase"}}>Habit consistency</div>
+        <div style=${{fontSize:9,color:T.muted}}>${vsLabel}</div>
+      </div>
+      ${[...cur.habitRows].sort((a,b)=>b.pct-a.pct).map(r=>{const p=prev.habitRows.find(x=>x.h.id===r.h.id);const s=status(r.pct);
+        return html`<div key=${r.h.id} style=${{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
+          <span style=${{fontSize:14,width:20,textAlign:"center"}}>${r.h.emoji}</span>
+          <div style=${{flex:1,minWidth:0}}>
+            <div style=${{fontSize:12,fontWeight:700,color:T.textSoft,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>${r.h.title}</div>
+            <div style=${{height:3,borderRadius:99,background:"rgba(255,255,255,0.06)",overflow:"hidden",marginTop:4}}>
+              <div style=${{height:"100%",width:r.pct+"%",background:s.c,borderRadius:99}}/></div>
+          </div>
+          <span style=${{fontSize:12,fontWeight:800,color:T.text,minWidth:36,textAlign:"right",...TYPE.num}}>${r.pct}%</span>
+          <span style=${{minWidth:54,textAlign:"right"}}><${DeltaChip} d=${p&&p.pct!=null?r.pct-p.pct:null}/></span>
+        </div>`;})}
+    </div>`:""}
   </div>`;
 }
 
@@ -2760,12 +2984,6 @@ function MonthCalendar({tasks,habits,habitLogs,notes,month,onPrevMonth,onNextMon
   const todayStr=todayISO();
   const monthName=new Date(year,m,1).toLocaleDateString("en-GB",{month:"long",year:"numeric"}).toUpperCase();
   const DAY_H=["M","T","W","T","F","S","S"];
-  // Monthly category totals
-  const monthDates=cells.filter(Boolean);
-  const catTotals={};
-  tasks.filter(t=>monthDates.includes(t.date)&&t.completed&&t.category!=="work").forEach(t=>{
-    catTotals[t.category]=(catTotals[t.category]||0)+1;
-  });
 
   return html`<div style=${{marginBottom:20}}>
     <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
@@ -2804,53 +3022,20 @@ function MonthCalendar({tasks,habits,habitLogs,notes,month,onPrevMonth,onNextMon
       </div>
     </div>
 
-    <!-- Monthly totals -->
-    ${Object.keys(catTotals).length>0?html`
-      <div style=${{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
-        ${Object.entries(catTotals).sort(([,a],[,b])=>b-a).map(([cat,n])=>html`
-          <div key=${cat} style=${{
-            display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:99,
-            background:CATS[cat]?`${CATS[cat].color}12`:"rgba(255,255,255,0.04)",
-            border:`1px solid ${CATS[cat]?.border||T.border}`,
-          }}>
-            <span style=${{fontSize:11,color:CATS[cat]?.color||T.muted}}>${CATS[cat]?.icon||cat}</span>
-            <span style=${{fontSize:11,fontWeight:700,color:T.text}}>${n}</span>
-            <span style=${{fontSize:10,color:T.muted}}>${CATS[cat]?.label||cat}</span>
-          </div>`)}
-      </div>`:""}
-
-    <!-- Habit adherence -->
-    ${habits.length>0?html`
-      <div style=${{marginTop:12}}>
-        <div style=${{...S.section,marginBottom:8}}>HABIT ADHERENCE</div>
-        ${habits.map(h=>{
-          const pct=habitPctForDates(h,habitLogs,monthDates);
-          if(pct===null) return null;
-          return html`<div key=${h.id} style=${{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-            <span style=${{fontSize:14}}>${h.emoji}</span>
-            <span style=${{fontSize:12,fontWeight:700,color:T.text,flex:1}}>${h.title}</span>
-            <div style=${{width:60,height:3,borderRadius:99,background:"rgba(255,255,255,0.06)"}}>
-              <div style=${{height:"100%",borderRadius:99,background:pct>=70?T.green:T.amber,width:pct+"%"}}></div>
-            </div>
-            <span style=${{fontSize:11,fontWeight:700,color:pct>=70?T.green:T.amber,minWidth:32,textAlign:"right"}}>${pct}%</span>
-          </div>`;
-        })}
-      </div>`:""}
   </div>`;
 }
 
 // ── Review View ───────────────────────────────────────────────
-function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,onUpsertNote,onToggleTask,onEditTask,onAddForDate}){
+function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,chores=[],choreLogs={},onUpsertNote,onToggleTask,onEditTask,onAddForDate}){
   const [selectedDay,setSelectedDay]=useState(null);
+  const [mode,setMode]=useState("week");
+  const [offset,setOffset]=useState(0);
   const now=new Date();
-  const [reviewMonth,setReviewMonth]=useState({year:now.getFullYear(),m:now.getMonth()});
-
-  function prevMonth(){
-    setReviewMonth(({year,m})=>m===0?{year:year-1,m:11}:{year,m:m-1});
-  }
-  function nextMonth(){
-    setReviewMonth(({year,m})=>m===11?{year:year+1,m:0}:{year,m:m+1});
-  }
+  // Month calendar follows the monthly report's period
+  const calBase=new Date(now.getFullYear(),now.getMonth()+(mode==="month"?offset:0),1);
+  const reviewMonth={year:calBase.getFullYear(),m:calBase.getMonth()};
+  function prevMonth(){ if(mode!=="month")setMode("month"); setOffset(o=>(mode==="month"?o:0)-1); }
+  function nextMonth(){ setOffset(o=>Math.min(0,(mode==="month"?o:0)+1)); if(mode!=="month")setMode("month"); }
 
   return html`<div style=${{padding:"14px 14px 110px",maxWidth:820,margin:"0 auto"}}>
     <div style=${{...S.section,marginBottom:4}}>REVIEW</div>
@@ -2867,11 +3052,12 @@ function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,onUpsertNo
       onSaveNote=${(date,text)=>onUpsertNote(date,text)}
     />`:""}
 
-    <!-- Weekly review -->
-    <${WeeklyReview} tasks=${tasks} habits=${habits} habitLogs=${habitLogs} healthLogs=${healthLogs} settings=${settings}/>
+    <!-- Weekly / monthly performance report -->
+    <${PerformanceReport} tasks=${tasks} habits=${habits} habitLogs=${habitLogs} chores=${chores} choreLogs=${choreLogs}
+      healthLogs=${healthLogs} settings=${settings} mode=${mode} setMode=${setMode} offset=${offset} setOffset=${setOffset}/>
 
     <!-- Month calendar -->
-    <${MonthCalendar} tasks=${tasks} habits=${habits} habitLogs=${habitLogs} notes=${notes||{}} month=${reviewMonth} onPrevMonth=${prevMonth} onNextMonth=${nextMonth}/>
+    ${mode==="month"?html`<${MonthCalendar} tasks=${tasks} habits=${habits} habitLogs=${habitLogs} notes=${notes||{}} month=${reviewMonth} onPrevMonth=${prevMonth} onNextMonth=${nextMonth}/>`:""}
   </div>`;
 }
 
@@ -5293,7 +5479,7 @@ function App(){
 
       <div key=${view} ref=${swipeRef} style=${{animation:`slide${slideDir==="right"?"InRight":"InLeft"} 0.22s var(--ease-out) backwards`}}>
         ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)} retentionDays=${retentionDays(state?.retentionStartDate)}/>`:""}
-        ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
+        ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
         ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})} retentionStartDate=${state?.retentionStartDate||null} onStartRetention=${startRetention} onResetRetention=${resetRetention}
           chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} onToggleChore=${toggleChore}
           onAddChore=${c=>{addChore(c);showToast("Chore added ✅");}} onDeleteChore=${id=>{deleteChore(id);showToast("Deleted");}}/>`:""}
