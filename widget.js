@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────
 //  ScheduleKeeper — Scriptable Widget
-//  Version 2.0 | Supports Lock Screen + Home Screen
+//  Version 3.0 | Lock Screen + Home Screen + Apple Watch
 // ─────────────────────────────────────────────────────────
 //
 //  SETUP:
@@ -8,34 +8,36 @@
 //  2. Paste this entire file into a new Scriptable script
 //  3. Long-press your lock screen → Customise → Add widget → Scriptable
 //  4. Long-press the Scriptable widget → Edit widget
-//  5. Set Parameter to: https://YOUR-APP.netlify.app
+//  5. Set Parameter to: https://YOUR-VERCEL-APP.vercel.app
 //
 //  WIDGET SIZES SUPPORTED:
-//  • Lock screen Circular  → task progress ring
+//  • Lock screen Circular    → task progress + XP level
 //  • Lock screen Rectangular → top 3 tasks + habit count
-//  • Home screen Small     → day summary
-//  • Home screen Medium    → tasks + habits grid
+//  • Home screen Small       → day summary
+//  • Home screen Medium      → tasks + habits grid
+//  • Watch Circular          → done/total + XP level (complication)
+//  • Watch Rectangular       → next task + time (complication)
+//  • Watch Inline            → ⚡ 2/5 · Lv3 (slim top-row complication)
 // ─────────────────────────────────────────────────────────
 
 const BASE_URL = (args.widgetParameter || "").replace(/\/$/, "");
-const SYNC_URL = BASE_URL ? `${BASE_URL}/.netlify/functions/sync` : null;
+const SYNC_URL = BASE_URL ? `${BASE_URL}/api/sync` : null;
 
 // ── Design tokens ──────────────────────────────────────────
 const C = {
-  bg:      new Color("#07080f"),
-  bgCard:  new Color("#0d0f1e"),
-  text:    new Color("#eeeeff"),
-  muted:   new Color("#888aaa"),
-  accent:  new Color("#ffd16b"),
-  blue:    new Color("#8fb8ff"),
-  green:   new Color("#6ee7b7"),
-  red:     new Color("#ff6a7a"),
-  purple:  new Color("#c4b5fd"),
+  bg:     new Color("#070b14"),
+  text:   new Color("#eef2ff"),
+  muted:  new Color("#5c6490"),
+  accent: new Color("#fbbf24"),  // amber
+  blue:   new Color("#818cf8"),  // indigo
+  green:  new Color("#34d399"),  // emerald
+  red:    new Color("#fb7185"),  // rose
+  purple: new Color("#c084fc"),
 };
 
 const CAT_EMOJI = {
-  run:"🏃", football:"⚽", game:"🏟️", bike:"🚴",
-  pilates:"🧘", recovery:"♻️", sauna:"♨️", work:"💼", other:"📌",
+  run:"🏃", football:"⚽", game:"🏟", bike:"🚴",
+  pilates:"🧘", recovery:"🌿", sauna:"🌡", redlight:"🔴", work:"💼", other:"◈",
 };
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -63,6 +65,40 @@ async function fetchState() {
   catch(e) { return null; }
 }
 
+// ── HealthKit workout reader ─────────────────────────────────
+async function fetchWorkoutData() {
+  try {
+    const health = Health.instance();
+    await health.requestAuthorization(
+      ["workoutType","heartRate","activeEnergyBurned","distanceWalkingRunning"],
+      []
+    );
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const workouts = await health.findWorkouts({ start, end });
+    return workouts.map(w => ({
+      type: w.workoutActivityType || "other",
+      duration: Math.round((w.duration || 0) / 60),
+      calories: Math.round(w.totalEnergyBurned || 0),
+      distance: Math.round((w.totalDistance || 0) * 10) / 10,
+      avgHR: w.metadata?.averageHeartRate || null,
+      start: (w.startDate || new Date()).toISOString(),
+      end: (w.endDate || new Date()).toISOString(),
+    }));
+  } catch(e) { return []; }
+}
+
+async function syncWorkouts(workouts) {
+  if (!BASE_URL || !workouts.length) return;
+  const url = BASE_URL + "/api/workout";
+  const req = new Request(url);
+  req.method = "POST";
+  req.headers = { "Content-Type": "application/json" };
+  req.body = JSON.stringify({ workouts });
+  req.timeoutInterval = 8;
+  try { await req.loadJSON(); } catch(e) {}
+}
+
 // ── Build today's data from state ───────────────────────────
 function buildToday(state) {
   if (!state) return null;
@@ -86,7 +122,19 @@ function buildToday(state) {
   const habitLogs = state.habitLogs || {};
   const habitsDone = habits.filter(h => !!habitLogs[`${h.id}_${today}`]).length;
 
-  return { tasks, done, total, pct, nextTask, habits, habitsDone, today };
+  // XP level
+  const xp = state.xp || 0;
+  const LEVELS = [
+    {lvl:1,xp:0,rank:"Rookie"},{lvl:2,xp:200,rank:"Amateur"},{lvl:3,xp:500,rank:"Developing"},
+    {lvl:4,xp:900,rank:"Inter"},{lvl:5,xp:1400,rank:"Consistent"},{lvl:6,xp:2000,rank:"Dedicated"},
+    {lvl:7,xp:2800,rank:"Athletic"},{lvl:8,xp:3800,rank:"Semi-Pro"},{lvl:9,xp:5000,rank:"Pro"},
+    {lvl:10,xp:6500,rank:"Elite"},{lvl:11,xp:8500,rank:"Champion"},{lvl:12,xp:11000,rank:"Legend"},
+    {lvl:13,xp:14000,rank:"World Class"},{lvl:14,xp:18000,rank:"Icon"},{lvl:15,xp:23000,rank:"GOAT"},
+  ];
+  let level = LEVELS[0];
+  for (const l of LEVELS) { if (xp >= l.xp) level = l; else break; }
+
+  return { tasks, done, total, pct, nextTask, habits, habitsDone, today, xp, level };
 }
 
 // ── LOCK SCREEN: Circular ────────────────────────────────────
@@ -94,7 +142,7 @@ function buildCircular(d) {
   const w = new ListWidget();
   w.backgroundColor = C.bg;
   w.setPadding(0, 0, 0, 0);
-  if (BASE_URL) w.url = BASE_URL;
+  if (BASE_URL) w.url = SYNC_URL ? `${BASE_URL}?action=completeNext` : BASE_URL;
 
   const stack = w.addStack();
   stack.layoutVertically();
@@ -142,7 +190,7 @@ function buildRectangular(d) {
   const w = new ListWidget();
   w.backgroundColor = C.bg;
   w.setPadding(8, 10, 8, 10);
-  if (BASE_URL) w.url = BASE_URL;
+  if (BASE_URL) w.url = SYNC_URL ? `${BASE_URL}?action=completeNext` : BASE_URL;
 
   if (!d) {
     const t = w.addText("⚡ ScheduleKeeper");
@@ -212,19 +260,39 @@ function buildRectangular(d) {
   return w;
 }
 
+// ── WATCH: Inline (slim text row) ───────────────────────────
+function buildWatchInline(d) {
+  const w = new ListWidget();
+  w.backgroundColor = C.bg;
+  if (BASE_URL) w.url = BASE_URL;
+
+  const stack = w.addStack();
+  stack.layoutHorizontally();
+  stack.centerAlignContent();
+
+  const txt = stack.addText(
+    d ? `⚡ ${d.done}/${d.total} · Lv${d.level.lvl}` : "⚡ ScheduleKeeper"
+  );
+  txt.font = Font.boldSystemFont(12);
+  txt.textColor = d && d.pct >= 80 ? C.green : d && d.pct >= 50 ? C.accent : C.blue;
+  txt.lineLimit = 1;
+
+  return w;
+}
+
 // ── HOME SCREEN: Small ───────────────────────────────────────
 function buildSmall(d) {
   const w = new ListWidget();
   w.backgroundGradient = (() => {
     const g = new LinearGradient();
-    g.colors = [new Color("#07080f"), new Color("#0d1020")];
+    g.colors = [new Color("#070b14"), new Color("#0d1020")];
     g.locations = [0, 1];
     g.startPoint = new Point(0, 0);
     g.endPoint = new Point(1, 1);
     return g;
   })();
   w.setPadding(12, 12, 12, 12);
-  if (BASE_URL) w.url = BASE_URL;
+  if (BASE_URL) w.url = SYNC_URL ? `${BASE_URL}?action=completeNext` : BASE_URL;
 
   if (!d) {
     const t = w.addText("⚡\nScheduleKeeper");
@@ -295,14 +363,14 @@ function buildMedium(d) {
   const w = new ListWidget();
   w.backgroundGradient = (() => {
     const g = new LinearGradient();
-    g.colors = [new Color("#07080f"), new Color("#0c0e1d")];
+    g.colors = [new Color("#070b14"), new Color("#0c0e1d")];
     g.locations = [0, 1];
     g.startPoint = new Point(0, 0);
     g.endPoint = new Point(1, 1);
     return g;
   })();
   w.setPadding(14, 14, 14, 14);
-  if (BASE_URL) w.url = BASE_URL;
+  if (BASE_URL) w.url = BASE_URL;  // fallback if row tap not supported
 
   if (!d) {
     const t = w.addText("⚡ ScheduleKeeper — Set widget URL parameter");
@@ -348,6 +416,7 @@ function buildMedium(d) {
     row.layoutHorizontally();
     row.spacing = 4;
     row.centerAlignContent();
+    if (BASE_URL && task.id) row.url = `${BASE_URL}?action=complete&taskId=${task.id}`;
 
     const chk = row.addText(task.completed ? "✓ " : "○ ");
     chk.font = Font.boldSystemFont(9);
@@ -371,23 +440,21 @@ function buildMedium(d) {
   habHdr.font = Font.boldSystemFont(8);
   habHdr.textColor = C.muted;
 
-  const today = todayISO();
-  const habitLogs = (d.habits.length > 0) ? {} : {};
   for (const h of d.habits.slice(0, 6)) {
     const row = habCol.addStack();
     row.layoutHorizontally();
     row.spacing = 4;
     row.centerAlignContent();
+    if (BASE_URL && h.id) row.url = `${BASE_URL}?action=toggleHabit&habitId=${h.id}`;
 
-    // We infer done from habitsDone count approximation
-    const done = false; // exact per-habit needs habitLogs in data
     const chk = row.addText(h.done ? "✓" : "·");
     chk.font = Font.boldSystemFont(9);
     chk.textColor = h.done ? C.green : C.muted;
 
-    const name = row.addText(truncate(h.emoji + " " + h.title, 10));
+    const name = row.addText(truncate((h.emoji||"") + " " + h.title, 10));
     name.font = Font.systemFont(9);
-    name.textColor = C.text;
+    name.textColor = h.done ? C.muted : C.text;
+    if (h.done) name.textOpacity = 0.6;
   }
 
   return w;
@@ -395,6 +462,9 @@ function buildMedium(d) {
 
 // ── Main ─────────────────────────────────────────────────────
 const state = await fetchState();
+
+// Sync Apple Watch workout data to server (non-blocking)
+fetchWorkoutData().then(workouts => syncWorkouts(workouts)).catch(() => {});
 
 // Annotate habits with today's done status
 if (state && state.habits && state.habitLogs) {
@@ -409,10 +479,11 @@ const d = buildToday(state);
 
 let widget;
 switch (config.widgetFamily) {
-  case "accessoryCircular":    widget = buildCircular(d);    break;
-  case "accessoryRectangular": widget = buildRectangular(d); break;
-  case "small":                widget = buildSmall(d);       break;
-  case "medium":               widget = buildMedium(d);      break;
+  case "accessoryCircular":    widget = buildCircular(d);     break;
+  case "accessoryRectangular": widget = buildRectangular(d);  break;
+  case "accessoryInline":      widget = buildWatchInline(d);  break;
+  case "small":                widget = buildSmall(d);        break;
+  case "medium":               widget = buildMedium(d);       break;
   default:
     // Preview mode (running in-app) — show medium
     widget = buildMedium(d);
