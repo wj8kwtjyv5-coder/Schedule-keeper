@@ -2655,6 +2655,110 @@ function DayDetailPanel({date,tasks,habits,habitLogs,healthLogs,notes,onToggleTa
 }
 
 // ── Weekly Review ─────────────────────────────────────────────
+// ── Weekly check-in (your own ratings + reflections) ──────────
+const CHECKIN_AREAS=[
+  {k:"training",label:"Training",icon:"↗"},
+  {k:"energy",label:"Energy",icon:"⚡"},
+  {k:"sleep",label:"Sleep",icon:"☾"},
+  {k:"nutrition",label:"Nutrition",icon:"◍"},
+  {k:"faith",label:"Faith",icon:"✝"},
+  {k:"mood",label:"Mood",icon:"☺"},
+];
+const RATING_WORDS=["","Poor","Weak","OK","Good","Great"];
+const splitLines=t=>(t||"").split(/\n+/).map(x=>x.replace(/^[-•*\s]+/,"").trim()).filter(Boolean);
+
+function WeeklyCheckInSheet({weekLabel,initial,onSave,onClose}){
+  const [ratings,setRatings]=useState(initial?.ratings||{});
+  const [wins,setWins]=useState(initial?.wins||"");
+  const [struggles,setStruggles]=useState(initial?.struggles||"");
+  const [focus,setFocus]=useState(initial?.focus||"");
+  const ta={...S.input,minHeight:64,resize:"none",fontSize:14,lineHeight:1.45};
+  return html`<${BottomSheet} onClose=${onClose} title="Weekly check-in">
+    <div style=${{fontSize:12,color:T.muted,marginTop:-12,marginBottom:14}}>${weekLabel}</div>
+    <${Label}>How did each area go? (1 = poor, 5 = great)<//>
+    <div style=${{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+      ${CHECKIN_AREAS.map(a=>html`<div key=${a.k} style=${{display:"flex",alignItems:"center",gap:8}}>
+        <span style=${{width:86,fontSize:12.5,fontWeight:800,color:T.textSoft,whiteSpace:"nowrap"}}><span style=${{color:T.accent,marginRight:5}}>${a.icon}</span>${a.label}</span>
+        <div style=${{display:"flex",gap:4,flex:1}}>
+          ${[1,2,3,4,5].map(v=>{const on=ratings[a.k]===v;return html`<button key=${v} aria-label=${`${a.label} ${v}`} onClick=${()=>setRatings(r=>({...r,[a.k]:r[a.k]===v?undefined:v}))} style=${{
+            flex:1,height:32,borderRadius:9,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:900,
+            border:`1px solid ${on?T.accentBorder:T.border}`,background:on?"rgba(245,158,11,0.18)":"rgba(255,255,255,0.03)",color:on?T.accent:T.muted}}>${v}</button>`;})}
+        </div>
+      </div>`)}
+    </div>
+    <div style=${{marginBottom:10}}><${Label}>✓ Wins — what went well? (one per line)<//>
+      <textarea style=${ta} value=${wins} onInput=${e=>setWins(e.target.value)} placeholder="e.g. Hit every morning run\nPrayed daily"/></div>
+    <div style=${{marginBottom:10}}><${Label}>! Struggles — what didn't? (one per line)<//>
+      <textarea style=${ta} value=${struggles} onInput=${e=>setStruggles(e.target.value)} placeholder="e.g. Late nights on Thursday\nSkipped mobility"/></div>
+    <div style=${{marginBottom:16}}><${Label}>→ Focus for next week<//>
+      <textarea style=${{...ta,minHeight:48}} value=${focus} onInput=${e=>setFocus(e.target.value)} placeholder="e.g. In bed by 9pm, 3 bike sessions"/></div>
+    <div style=${{display:"flex",gap:10}}>
+      <div style=${{flex:1}}/>
+      <${Btn} onClick=${onClose} variant="ghost">Cancel<//>
+      <${Btn} onClick=${()=>{const clean=Object.fromEntries(Object.entries(ratings).filter(([,v])=>v));onSave({ratings:clean,wins:wins.trim(),struggles:struggles.trim(),focus:focus.trim(),savedAt:Date.now()});}} variant="primary">Save check-in<//>
+    </div>
+  <//>`;
+}
+
+// Insights from your own check-in(s)
+function checkInInsights(reviews,prevReviews){
+  const pos=[],neg=[];
+  if(!reviews.length)return{pos,neg};
+  const avgR=(list,k)=>{const v=list.map(r=>r.ratings?.[k]).filter(Boolean);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
+  CHECKIN_AREAS.forEach(a=>{
+    const v=avgR(reviews,a.k),pv=avgR(prevReviews,a.k);if(v==null)return;
+    const vs=Math.round(v*10)/10;
+    if(pv!=null&&v-pv>=1.5)pos.push({icon:a.icon,src:"you",title:`${a.label} rated up: ${Math.round(pv*10)/10} → ${vs}`,detail:"Your rating vs the previous check-in."});
+    else if(pv!=null&&pv-v>=1.5)neg.push({icon:a.icon,src:"you",title:`${a.label} rated down: ${Math.round(pv*10)/10} → ${vs}`,detail:"Your rating vs the previous check-in.",fix:"Note in 'Focus for next week' what you'll change."});
+    else if(v>=4.5)pos.push({icon:a.icon,src:"you",title:`${a.label}: you rated it ${vs}/5`,detail:RATING_WORDS[Math.round(v)]});
+    else if(v<=2)neg.push({icon:a.icon,src:"you",title:`${a.label}: you rated it ${vs}/5`,detail:RATING_WORDS[Math.max(1,Math.round(v))],fix:"Make this your focus for next week."});
+  });
+  reviews.forEach(r=>{
+    splitLines(r.wins).forEach(w=>pos.push({icon:"✎",src:"you",title:w}));
+    splitLines(r.struggles).forEach(w=>neg.push({icon:"✎",src:"you",title:w}));
+  });
+  return{pos,neg};
+}
+
+function WeeklyCheckInCard({mode,dates,reviews,prevWeekReview,thisReview,onEdit}){
+  if(mode==="month"){
+    const list=dates.filter(d=>parseDate(d).getDay()===1&&reviews[d]).map(d=>reviews[d]);
+    if(!list.length)return html`<div className="sk-card" style=${{...S.card,marginBottom:10,fontSize:12,color:T.muted}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.accent,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>Your check-ins</div>
+      No weekly check-ins this month yet — switch to Weekly to add one.</div>`;
+    return html`<div className="sk-card" style=${{...S.card,marginBottom:10}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.accent,letterSpacing:2,textTransform:"uppercase",marginBottom:10}}>Your check-ins · ${list.length} week${list.length>1?"s":""} · average rating</div>
+      <${RatingBars} ratings=${Object.fromEntries(CHECKIN_AREAS.map(a=>{const v=list.map(r=>r.ratings?.[a.k]).filter(Boolean);return[a.k,v.length?Math.round(v.reduce((x,y)=>x+y,0)/v.length*10)/10:null];}))}/>
+    </div>`;
+  }
+  const r=thisReview;
+  return html`<div className="sk-card" style=${{...S.card,marginBottom:10,border:`1px solid ${r?"rgba(255,255,255,0.06)":T.accentBorder}`}}>
+    <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:r||prevWeekReview?.focus?10:6}}>
+      <div style=${{fontSize:9,fontWeight:900,color:T.accent,letterSpacing:2,textTransform:"uppercase"}}>Your weekly check-in</div>
+      <${Btn} onClick=${onEdit} variant=${r?"ghost":"accent"} style=${{padding:"5px 12px",fontSize:11}}>${r?"Edit":"Check in"}<//>
+    </div>
+    ${prevWeekReview?.focus?html`<div style=${{fontSize:11.5,color:T.textSoft,lineHeight:1.45,padding:"7px 9px",borderRadius:9,background:"rgba(245,158,11,0.07)",borderLeft:`2px solid ${T.accent}`,marginBottom:r?10:0}}>
+      <b style=${{color:T.text}}>Your focus this week:</b> ${prevWeekReview.focus}</div>`:""}
+    ${r?html`<${RatingBars} ratings=${r.ratings||{}} prev=${prevWeekReview?.ratings}/>
+      ${r.focus?html`<div style=${{fontSize:11.5,color:T.muted,marginTop:8}}><b style=${{color:T.textSoft}}>Next week's focus:</b> ${r.focus}</div>`:""}`
+    :html`<div style=${{fontSize:12,color:T.muted,lineHeight:1.45,marginTop:prevWeekReview?.focus?8:0}}>Rate your week and note your wins and struggles — they feed straight into the report below.</div>`}
+  </div>`;
+}
+
+function RatingBars({ratings,prev}){
+  return html`<div style=${{display:"flex",flexDirection:"column",gap:6}}>
+    ${CHECKIN_AREAS.map(a=>{const v=ratings?.[a.k];const p=prev?.[a.k];const dv=v!=null&&p!=null?Math.round((v-p)*10)/10:null;
+      return html`<div key=${a.k} style=${{display:"flex",alignItems:"center",gap:8}}>
+        <span style=${{width:80,fontSize:11.5,fontWeight:800,color:T.textSoft,whiteSpace:"nowrap"}}><span style=${{color:T.accent,marginRight:5}}>${a.icon}</span>${a.label}</span>
+        <div style=${{flex:1,display:"flex",gap:3}}>
+          ${[1,2,3,4,5].map(i=>html`<div key=${i} style=${{flex:1,height:6,borderRadius:3,background:v!=null&&i<=Math.round(v)?(v>=4?T.green:v>=3?T.accent:T.red):"rgba(255,255,255,0.07)"}}/>`)}
+        </div>
+        <span style=${{width:26,textAlign:"right",fontSize:11.5,fontWeight:800,color:v!=null?T.text:T.muted,...TYPE.num}}>${v!=null?v:"–"}</span>
+        <span style=${{width:36,textAlign:"right",fontSize:10,fontWeight:800,color:dv==null||dv===0?T.muted:dv>0?T.green:T.red}}>${dv==null?"":dv===0?"=":`${dv>0?"▲":"▼"}${Math.abs(dv)}`}</span>
+      </div>`;})}
+  </div>`;
+}
+
 // ── Performance Report (weekly / monthly) ─────────────────────
 const DOW_LONG=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 function periodDates(mode,offset){
@@ -2813,7 +2917,8 @@ function DeltaChip({d,unit="pts",invert=false}){
   return html`<span style=${{fontSize:10,fontWeight:800,color:c,whiteSpace:"nowrap"}}>${flat?"● same":`${d>0?"▲":"▼"} ${Math.abs(d)}${unit==="pts"?" pts":unit}`}</span>`;
 }
 
-function PerformanceReport({tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings,mode,setMode,offset,setOffset}){
+function PerformanceReport({tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings,mode,setMode,offset,setOffset,weeklyReviews={},onSaveReview}){
+  const [checkInOpen,setCheckInOpen]=useState(false);
   const dates=useMemo(()=>periodDates(mode,offset),[mode,offset]);
   // Like-for-like: while a period is in progress, compare with the same number of days of the previous one
   const elapsedNow=dates.filter(x=>x<=todayISO()).length;
@@ -2823,7 +2928,15 @@ function PerformanceReport({tasks,habits,habitLogs,chores,choreLogs,healthLogs,s
   const args={tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings,since};
   const cur=useMemo(()=>computePeriodStats({...args,dates}),[dates,since,tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings]);
   const prev=useMemo(()=>computePeriodStats({...args,dates:prevDates}),[prevDates,since,tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings]);
-  const{pos,neg}=useMemo(()=>buildInsights(cur,prev,mode,settings,likeForLike),[cur,prev,mode,likeForLike]);
+  const auto=useMemo(()=>buildInsights(cur,prev,mode,settings,likeForLike),[cur,prev,mode,likeForLike]);
+  // Your check-ins for this period (keyed by the Monday of each week) and the one before
+  const reviewsIn=ds=>ds.filter(x=>parseDate(x).getDay()===1&&weeklyReviews[x]).map(x=>weeklyReviews[x]);
+  const thisReview=mode==="week"?weeklyReviews[dates[0]]:null;
+  const prevWeekKey=isoDate(addDays(parseDate(dates[0]),-7));
+  const prevWeekReview=mode==="week"?weeklyReviews[prevWeekKey]:null;
+  const mine=useMemo(()=>checkInInsights(mode==="week"?(thisReview?[thisReview]:[]):reviewsIn(dates),mode==="week"?(prevWeekReview?[prevWeekReview]:[]):reviewsIn(periodDates("month",offset-1))),[weeklyReviews,dates,mode,offset]);
+  const pos=[...mine.pos,...auto.pos.map(x=>({...x,src:"log"}))],neg=[...mine.neg,...auto.neg.map(x=>({...x,src:"log"}))];
+  const loggedCount=cur.days.reduce((a,x)=>a+(x.dn||0),0)+cur.sleepNights;
   const [tip,setTip]=useState(null);
   const per=mode==="week"?"week":"month";
   const vsLabel=likeForLike?`vs same point last ${per}`:`vs last ${per}`;
@@ -2850,11 +2963,13 @@ function PerformanceReport({tasks,habits,habitLogs,chores,choreLogs,healthLogs,s
       <span style=${{width:22,height:22,borderRadius:7,flexShrink:0,display:"grid",placeItems:"center",fontSize:11,fontWeight:900,
         background:kind==="pos"?"rgba(52,211,153,0.15)":"rgba(251,191,36,0.14)",color:kind==="pos"?T.green:T.amber}}>${it.icon}</span>
       <div style=${{flex:1,minWidth:0}}>
-        <div style=${{fontSize:12.5,fontWeight:800,color:T.text,lineHeight:1.3}}>${it.title}</div>
+        <div style=${{fontSize:12.5,fontWeight:800,color:T.text,lineHeight:1.3}}>${it.title}
+          <span style=${{marginLeft:6,fontSize:8.5,fontWeight:900,letterSpacing:0.8,textTransform:"uppercase",padding:"1px 5px",borderRadius:5,verticalAlign:"middle",
+            color:it.src==="you"?T.accent:T.muted,background:it.src==="you"?"rgba(245,158,11,0.12)":"rgba(255,255,255,0.05)"}}>${it.src==="you"?"You":"Logged"}</span></div>
         ${it.detail?html`<div style=${{fontSize:11,color:T.muted,marginTop:2,lineHeight:1.4}}>${it.detail}</div>`:""}
         ${it.fix?html`<div style=${{fontSize:11,color:T.textSoft,marginTop:4,lineHeight:1.4}}><span style=${{color:T.accent,fontWeight:800}}>→ </span>${it.fix}</div>`:""}
       </div>
-    </div>`):html`<div style=${{fontSize:11.5,color:T.muted,padding:"6px 2px"}}>${kind==="pos"?"Nothing stands out yet — tick off a few sessions and habits.":"Nothing flagged — keep it up."}</div>`}
+    </div>`):html`<div style=${{fontSize:11.5,color:T.muted,padding:"6px 2px"}}>${kind==="pos"?"Nothing yet — tick off sessions and habits, or add your wins in the check-in.":"Nothing flagged — keep it up."}</div>`}
   </div>`;
 
   return html`<div style=${{marginBottom:18}}>
@@ -2867,6 +2982,13 @@ function PerformanceReport({tasks,habits,habitLogs,chores,choreLogs,healthLogs,s
       <div style=${{fontSize:13,fontWeight:800,color:T.text,textAlign:"center"}}>${periodLabel(mode,dates,offset)}</div>
       <button aria-label="Next period" disabled=${offset>=0} onClick=${()=>{setOffset(o=>Math.min(0,o+1));setTip(null);}} style=${{...navBtn,opacity:offset>=0?0.3:1,cursor:offset>=0?"default":"pointer"}}>›</button>
     </div>
+
+    <div style=${{fontSize:10.5,color:T.muted,textAlign:"center",marginTop:-6,marginBottom:10}}>
+      Built only from what you tick & log${cur.elapsed?` · ${cur.elapsed} day${cur.elapsed===1?"":"s"} · ${loggedCount} ticks & logs`:" · nothing logged in this period"}</div>
+
+    <${WeeklyCheckInCard} mode=${mode} dates=${dates} reviews=${weeklyReviews} thisReview=${thisReview} prevWeekReview=${prevWeekReview} onEdit=${()=>setCheckInOpen(true)}/>
+    ${checkInOpen?html`<${WeeklyCheckInSheet} weekLabel=${periodLabel("week",dates,offset)} initial=${thisReview}
+      onClose=${()=>setCheckInOpen(false)} onSave=${r=>{onSaveReview(dates[0],r);setCheckInOpen(false);showToast("Check-in saved");}}/>`:""}
 
     <!-- Hero score -->
     <div className="sk-card" style=${{...S.card,marginBottom:10,display:"flex",alignItems:"center",gap:14}}>
@@ -3026,7 +3148,7 @@ function MonthCalendar({tasks,habits,habitLogs,notes,month,onPrevMonth,onNextMon
 }
 
 // ── Review View ───────────────────────────────────────────────
-function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,chores=[],choreLogs={},onUpsertNote,onToggleTask,onEditTask,onAddForDate}){
+function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,chores=[],choreLogs={},weeklyReviews={},onSaveReview,onUpsertNote,onToggleTask,onEditTask,onAddForDate}){
   const [selectedDay,setSelectedDay]=useState(null);
   const [mode,setMode]=useState("week");
   const [offset,setOffset]=useState(0);
@@ -3054,7 +3176,8 @@ function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,chores=[],
 
     <!-- Weekly / monthly performance report -->
     <${PerformanceReport} tasks=${tasks} habits=${habits} habitLogs=${habitLogs} chores=${chores} choreLogs=${choreLogs}
-      healthLogs=${healthLogs} settings=${settings} mode=${mode} setMode=${setMode} offset=${offset} setOffset=${setOffset}/>
+      healthLogs=${healthLogs} settings=${settings} mode=${mode} setMode=${setMode} offset=${offset} setOffset=${setOffset}
+      weeklyReviews=${weeklyReviews} onSaveReview=${onSaveReview}/>
 
     <!-- Month calendar -->
     ${mode==="month"?html`<${MonthCalendar} tasks=${tasks} habits=${habits} habitLogs=${habitLogs} notes=${notes||{}} month=${reviewMonth} onPrevMonth=${prevMonth} onNextMonth=${nextMonth}/>`:""}
@@ -5309,6 +5432,7 @@ function App(){
   const upsertHealthLog=useCallback((date,patch)=>mut(s=>({healthLogs:{...s.healthLogs,[date]:{...s.healthLogs[date],...patch}}})),[mut]);
   const upsertFoodLog=useCallback((date,meals)=>mut(s=>({foodLogs:{...s.foodLogs,[date]:{meals}}})),[mut]);
   const upsertNote=useCallback((date,text)=>mut(s=>({notes:{...s.notes,[date]:text}})),[mut]);
+  const upsertWeeklyReview=useCallback((weekStart,review)=>mut(s=>({weeklyReviews:{...(s.weeklyReviews||{}),[weekStart]:review}})),[mut]);
   const bulkEditTasks=useCallback(moves=>mut(s=>({tasks:s.tasks.map(t=>{const mv=moves.find(m=>m.task.id===t.id);return mv?{...t,date:mv.toDate}:t;})})),[mut]);
   const upsertPlan=useCallback((plan,newTasks)=>mut(s=>({trainingPlans:[...(s.trainingPlans||[]).filter(p=>p.id!==plan.id),plan],tasks:[...s.tasks,...(newTasks||[])]})),[mut]);
   const deletePlan=useCallback(planId=>mut(s=>({trainingPlans:(s.trainingPlans||[]).filter(p=>p.id!==planId),tasks:s.tasks.filter(t=>!(t.planKey||"").startsWith(`plan_${planId}`))})),[mut]);
@@ -5479,7 +5603,7 @@ function App(){
 
       <div key=${view} ref=${swipeRef} style=${{animation:`slide${slideDir==="right"?"InRight":"InLeft"} 0.22s var(--ease-out) backwards`}}>
         ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)} retentionDays=${retentionDays(state?.retentionStartDate)}/>`:""}
-        ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
+        ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} weeklyReviews=${state.weeklyReviews||{}} onSaveReview=${upsertWeeklyReview} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
         ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})} retentionStartDate=${state?.retentionStartDate||null} onStartRetention=${startRetention} onResetRetention=${resetRetention}
           chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} onToggleChore=${toggleChore}
           onAddChore=${c=>{addChore(c);showToast("Chore added ✅");}} onDeleteChore=${id=>{deleteChore(id);showToast("Deleted");}}/>`:""}
