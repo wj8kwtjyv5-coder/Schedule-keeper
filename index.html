@@ -2000,6 +2000,7 @@ function BodyView({bodyMap,onUpdateBodyMap}){
             }}>
               <span style=${{width:9,height:9,borderRadius:"50%",background:l.color,boxShadow:`0 0 6px ${l.color}`}}/>
               ${l.name}${here?"":l.f?" (front)":" (back)"}
+              ${l.ev?html`<span title=${EVIDENCE[l.ev.level].label} style=${{width:5,height:5,borderRadius:"50%",background:EVIDENCE[l.ev.level].color,opacity:0.9}}/>`:""}
             </button>`;
           })}
         </div>
@@ -2015,6 +2016,12 @@ function BodyView({bodyMap,onUpdateBodyMap}){
         </div>
         <button onClick=${()=>setFocusLine(null)} style=${{width:26,height:26,borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.muted,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
       </div>
+      ${focusObj.ev?html`<div style=${{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:6,marginBottom:10,padding:"8px 10px",borderRadius:9,
+        background:EVIDENCE[focusObj.ev.level].color+"12",border:`1px solid ${EVIDENCE[focusObj.ev.level].color}40`}}>
+        <span style=${{fontSize:9,fontWeight:900,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",padding:"2px 7px",borderRadius:999,
+          background:EVIDENCE[focusObj.ev.level].color+"22",color:EVIDENCE[focusObj.ev.level].color}}>${EVIDENCE[focusObj.ev.level].label}</span>
+        <span style=${{fontSize:10.5,color:T.textSoft,lineHeight:1.45}}>${focusObj.ev.note}</span>
+      </div>`:""}
       <div style=${{fontSize:11,color:focusObj.color,fontWeight:700,lineHeight:1.5,marginBottom:8}}>${focusObj.route}</div>
       <div style=${{fontSize:12,color:T.textSoft,lineHeight:1.55,marginBottom:8}}>${focusObj.role}</div>
       <div style=${{fontSize:11,color:T.muted,lineHeight:1.5,marginBottom:10}}><b style=${{color:T.textSoft}}>Tension shows up as:</b> ${focusObj.signs}</div>
@@ -2023,6 +2030,15 @@ function BodyView({bodyMap,onUpdateBodyMap}){
         ${focusObj.drills.map((d,i)=>html`<div key=${i} style=${{fontSize:12,color:T.textSoft,display:"flex",gap:8,padding:"5px 8px",borderRadius:8,background:"rgba(255,255,255,0.02)"}}>
           <span style=${{color:focusObj.color,flexShrink:0}}>→</span>${d}</div>`)}
       </div>
+      <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,margin:"12px 0 6px",textTransform:"uppercase"}}>Body parts on this line · tap to activate</div>
+      <div style=${{display:"flex",flexWrap:"wrap",gap:4}}>
+        ${(LINE_ZONES[focusObj.id]||[]).map(id=>{const z=BODY_ZONES.find(b=>b.id===id);if(!z)return null;const zs=zones[id];
+          return html`<button key=${id} onClick=${()=>{setFocusLine(null);setView(z.view);setSelectedZone(id);setPickerZone(null);}} style=${{
+            fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:999,cursor:"pointer",fontFamily:"inherit",
+            border:`1px solid ${zs?BODY_TYPE_COLORS[zs.type]+"60":focusObj.color+"40"}`,background:zs?BODY_TYPE_COLORS[zs.type]+"18":"rgba(255,255,255,0.03)",
+            color:zs?BODY_TYPE_COLORS[zs.type]:T.textSoft}}>${z.label}${zs?" "+BODY_TYPE_EMOJI[zs.type]:""}</button>`;})}
+      </div>
+      <div style=${{fontSize:9.5,color:T.muted,marginTop:10,lineHeight:1.45}}>Routes: Myers, <i>Anatomy Trains</i>. Evidence: Wilke 2016 & 2019 dissection reviews; Krause 2016; Wilke 2017 remote-stretching trial. Educational — see a physio for pain that persists or is sharp.</div>
       ${(()=>{const hit=zoneEntries.filter(([id])=>(ZONE_CHAINS[id]||[]).includes(focusObj.id));
         return hit.length?html`<div style=${{marginTop:10,fontSize:11,color:T.muted}}>On this line you've marked: ${hit.map(([id,z])=>`${BODY_ZONES.find(b=>b.id===id)?.label} ${BODY_TYPE_EMOJI[z.type]}`).join(", ")}</div>`:"";})()}
     </div>`:""}
@@ -2052,6 +2068,9 @@ function BodyView({bodyMap,onUpdateBodyMap}){
             </button>`;})}
         </div>
         <div style=${{fontSize:10,color:T.muted,marginTop:7}}>Tension here can travel along these lines. Tap one for its route and release drills.</div>
+        ${ZONE_TIPS[pickerZone]?html`<div style=${{marginTop:8,padding:"7px 9px",borderRadius:8,fontSize:10.5,lineHeight:1.45,color:T.textSoft,
+          background:(CHAIN_COLORS[ZONE_TIPS[pickerZone].line]||T.accent)+"12",borderLeft:`2px solid ${CHAIN_COLORS[ZONE_TIPS[pickerZone].line]||T.accent}`}}>
+          <b style=${{color:T.text}}>Research tip · </b>${ZONE_TIPS[pickerZone].text}</div>`:""}
       </div>`:""}
       <!-- Type selector -->
       <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,marginBottom:6,textTransform:"uppercase"}}>Symptom</div>
@@ -3573,24 +3592,27 @@ const BODY_TYPE_COLORS={pain:"#ef4444",fatigue:"#f59e0b",tightness:"#14b8a6"};
 // Myofascial lines (Anatomy Trains). Paths are drawn in the 160×286 body-map space.
 const MYO_LINES=[
   {id:"SFL",name:"Superficial Front Line",color:"#ef4444",
-    route:"Top of toes → shins → quads → abs → sternum → neck (SCM) → skull",
-    role:"Flexes the trunk and hips, straightens the knee — the front 'guard' you brace with when you sprint or land.",
-    signs:"Forward head, rounded shoulders, tight hip flexors/quads, shin splints.",
-    drills:["Couch stretch — 60s each side","Cobra / upward dog — 3×20s","Kneeling tibialis stretch (sit back on feet) — 45s"],
+    route:"Top of toes → toe extensors & tibialis anterior → kneecap tendon → quadriceps (rectus femoris) → [gap at the pelvis] → rectus abdominis → sternum fascia → SCM → mastoid (behind the ear)",
+    role:"Flexes the trunk and hips and straightens the knee — the front 'guard' you brace with when you sprint, land or take a hit.",
+    signs:"Often linked with a forward head, rounded shoulders, tight hip flexors/quads and shin splints.",
+    drills:["Couch stretch (quad + hip flexor) — 60s each side", "Cobra / upward dog (abdominal wall) — 3×20s", "Kneeling tibialis stretch, sit back on the feet — 45s"],
+    ev:{level:"none",note:"Not supported as one continuous chain: dissection found no tissue link between rectus femoris and rectus abdominis (Wilke 2016, 0 of its transitions verified). Treat it as a map of the front, not a single band."},
     f:["M60,262 Q63,246 62,228 Q61,216 63,206 Q66,186 64,166 Q66,150 72,138 Q74,118 74,100 Q76,84 77,70 Q74,58 70,48 Q67,40 66,32",
        "M100,262 Q97,246 98,228 Q99,216 97,206 Q94,186 96,166 Q94,150 88,138 Q86,118 86,100 Q84,84 83,70 Q86,58 90,48 Q93,40 94,32"]},
   {id:"SBL",name:"Superficial Back Line",color:"#38bdf8",
-    route:"Sole of foot → heel → calves → hamstrings → sacrum → spinal erectors → over the skull to the brow",
-    role:"Holds you upright and powers extension — the engine behind your stride and jumping.",
-    signs:"Plantar fasciitis, tight calves/hamstrings, low back ache, tension headaches.",
-    drills:["Roll sole of foot on a ball — 60s each","Ragdoll forward fold — 60s","Legs up the wall — 3 min"],
+    route:"Toes & plantar fascia → heel → Achilles & calf (gastrocnemius) → hamstrings → sacrotuberous ligament → thoracolumbar fascia & erector spinae → back of skull → scalp (galea) → brow ridge",
+    role:"Holds you upright and powers extension — the engine behind your stride, jumping and heading.",
+    signs:"Often linked with plantar fasciitis, tight calves/hamstrings, low-back ache and tension headaches.",
+    drills:["Calf + hamstring stretch — 3×30s each (this exact dose increased neck range of motion in trials)", "Nordic hamstring curl — 2×5 slow, 2–3×/week (≈half the hamstring injuries in footballers)", "Roll the sole of the foot on a ball — 60s each"],
+    ev:{level:"strong",note:"Strongest-supported line: all 3 transitions verified in 14 dissection studies (Wilke 2016); force transfer hamstrings → sacrotuberous ligament/thoracolumbar fascia shown (Krause 2016); calf + hamstring stretching improved neck mobility as much as neck stretching (Wilke 2017)."},
     b:["M62,264 Q63,252 63,244 Q66,230 64,214 Q66,196 64,178 Q66,164 72,154 Q76,142 77,126 Q77,100 78,76 Q79,60 80,48 Q80,30 80,10",
        "M98,264 Q97,252 97,244 Q94,230 96,214 Q94,196 96,178 Q94,164 88,154 Q84,142 83,126 Q83,100 82,76 Q81,60 80,48"]},
   {id:"LL",name:"Lateral Line",color:"#22c55e",
-    route:"Outer ankle (peroneals) → IT band → hip (TFL, glute med) → obliques & ribs → side of neck → skull",
+    route:"1st & 5th metatarsals → peroneals (outer calf) → head of fibula → IT band, TFL & upper glute max → iliac crest → obliques → intercostals → splenius capitis & SCM → skull",
     role:"Side-to-side stability and balance — it brakes you when you cut, change direction or land on one leg.",
-    signs:"IT-band / outer knee pain, ankle sprains, hip drop when running.",
-    drills:["Side-lying roll on TFL & glute med — 60s each","Standing side-bend reach — 30s each","Side plank / Copenhagen plank — 3×20s"],
+    signs:"Often linked with outer-knee / IT-band pain, repeated ankle sprains and hip drop when running.",
+    drills:["Side plank — 3×20–30s each side", "Single-leg balance with eyes closed / on a cushion — 3×30s each", "Standing side-bend reach — 30s each side"],
+    ev:{level:"moderate",note:"Partly supported: 2 of 5 transitions verified in 10 studies (Wilke 2016)."},
     f:["M52,264 Q47,248 47,232 Q46,212 48,196 Q46,178 49,164 Q46,152 50,142 Q56,132 55,120 Q60,110 56,100 Q58,90 57,80 Q62,66 71,54 Q69,44 65,36",
        "M108,264 Q113,248 113,232 Q114,212 112,196 Q114,178 111,164 Q114,152 110,142 Q104,132 105,120 Q100,110 104,100 Q102,90 103,80 Q98,66 89,54 Q91,44 95,36"],
     b:["M52,262 Q48,246 50,230 Q48,212 50,196 Q48,178 50,164 Q48,150 51,140",
@@ -3598,85 +3620,112 @@ const MYO_LINES=[
        "M51,140 Q54,124 56,110 Q58,96 56,84 Q60,68 70,56 Q72,48 70,40",
        "M109,140 Q106,124 104,110 Q102,96 104,84 Q100,68 90,56 Q88,48 90,40"]},
   {id:"Spiral",name:"Spiral Line",color:"#facc15",
-    route:"Skull → opposite shoulder blade → around the ribs → across the belly → opposite hip → front of shin → under the arch → back up the leg",
-    role:"A double helix that creates and controls rotation — key for kicking, twisting and keeping knees tracking straight.",
-    signs:"Knees caving in, pelvis twisted, one-sided shoulder & opposite-hip issues.",
-    drills:["Open-book thoracic rotation — 10 each side","World's greatest stretch — 5 each side","Half-kneeling Pallof press — 3×10"],
-    f:["M54,76 Q66,96 78,114 Q90,132 100,150 Q106,166 104,184 Q100,204 98,222 Q96,242 92,258",
-       "M106,76 Q94,96 82,114 Q70,132 60,150 Q54,166 56,184 Q60,204 62,222 Q64,242 68,258"],
+    route:"Skull (splenius) → OPPOSITE rhomboids → serratus anterior → external oblique → across the belly → internal oblique → hip on the skull's side (TFL/ASIS) → IT band → tibialis anterior → under the arch → peroneus longus → biceps femoris → sacrotuberous ligament → erector spinae → back to the skull",
+    role:"A double helix that creates and controls rotation — kicking, twisting, and keeping the knee tracking straight over the foot.",
+    signs:"Often linked with knees caving in, a rotated pelvis, and pairs of problems on one shoulder and the opposite hip.",
+    drills:["Open-book thoracic rotation — 10 each side", "World's greatest stretch — 5 each side", "Half-kneeling Pallof press — 3×10 each side"],
+    ev:{level:"moderate",note:"Partly supported: 5 of 9 transitions verified in 21 studies (Wilke 2016)."},
+    f:["M58,86 Q68,100 78,114 Q90,132 100,150 Q106,166 104,184 Q100,204 98,222 Q96,242 92,258",
+       "M102,86 Q92,100 82,114 Q70,132 60,150 Q54,166 56,184 Q60,204 62,222 Q64,242 68,258"],
     b:["M88,34 Q84,52 74,66 Q64,80 56,98","M72,34 Q76,52 86,66 Q96,80 104,98",
        "M54,258 Q52,240 55,224 Q58,206 60,190 Q63,172 69,160 Q74,152 78,142",
        "M106,258 Q108,240 105,224 Q102,206 100,190 Q97,172 91,160 Q86,152 82,142"]},
   {id:"DFL",name:"Deep Front Line",color:"#fb923c",
-    route:"Inner arch → deep calf → inner knee → adductors → psoas → diaphragm → front of spine → jaw",
-    role:"Your true core — stabilises the spine and pelvis from inside and drives breathing.",
-    signs:"Groin strains, deep hip-flexor tightness, flat feet, shallow chest breathing.",
-    drills:["90/90 belly breathing — 2 min","Adductor rock-backs — 10 each side","Half-kneeling hip-flexor stretch with overhead reach — 45s each"],
+    route:"Sole of foot → tibialis posterior & long toe flexors (deep calf) → back of knee (popliteus) → adductors → pelvic floor & psoas → diaphragm → front of spine / pericardium → scalenes & throat muscles → jaw and base of skull",
+    role:"Your true core — stabilises the arch, inner knee, pelvis and spine from the inside, and drives breathing.",
+    signs:"Often linked with groin strains, deep hip-flexor tightness, flat feet and shallow chest breathing.",
+    drills:["Copenhagen adduction plank — 3×/week (≈41% fewer groin problems in footballers)", "90/90 belly breathing — 2 min", "Half-kneeling hip-flexor stretch with overhead reach — 45s each side"],
+    ev:{level:"untested",note:"Not yet tested in systematic dissection reviews — the researchers flagged it for future study. The anatomy is real; the 'line' is a model."},
     f:["M65,262 Q67,248 67,236 Q68,222 69,212 Q72,194 74,176 Q76,160 78,146 Q80,128 80,110 Q80,90 80,70 Q80,56 80,46",
        "M95,262 Q93,248 93,236 Q92,222 91,212 Q88,194 86,176 Q84,160 82,146 Q80,128 80,110"],
     b:["M66,262 Q67,248 67,236 Q68,222 69,210 Q71,194 73,178 Q76,164 78,150 Q79,138 80,126",
        "M94,262 Q93,248 93,236 Q92,222 91,210 Q89,194 87,178 Q84,164 82,150 Q81,138 80,126"]},
   {id:"SFAL",name:"Superficial Front Arm",color:"#818cf8",
-    route:"Pec major & lats → inner upper arm → forearm flexors → palm & fingers",
+    route:"Pec major & latissimus → inner upper arm (medial intermuscular septum) → forearm flexors → carpal tunnel → palm & fingers",
     role:"The palm side of the arm — gripping, pushing, and the pull-through of your arm swing.",
-    signs:"Tight chest, golfer's elbow / wrist-flexor pain, grip fatigue.",
-    drills:["Doorway pec stretch — 45s each side","Prayer wrist stretch — 30s","Dead hang from a bar — 3×20s"],
+    signs:"Often linked with a tight chest, golfer's elbow / wrist-flexor pain and grip fatigue.",
+    drills:["Doorway pec stretch — 45s each side", "Prayer wrist stretch — 30s", "Dead hang from a bar — 3×20s"],
+    ev:{level:"strong",note:"Matches the 'ventral arm chain' (pec major → biceps/brachial fascia → forearm flexors) with good evidence from 5 dissection studies (Wilke 2019)."},
     f:["M74,80 Q62,74 50,76 Q42,82 40,96 Q38,110 35,122 Q32,136 28,148 Q26,154 25,160",
        "M86,80 Q98,74 110,76 Q118,82 120,96 Q122,110 125,122 Q128,136 132,148 Q134,154 135,160"]},
   {id:"DFAL",name:"Deep Front Arm",color:"#2dd4bf",
-    route:"Pec minor → biceps → radius → thumb",
+    route:"Pec minor → biceps → radius → thumb muscles → thumb",
     role:"Stabilises the front of the shoulder and the thumb side of the hand — pressing, catching, fending off.",
-    signs:"Rounded shoulders, front-of-shoulder pinch, thumb or wrist pain.",
-    drills:["Pec minor wall stretch — 45s each","Biceps wall stretch — 30s each","Forearm rotations with a light weight — 10 each way"],
+    signs:"Often linked with rounded shoulders, a front-of-shoulder pinch and thumb/wrist pain.",
+    drills:["Pec minor wall stretch — 45s each", "Biceps wall stretch — 30s each", "Forearm rotations with a light weight — 10 each way"],
+    ev:{level:"limited",note:"Only partly covered: the biceps link is part of the verified ventral arm chain, but pec minor → biceps was not confirmed as its own line (Wilke 2019)."},
     f:["M66,66 Q56,64 48,68 Q38,74 34,88 Q31,102 30,116 Q27,132 23,146 Q21,152 19,156",
        "M94,66 Q104,64 112,68 Q122,74 126,88 Q129,102 130,116 Q133,132 137,146 Q139,152 141,156"]},
   {id:"SBAL",name:"Superficial Back Arm",color:"#f472b6",
-    route:"Trapezius → deltoid → outer upper arm → wrist extensors → back of hand",
+    route:"Trapezius → deltoid → lateral intermuscular septum → wrist & finger extensors → back of hand",
     role:"Lifts and positions the arm — overhead reach, arm drive when sprinting, holding off a defender.",
-    signs:"Upper-trap tension, tennis elbow, neck-and-shoulder headaches.",
-    drills:["Upper-trap stretch — 30s each side","Wrist extensor stretch — 30s each","Band pull-aparts — 2×15"],
+    signs:"Often linked with upper-trap tension, tennis elbow and neck-and-shoulder headaches.",
+    drills:["Upper-trap stretch — 30s each side", "Wrist extensor stretch — 30s each", "Band pull-aparts — 2×15"],
+    ev:{level:"strong",note:"Matches the 'lateral arm chain' (trapezius → deltoid → lateral septum → brachioradialis) with good evidence from 4 studies (Wilke 2019)."},
     b:["M80,40 Q76,52 66,58 Q54,62 44,66 Q34,74 32,90 Q30,108 28,124 Q26,140 24,152",
        "M80,40 Q84,52 94,58 Q106,62 116,66 Q126,74 128,90 Q130,108 132,124 Q134,140 136,152"]},
   {id:"DBAL",name:"Deep Back Arm",color:"#a3e635",
-    route:"Rhomboids & levator scapulae → rotator cuff → triceps → ulna → little finger",
+    route:"Rhomboids & levator scapulae → rotator cuff → triceps → ulna → little-finger muscles",
     role:"Anchors the shoulder blade and back of the shoulder — throwing, pushing up off the ground, falling safely.",
-    signs:"Ache between the shoulder blades, rotator-cuff niggles, pinky-side wrist pain.",
-    drills:["Sleeper stretch — 30s each","Scapular push-ups — 2×12","Side-lying external rotation — 2×12 each"],
+    signs:"Often linked with ache between the shoulder blades, rotator-cuff niggles and pinky-side wrist pain.",
+    drills:["Cross-body posterior shoulder stretch — 30s each", "Scapular push-ups — 2×12", "Side-lying external rotation — 2×12 each"],
+    ev:{level:"strong",note:"Largely matches the 'dorsal arm chain' (infraspinatus/teres minor → triceps → anconeus → forearm) with good evidence from 6 studies (Wilke 2019)."},
     b:["M78,70 Q70,76 62,74 Q52,72 44,74 Q38,80 36,94 Q34,110 32,126 Q30,140 28,154",
        "M82,70 Q90,76 98,74 Q108,72 116,74 Q122,80 124,94 Q126,110 128,126 Q130,140 132,154"]},
   {id:"Func",name:"Functional Lines",color:"#c084fc",
-    route:"Front: lower pec → abdominal sheath → pubic bone → opposite adductor. Back: lat → low-back fascia → sacrum → opposite glute → outer thigh",
-    role:"Cross-body slings that transfer power from arm to opposite leg — sprinting, kicking and throwing.",
-    signs:"Groin or adductor pain, opposite shoulder–hip tightness, weak rotation power.",
-    drills:["Bird-dog — 3×8 each side","Cross-body lunge with reach — 8 each side","Single-leg RDL with opposite-arm reach — 8 each side"],
+    route:"Back: latissimus → thoracolumbar fascia → sacrum → OPPOSITE glute max → vastus lateralis → kneecap tendon. Front: lower pec major → abdominal sheath → pubic bone → OPPOSITE adductor longus. Same-side: outer lat → external oblique → sartorius → inner knee",
+    role:"Cross-body slings that transfer power from one arm to the opposite leg — sprinting, kicking and throwing.",
+    signs:"Often linked with groin/adductor pain, opposite shoulder–hip tightness and weak rotational power.",
+    drills:["Bird-dog — 3×8 each side", "Single-leg RDL with opposite-arm reach — 3×8 each side", "Cross-body lunge with reach — 8 each side"],
+    ev:{level:"strong",note:"Strongly supported: back functional line 3/3 transitions (8 studies) and front functional line 2/2 (6 studies) verified (Wilke 2016)."},
     f:["M52,80 Q64,94 74,110 Q80,124 84,140 Q88,156 90,172 Q92,188 92,204",
-       "M108,80 Q96,94 86,110 Q80,124 76,140 Q72,156 70,172 Q68,188 68,204"],
-    b:["M40,82 Q54,100 66,118 Q76,132 84,144 Q94,158 100,174 Q102,192 98,210",
-       "M120,82 Q106,100 94,118 Q84,132 76,144 Q66,158 60,174 Q58,192 62,210"]},
+       "M108,80 Q96,94 86,110 Q80,124 76,140 Q72,156 70,172 Q68,188 68,204",
+       "M57,88 Q60,104 62,120 Q60,132 56,142 Q60,166 66,188 Q70,202 70,212","M103,88 Q100,104 98,120 Q100,132 104,142 Q100,166 94,188 Q90,202 90,212"],
+    b:["M40,82 Q54,100 66,118 Q76,132 84,144 Q94,158 102,174 Q107,192 105,210",
+       "M120,82 Q106,100 94,118 Q84,132 76,144 Q66,158 58,174 Q53,192 55,210"]},
 ];
 const MYO_BY_ID=Object.fromEntries(MYO_LINES.map(l=>[l.id,l]));
 const BODY_TYPE_EMOJI={pain:"🔴",fatigue:"🟡",tightness:"🩵"};
 const CHAIN_COLORS=Object.fromEntries(MYO_LINES.map(l=>[l.id,l.color]));
 const ZONE_CHAINS={
-  head:["SFL","SBL","LL","Spiral"],
-  neck:["SFL","SBL","LL","DFL","Spiral","SBAL"],
-  l_shoulder:["LL","Spiral","SFAL","DFAL","SBAL","DBAL","Func"],r_shoulder:["LL","Spiral","SFAL","DFAL","SBAL","DBAL","Func"],
+  // Mapped from Myers' Anatomy Trains stations (muscles/fascia each line passes through)
+  head:["SFL","SBL","LL","Spiral","DFL"],
+  neck:["SFL","SBL","LL","DFL","Spiral","SBAL","DBAL"],
+  l_shoulder:["SFAL","DFAL","SBAL","DBAL","Func"],r_shoulder:["SFAL","DFAL","SBAL","DBAL","Func"],
   chest:["SFL","DFL","SFAL","DFAL","Func"],
-  l_arm:["SFAL","DFAL"],r_arm:["SFAL","DFAL"],l_forearm:["SFAL","DFAL"],r_forearm:["SFAL","DFAL"],
-  core:["SFL","DFL","Spiral","Func"],
-  l_hip:["DFL","Spiral","LL","Func"],r_hip:["DFL","Spiral","LL","Func"],
-  l_quad:["SFL","DFL","Spiral","Func"],r_quad:["SFL","DFL","Spiral","Func"],
-  l_knee:["SFL","SBL","DFL","LL","Spiral"],r_knee:["SFL","SBL","DFL","LL","Spiral"],
+  l_arm:["DFAL","SFAL"],r_arm:["DFAL","SFAL"],l_forearm:["SFAL","DFAL"],r_forearm:["SFAL","DFAL"],
+  core:["SFL","Spiral","Func","DFL"],
+  l_hip:["DFL","Spiral","LL","Func","SFL"],r_hip:["DFL","Spiral","LL","Func","SFL"],
+  l_quad:["SFL","DFL","Func","Spiral","LL"],r_quad:["SFL","DFL","Func","Spiral","LL"],
+  l_knee:["SFL","SBL","DFL","LL","Spiral","Func"],r_knee:["SFL","SBL","DFL","LL","Spiral","Func"],
   l_shin:["SFL","Spiral","LL"],r_shin:["SFL","Spiral","LL"],
-  l_foot:["SFL","SBL","DFL","Spiral","LL"],r_foot:["SFL","SBL","DFL","Spiral","LL"],
-  upper_back:["SBL","Spiral","SBAL","DBAL","LL"],
-  mid_back:["SBL","Spiral","Func","LL"],
-  lower_back:["SBL","DFL","Func","Spiral"],
-  l_glute:["SBL","LL","Func","Spiral"],r_glute:["SBL","LL","Func","Spiral"],
-  l_ham:["SBL","Spiral","DFL","Func"],r_ham:["SBL","Spiral","DFL","Func"],
+  l_foot:["SBL","SFL","DFL","Spiral","LL"],r_foot:["SBL","SFL","DFL","Spiral","LL"],
+  upper_back:["SBL","Spiral","SBAL","DBAL"],
+  mid_back:["SBL","Func","Spiral","LL"],
+  lower_back:["SBL","Func","DFL","Spiral"],
+  l_glute:["Func","SBL","LL","Spiral"],r_glute:["Func","SBL","LL","Spiral"],
+  l_ham:["SBL","Spiral","DFL"],r_ham:["SBL","Spiral","DFL"],
   l_calf:["SBL","DFL","LL","Spiral"],r_calf:["SBL","DFL","LL","Spiral"],
-  l_heel:["SBL","LL"],r_heel:["SBL","LL"],
+  l_heel:["SBL"],r_heel:["SBL"],
 };
+const EVIDENCE={
+  strong:{label:"Strong evidence",color:"#34d399"},
+  moderate:{label:"Moderate evidence",color:"#fbbf24"},
+  limited:{label:"Limited evidence",color:"#fb923c"},
+  untested:{label:"Not yet tested",color:"#94a3b8"},
+  none:{label:"Not supported as a chain",color:"#f87171"},
+};
+// Research-backed "work the line" tips shown when a zone is tapped
+const ZONE_TIPS=(()=>{
+  const remote={line:"SBL",text:"Work the line from below: calf + hamstring stretching (3×30s each) improved neck mobility as much as stretching the neck itself (Wilke 2017)."};
+  const nordic={line:"SBL",text:"Nordic hamstring curls in a warm-up programme roughly halved hamstring injuries across 8,459 athletes (van Dyk 2019)."};
+  const cph={line:"DFL",text:"The Copenhagen adduction plank cut groin problems by ~41% over a season in footballers (Harøy 2019)."};
+  const t={head:remote,neck:remote,upper_back:remote,lower_back:{line:"SBL",text:"The hamstrings pull on the sacrotuberous ligament and low-back fascia (Krause 2016) — include hamstring and calf work, not just back stretches."}};
+  ["l","r"].forEach(sd=>{t[sd+"_ham"]=nordic;t[sd+"_calf"]={line:"SBL",text:"Calf tension continues into the hamstrings and plantar fascia (strongest-evidence line) — stretch and roll the whole back line."};
+    t[sd+"_hip"]=cph;t[sd+"_quad"]=cph;t[sd+"_glute"]={line:"Func",text:"Glute max is linked to the opposite lat by strongly-verified tissue (Wilke 2016) — pair glute work with opposite-side lat/shoulder mobility."};});
+  return t;
+})();
+const LINE_ZONES=Object.fromEntries(MYO_LINES.map(l=>[l.id,Object.keys(ZONE_CHAINS).filter(z=>ZONE_CHAINS[z].includes(l.id))]));
 const BODY_SUGGESTIONS={
   lower_back:{
     pain:{chain:"SBL: tight hamstrings/calves pull the sacrum, loading the lumbar. DFL: short psoas creates anterior pelvic tilt. Spiral Line may involve opposite shoulder.",actions:["Child's pose — breathe into lower back 2min","Hip flexor kneeling stretch 90s each side","Glute bridge x10 (no hyperextend at top)","Dead bug x8 each side","Cat-cow x12"],avoid:["Loaded rotation under fatigue","Sitting >30min without break","Heavy deadlift during acute flare"]},
