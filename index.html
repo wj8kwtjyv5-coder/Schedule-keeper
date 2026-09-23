@@ -41,6 +41,8 @@ textarea::placeholder,input::placeholder{color:rgba(241,245,249,0.16)}
 @keyframes emberShift{0%,100%{opacity:0.8}50%{opacity:1}}
 @keyframes heatPulse{0%,100%{opacity:0.85}50%{opacity:1}}
 @keyframes dashFlow{to{stroke-dashoffset:-14}}
+@keyframes drawLine{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes zonePing{0%{transform:scale(0.4);opacity:0.95}100%{transform:scale(2.6);opacity:0}}
 @keyframes slideInRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
 @keyframes slideInLeft{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:none}}
 @keyframes confettiFly{to{transform:translate(var(--dx),var(--dy)) scale(0);opacity:0}}
@@ -1724,6 +1726,8 @@ function BodyView({bodyMap,onUpdateBodyMap}){
   const [pickerLevel,setPickerLevel]=useState(3);
   const [showLines,setShowLines]=useState(true);
   const [focusLine,setFocusLine]=useState(null);
+  const [hits,setHits]=useState(null);
+  const svgRef=useRef(null);
 
   const visibleZones=BODY_ZONES.filter(z=>z.view===view);
   const connections=selectedZone?new Set(FASCIA_CONNECTIONS[selectedZone]||[]):new Set();
@@ -1732,6 +1736,31 @@ function BodyView({bodyMap,onUpdateBodyMap}){
   const zoneChains=selectedZone?ZONE_CHAINS[selectedZone]||[]:[];
   const viewLines=MYO_LINES.filter(l=>l[view]);
   const activeLines=focusLine?[focusLine]:(selectedZone&&zoneChains.length?zoneChains:null);
+  const linesVisible=showLines||!!activeLines;
+  // Which individual line paths cross the tapped zone (so the left calf lights the left-side lines)
+  useEffect(()=>{
+    const z=selectedZone&&!focusLine?BODY_ZONES.find(b=>b.id===selectedZone&&b.view===view):null;
+    if(!z||!svgRef.current||typeof Path2D==="undefined"){setHits(null);return;}
+    let ctx=null;try{ctx=document.createElement("canvas").getContext("2d");}catch{}
+    if(!ctx){setHits(null);return;}
+    const zp=new Path2D(z.d);ctx.lineWidth=7;
+    const found=new Set();
+    svgRef.current.querySelectorAll("path[data-line]").forEach(el=>{
+      try{
+        const len=el.getTotalLength();
+        for(let t=0;t<=len;t+=1.5){const pt=el.getPointAtLength(t);
+          if(ctx.isPointInPath(zp,pt.x,pt.y)||ctx.isPointInStroke(zp,pt.x,pt.y)){found.add(el.getAttribute("data-line"));break;}}
+      }catch{}
+    });
+    setHits(found);
+  },[selectedZone,view,focusLine]);
+  const pathActive=(l,i)=>{
+    if(!activeLines) return true;
+    if(!activeLines.includes(l.id)) return false;
+    if(focusLine||!hits) return true;
+    const any=l[view].some((_,j)=>hits.has(l.id+":"+j));
+    return any?hits.has(l.id+":"+i):true;
+  };
   const zoneEntries=Object.entries(zones);
   const focusObj=focusLine?MYO_BY_ID[focusLine]:null;
 
@@ -1845,11 +1874,11 @@ function BodyView({bodyMap,onUpdateBodyMap}){
           <div style=${{width:10,height:10,borderRadius:"50%",background:c,opacity:0.85}}/>
           ${t.charAt(0).toUpperCase()+t.slice(1)}
         </div>`)}
-        <div style=${{fontSize:10,color:T.muted,marginLeft:"auto"}}>Tap zone to mark</div>
+        <div style=${{fontSize:10,color:T.muted,marginLeft:"auto"}}>Tap a muscle to activate its lines</div>
       </div>
       <!-- SVG body map -->
       <div style=${{display:"flex",justifyContent:"center"}} onClick=${()=>{setPickerZone(null);}}>
-        <svg viewBox="0 0 160 286" style=${{width:"100%",maxWidth:270,height:"auto",aspectRatio:"160 / 286"}}>
+        <svg ref=${svgRef} viewBox="0 0 160 286" style=${{width:"100%",maxWidth:270,height:"auto",aspectRatio:"160 / 286"}}>
           <defs>
             <radialGradient id="mapGlow" cx="50%" cy="45%" r="60%">
               <stop offset="0%" stop-color="#d6b48c" stop-opacity="0.16"/>
@@ -1922,21 +1951,25 @@ function BodyView({bodyMap,onUpdateBodyMap}){
                 style=${{pointerEvents:"none",animation:pulseAnim,filter:`drop-shadow(0 0 4px ${col.stroke})`}}/>`:""}
             </g>`;
           })}
-          ${showLines?html`<g style=${{pointerEvents:"none"}}>
-            ${viewLines.map(l=>{
-              const on=!activeLines||activeLines.includes(l.id);
-              return html`<g key=${l.id} style=${{opacity:on?1:0.08,transition:"opacity 0.3s"}}>
-                ${l[view].map((d,i)=>html`<g key=${i}>
-                  <path d=${d} fill="none" stroke=${l.color} stroke-width="9" stroke-opacity="0.22" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d=${d} fill="none" stroke=${l.color} stroke-width=${activeLines&&on?4.2:3.4} stroke-opacity="0.78" stroke-linecap="round" stroke-linejoin="round"
-                    style=${{filter:`drop-shadow(0 0 ${activeLines&&on?4:2}px ${l.color})`}}/>
+          ${linesVisible?html`<g style=${{pointerEvents:"none"}}>
+            ${viewLines.map(l=>html`<g key=${l.id}>
+              ${l[view].map((d,i)=>{
+                const on=pathActive(l,i),lit=!!activeLines&&on;
+                const k=`${l.id}-${i}-${lit?(focusLine||selectedZone):"idle"}`;
+                return html`<g key=${k} style=${{opacity:on?1:(showLines?0.07:0),transition:"opacity 0.35s"}}>
+                  <path data-line=${l.id+":"+i} d=${d} fill="none" stroke=${l.color} stroke-width=${lit?10:9} stroke-opacity=${lit?0.3:0.22} stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d=${d} pathLength=${lit?1:undefined} fill="none" stroke=${l.color} stroke-width=${lit?4.4:3.4} stroke-opacity=${lit?0.95:0.78} stroke-linecap="round" stroke-linejoin="round"
+                    stroke-dasharray=${lit?1:undefined}
+                    style=${{filter:`drop-shadow(0 0 ${lit?5:2}px ${l.color})`,animation:lit?"drawLine 0.9s cubic-bezier(.3,.7,.3,1) both":"none"}}/>
                   <path d=${d} fill="none" stroke="#fff" stroke-width="0.7" stroke-opacity="0.35" stroke-linecap="round"/>
-                  ${activeLines&&on?html`<path d=${d} fill="none" stroke="#fff" stroke-width="1.3" stroke-opacity="0.8" stroke-linecap="round"
-                    stroke-dasharray="2 12" style=${{animation:"dashFlow 0.9s linear infinite"}}/>`:""}
-                </g>`)}
-              </g>`;
-            })}
+                  ${lit?html`<path d=${d} fill="none" stroke="#fff" stroke-width="1.3" stroke-opacity="0.8" stroke-linecap="round"
+                    stroke-dasharray="2 12" style=${{animation:"dashFlow 0.9s linear infinite",animationDelay:"0.9s",opacity:0.9}}/>`:""}
+                </g>`;
+              })}
+            </g>`)}
           </g>`:""}
+          ${selZoneObj&&selZoneObj.view===view&&!focusLine?html`<circle key=${"ping"+selectedZone} cx=${selZoneObj.cx} cy=${selZoneObj.cy} r="7" fill="none" stroke="#fff" stroke-width="1.2"
+            style=${{pointerEvents:"none",transformBox:"fill-box",transformOrigin:"center",animation:"zonePing 1.4s ease-out infinite"}}/>`:""}
           ${zoneEntries.filter(([id])=>visibleZones.some(z=>z.id===id)).map(([id,zs])=>{
             const z=BODY_ZONES.find(b=>b.id===id);
             return html`<text key=${"lv"+id} x=${z.cx} y=${z.cy+1} text-anchor="middle" dominant-baseline="middle" font-size="6"
@@ -2006,6 +2039,20 @@ function BodyView({bodyMap,onUpdateBodyMap}){
           })}
         </div>
       </div>
+      <!-- Fascia lines through this zone -->
+      ${(ZONE_CHAINS[pickerZone]||[]).length?html`<div style=${{marginBottom:12,padding:"10px 10px 8px",borderRadius:10,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
+        <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,marginBottom:7,textTransform:"uppercase"}}>Fascia lines activated · ${(ZONE_CHAINS[pickerZone]||[]).length}</div>
+        <div style=${{display:"flex",flexWrap:"wrap",gap:5}}>
+          ${(ZONE_CHAINS[pickerZone]||[]).map((ch,i)=>{const l=MYO_BY_ID[ch];if(!l)return null;const here=!!l[view];
+            return html`<button key=${ch} onClick=${()=>{if(!here){setView(l.f?"f":"b");setSelectedZone(null);}setPickerZone(null);setShowLines(true);setFocusLine(ch);}} style=${{
+              display:"inline-flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:999,cursor:"pointer",fontFamily:"inherit",
+              fontSize:10,fontWeight:800,border:`1px solid ${l.color}60`,background:l.color+"1a",color:T.text,
+              animation:`fadeUp 0.3s var(--ease-out) ${i*60}ms both`}}>
+              <span style=${{width:8,height:8,borderRadius:"50%",background:l.color,boxShadow:`0 0 6px ${l.color}`}}/>${l.name}${here?"":l.f?" ↗ front":" ↗ back"}
+            </button>`;})}
+        </div>
+        <div style=${{fontSize:10,color:T.muted,marginTop:7}}>Tension here can travel along these lines. Tap one for its route and release drills.</div>
+      </div>`:""}
       <!-- Type selector -->
       <div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,marginBottom:6,textTransform:"uppercase"}}>Symptom</div>
       <div style=${{display:"flex",gap:6,marginBottom:12}}>
@@ -3547,7 +3594,9 @@ const MYO_LINES=[
     f:["M52,264 Q47,248 47,232 Q46,212 48,196 Q46,178 49,164 Q46,152 50,142 Q56,132 55,120 Q60,110 56,100 Q58,90 57,80 Q62,66 71,54 Q69,44 65,36",
        "M108,264 Q113,248 113,232 Q114,212 112,196 Q114,178 111,164 Q114,152 110,142 Q104,132 105,120 Q100,110 104,100 Q102,90 103,80 Q98,66 89,54 Q91,44 95,36"],
     b:["M52,262 Q48,246 50,230 Q48,212 50,196 Q48,178 50,164 Q48,150 51,140",
-       "M108,262 Q112,246 110,230 Q112,212 110,196 Q112,178 110,164 Q112,150 109,140"]},
+       "M108,262 Q112,246 110,230 Q112,212 110,196 Q112,178 110,164 Q112,150 109,140",
+       "M51,140 Q54,124 56,110 Q58,96 56,84 Q60,68 70,56 Q72,48 70,40",
+       "M109,140 Q106,124 104,110 Q102,96 104,84 Q100,68 90,56 Q88,48 90,40"]},
   {id:"Spiral",name:"Spiral Line",color:"#facc15",
     route:"Skull → opposite shoulder blade → around the ribs → across the belly → opposite hip → front of shin → under the arch → back up the leg",
     role:"A double helix that creates and controls rotation — key for kicking, twisting and keeping knees tracking straight.",
@@ -3555,28 +3604,53 @@ const MYO_LINES=[
     drills:["Open-book thoracic rotation — 10 each side","World's greatest stretch — 5 each side","Half-kneeling Pallof press — 3×10"],
     f:["M54,76 Q66,96 78,114 Q90,132 100,150 Q106,166 104,184 Q100,204 98,222 Q96,242 92,258",
        "M106,76 Q94,96 82,114 Q70,132 60,150 Q54,166 56,184 Q60,204 62,222 Q64,242 68,258"],
-    b:["M88,34 Q84,52 74,66 Q64,80 56,98","M72,34 Q76,52 86,66 Q96,80 104,98"]},
+    b:["M88,34 Q84,52 74,66 Q64,80 56,98","M72,34 Q76,52 86,66 Q96,80 104,98",
+       "M54,258 Q52,240 55,224 Q58,206 60,190 Q63,172 69,160 Q74,152 78,142",
+       "M106,258 Q108,240 105,224 Q102,206 100,190 Q97,172 91,160 Q86,152 82,142"]},
   {id:"DFL",name:"Deep Front Line",color:"#fb923c",
     route:"Inner arch → deep calf → inner knee → adductors → psoas → diaphragm → front of spine → jaw",
     role:"Your true core — stabilises the spine and pelvis from inside and drives breathing.",
     signs:"Groin strains, deep hip-flexor tightness, flat feet, shallow chest breathing.",
     drills:["90/90 belly breathing — 2 min","Adductor rock-backs — 10 each side","Half-kneeling hip-flexor stretch with overhead reach — 45s each"],
     f:["M65,262 Q67,248 67,236 Q68,222 69,212 Q72,194 74,176 Q76,160 78,146 Q80,128 80,110 Q80,90 80,70 Q80,56 80,46",
-       "M95,262 Q93,248 93,236 Q92,222 91,212 Q88,194 86,176 Q84,160 82,146 Q80,128 80,110"]},
-  {id:"Arm",name:"Arm Lines",color:"#818cf8",
-    route:"Chest & upper back → shoulder → biceps/triceps → forearm → palm and fingers",
-    role:"Link the trunk to the hands — pushing, pulling, and the arm drive that sets your running rhythm.",
-    signs:"Neck/shoulder tightness, tennis elbow, wrist and grip pain.",
-    drills:["Doorway pec stretch — 45s each side","Wrist flexor & extensor stretch — 30s each","Wall slides — 2×10"],
-    f:["M72,76 Q60,70 48,70 Q40,74 37,88 Q35,104 32,120 Q29,136 26,148 Q24,154 22,158",
-       "M88,76 Q100,70 112,70 Q120,74 123,88 Q125,104 128,120 Q131,136 134,148 Q136,154 138,158"],
-    b:["M72,54 Q58,60 44,64 Q34,72 32,90 Q30,108 28,124 Q26,140 24,152",
-       "M88,54 Q102,60 116,64 Q126,72 128,90 Q130,108 132,124 Q134,140 136,152"]},
+       "M95,262 Q93,248 93,236 Q92,222 91,212 Q88,194 86,176 Q84,160 82,146 Q80,128 80,110"],
+    b:["M66,262 Q67,248 67,236 Q68,222 69,210 Q71,194 73,178 Q76,164 78,150 Q79,138 80,126",
+       "M94,262 Q93,248 93,236 Q92,222 91,210 Q89,194 87,178 Q84,164 82,150 Q81,138 80,126"]},
+  {id:"SFAL",name:"Superficial Front Arm",color:"#818cf8",
+    route:"Pec major & lats → inner upper arm → forearm flexors → palm & fingers",
+    role:"The palm side of the arm — gripping, pushing, and the pull-through of your arm swing.",
+    signs:"Tight chest, golfer's elbow / wrist-flexor pain, grip fatigue.",
+    drills:["Doorway pec stretch — 45s each side","Prayer wrist stretch — 30s","Dead hang from a bar — 3×20s"],
+    f:["M74,80 Q62,74 50,76 Q42,82 40,96 Q38,110 35,122 Q32,136 28,148 Q26,154 25,160",
+       "M86,80 Q98,74 110,76 Q118,82 120,96 Q122,110 125,122 Q128,136 132,148 Q134,154 135,160"]},
+  {id:"DFAL",name:"Deep Front Arm",color:"#2dd4bf",
+    route:"Pec minor → biceps → radius → thumb",
+    role:"Stabilises the front of the shoulder and the thumb side of the hand — pressing, catching, fending off.",
+    signs:"Rounded shoulders, front-of-shoulder pinch, thumb or wrist pain.",
+    drills:["Pec minor wall stretch — 45s each","Biceps wall stretch — 30s each","Forearm rotations with a light weight — 10 each way"],
+    f:["M66,66 Q56,64 48,68 Q38,74 34,88 Q31,102 30,116 Q27,132 23,146 Q21,152 19,156",
+       "M94,66 Q104,64 112,68 Q122,74 126,88 Q129,102 130,116 Q133,132 137,146 Q139,152 141,156"]},
+  {id:"SBAL",name:"Superficial Back Arm",color:"#f472b6",
+    route:"Trapezius → deltoid → outer upper arm → wrist extensors → back of hand",
+    role:"Lifts and positions the arm — overhead reach, arm drive when sprinting, holding off a defender.",
+    signs:"Upper-trap tension, tennis elbow, neck-and-shoulder headaches.",
+    drills:["Upper-trap stretch — 30s each side","Wrist extensor stretch — 30s each","Band pull-aparts — 2×15"],
+    b:["M80,40 Q76,52 66,58 Q54,62 44,66 Q34,74 32,90 Q30,108 28,124 Q26,140 24,152",
+       "M80,40 Q84,52 94,58 Q106,62 116,66 Q126,74 128,90 Q130,108 132,124 Q134,140 136,152"]},
+  {id:"DBAL",name:"Deep Back Arm",color:"#a3e635",
+    route:"Rhomboids & levator scapulae → rotator cuff → triceps → ulna → little finger",
+    role:"Anchors the shoulder blade and back of the shoulder — throwing, pushing up off the ground, falling safely.",
+    signs:"Ache between the shoulder blades, rotator-cuff niggles, pinky-side wrist pain.",
+    drills:["Sleeper stretch — 30s each","Scapular push-ups — 2×12","Side-lying external rotation — 2×12 each"],
+    b:["M78,70 Q70,76 62,74 Q52,72 44,74 Q38,80 36,94 Q34,110 32,126 Q30,140 28,154",
+       "M82,70 Q90,76 98,74 Q108,72 116,74 Q122,80 124,94 Q126,110 128,126 Q130,140 132,154"]},
   {id:"Func",name:"Functional Lines",color:"#c084fc",
-    route:"Lat of one arm → low-back fascia → sacrum → opposite glute → outer thigh → knee",
+    route:"Front: lower pec → abdominal sheath → pubic bone → opposite adductor. Back: lat → low-back fascia → sacrum → opposite glute → outer thigh",
     role:"Cross-body slings that transfer power from arm to opposite leg — sprinting, kicking and throwing.",
     signs:"Groin or adductor pain, opposite shoulder–hip tightness, weak rotation power.",
     drills:["Bird-dog — 3×8 each side","Cross-body lunge with reach — 8 each side","Single-leg RDL with opposite-arm reach — 8 each side"],
+    f:["M52,80 Q64,94 74,110 Q80,124 84,140 Q88,156 90,172 Q92,188 92,204",
+       "M108,80 Q96,94 86,110 Q80,124 76,140 Q72,156 70,172 Q68,188 68,204"],
     b:["M40,82 Q54,100 66,118 Q76,132 84,144 Q94,158 100,174 Q102,192 98,210",
        "M120,82 Q106,100 94,118 Q84,132 76,144 Q66,158 60,174 Q58,192 62,210"]},
 ];
@@ -3584,21 +3658,24 @@ const MYO_BY_ID=Object.fromEntries(MYO_LINES.map(l=>[l.id,l]));
 const BODY_TYPE_EMOJI={pain:"🔴",fatigue:"🟡",tightness:"🩵"};
 const CHAIN_COLORS=Object.fromEntries(MYO_LINES.map(l=>[l.id,l.color]));
 const ZONE_CHAINS={
-  head:["SBL","SFL","LL"],neck:["SBL","SFL","DFL","LL"],upper_back:["SBL","Spiral","Arm"],mid_back:["SBL","Func"],
-  l_shoulder:["LL","Spiral","Arm"],r_shoulder:["LL","Spiral","Arm"],
-  l_arm:["Arm"],r_arm:["Arm"],l_forearm:["Arm"],r_forearm:["Arm"],
-  l_shin:["SFL","Spiral"],r_shin:["SFL","Spiral"],l_heel:["SBL"],r_heel:["SBL"],
-  chest:["SFL","DFL","Arm"],core:["SFL","DFL","Spiral"],
-  lower_back:["SBL","DFL","Func"],
-  l_hip:["DFL","Spiral","LL"],r_hip:["DFL","Spiral","LL"],
-  l_glute:["SBL","LL","Func"],r_glute:["SBL","LL","Func"],
-  l_quad:["SFL","DFL"],r_quad:["SFL","DFL"],
-  l_ham:["SBL"],r_ham:["SBL"],
-  l_calf:["SBL"],r_calf:["SBL"],
-  l_knee:["SBL","DFL"],r_knee:["SBL","DFL"],
-  l_ankle:["SBL","DFL"],r_ankle:["SBL","DFL"],
-  l_foot:["SBL","SFL","DFL","Spiral"],r_foot:["SBL","SFL","DFL","Spiral"],
-  l_it_band:["LL"],r_it_band:["LL"],
+  head:["SFL","SBL","LL","Spiral"],
+  neck:["SFL","SBL","LL","DFL","Spiral","SBAL"],
+  l_shoulder:["LL","Spiral","SFAL","DFAL","SBAL","DBAL","Func"],r_shoulder:["LL","Spiral","SFAL","DFAL","SBAL","DBAL","Func"],
+  chest:["SFL","DFL","SFAL","DFAL","Func"],
+  l_arm:["SFAL","DFAL"],r_arm:["SFAL","DFAL"],l_forearm:["SFAL","DFAL"],r_forearm:["SFAL","DFAL"],
+  core:["SFL","DFL","Spiral","Func"],
+  l_hip:["DFL","Spiral","LL","Func"],r_hip:["DFL","Spiral","LL","Func"],
+  l_quad:["SFL","DFL","Spiral","Func"],r_quad:["SFL","DFL","Spiral","Func"],
+  l_knee:["SFL","SBL","DFL","LL","Spiral"],r_knee:["SFL","SBL","DFL","LL","Spiral"],
+  l_shin:["SFL","Spiral","LL"],r_shin:["SFL","Spiral","LL"],
+  l_foot:["SFL","SBL","DFL","Spiral","LL"],r_foot:["SFL","SBL","DFL","Spiral","LL"],
+  upper_back:["SBL","Spiral","SBAL","DBAL","LL"],
+  mid_back:["SBL","Spiral","Func","LL"],
+  lower_back:["SBL","DFL","Func","Spiral"],
+  l_glute:["SBL","LL","Func","Spiral"],r_glute:["SBL","LL","Func","Spiral"],
+  l_ham:["SBL","Spiral","DFL","Func"],r_ham:["SBL","Spiral","DFL","Func"],
+  l_calf:["SBL","DFL","LL","Spiral"],r_calf:["SBL","DFL","LL","Spiral"],
+  l_heel:["SBL","LL"],r_heel:["SBL","LL"],
 };
 const BODY_SUGGESTIONS={
   lower_back:{
