@@ -546,24 +546,63 @@ function calcTDEE(profile){
     :88.362+13.397*weight+4.799*height-5.677*age;
   return Math.round(bmr*1.725);
 }
+// ── Training-load-based fuelling ──────────────────────────────
+// Carbohydrate scales with the day's training load (ACSM/AND/DC 2016 position stand):
+// light 3–5 g/kg, ~1h moderate 5–7, 1–3h moderate-high 6–10, >4h 8–12.
+// Football match day and the day before: 6–8 g/kg (UEFA expert group statement, 2020).
+const FUEL_CAT_DEFAULTS={game:{min:90,int:1.0},football:{min:75,int:0.8},run:{min:40,int:0.7},bike:{min:45,int:0.6},
+  gym:{min:60,int:0.7},swim:{min:45,int:0.7},pilates:{min:30,int:0.3},recovery:{min:30,int:0.2},sauna:{min:20,int:0}};
+const LOAD_TIERS=[
+  {id:"rest",max:0,label:"Rest day",gkg:3,range:"3–5",color:"#34d399"},
+  {id:"light",max:30,label:"Light day",gkg:4,range:"3–5",color:"#34d399"},
+  {id:"moderate",max:75,label:"Moderate day",gkg:6,range:"5–7",color:"#38bdf8"},
+  {id:"high",max:150,label:"High-load day",gkg:8,range:"6–10",color:"#f59e0b"},
+  {id:"veryhigh",max:Infinity,label:"Very high-load day",gkg:10,range:"8–12",color:"#f97316"},
+];
+function sessionMinutes(t){
+  const s=(t.title||"")+" "+(t.notes||"");
+  const h=s.match(/(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hours?)\b/i),m=s.match(/(\d+)\s*(?:min|mins|minutes|m)\b/i);
+  if(h)return Math.round(parseFloat(h[1])*60)+(m?+m[1]:0);
+  if(m)return +m[1];
+  if(t.duration)return Math.round(t.duration);
+  return FUEL_CAT_DEFAULTS[t.category]?.min||45;
+}
+function sessionIntensity(t){
+  const s=((t.title||"")+" "+(t.notes||"")).toLowerCase();
+  let i=FUEL_CAT_DEFAULTS[t.category]?.int??0.5;
+  if(/sprint|interval|tempo|hiit|match|game|threshold|hard/.test(s))i=Math.min(1,i+0.15);
+  if(/easy|zone\s*1|zone\s*2|recovery|light|walk|mobility|flush/.test(s))i=Math.max(0.2,i-0.2);
+  return i;
+}
+const hhmmToMins=t=>{if(!t)return null;const[h,m]=t.split(":").map(Number);return h*60+m;};
+const minsToHHMM=m=>{m=((m%1440)+1440)%1440;return `${pad2(Math.floor(m/60))}:${pad2(m%60)}`;};
+
+// Sessions for a date split into done / planned / missed, plus the day's load tier
+function computeDayLoad(tasks,date,now=new Date()){
+  const todayStr=todayISO(),nowMins=now.getHours()*60+now.getMinutes();
+  const sessions=tasks.filter(t=>t.date===date&&FUEL_CAT_DEFAULTS[t.category]).map(t=>{
+    const min=sessionMinutes(t),int=sessionIntensity(t),start=hhmmToMins(t.time);
+    let status;
+    if(t.completed)status="done";
+    else if(date>todayStr)status="planned";
+    else if(date<todayStr)status="missed";
+    else status=start!=null&&start+min+60<nowMins?"missed":"planned"; // today: not ticked an hour after it should have finished
+    return{t,min,int,load:t.category==="sauna"?0:min*int,start,status,cat:t.category};
+  }).sort((a,b)=>(a.start??9999)-(b.start??9999));
+  const counted=sessions.filter(s=>s.status!=="missed");
+  const load=Math.round(counted.reduce((a,s)=>a+s.load,0));
+  let tier=LOAD_TIERS.find(x=>load<=x.max);
+  const nextDay=isoDate(addDays(parseDate(date),1));
+  const matchToday=counted.some(s=>s.cat==="game");
+  const matchTomorrow=tasks.some(t=>t.date===nextDay&&t.category==="game");
+  if((matchToday||matchTomorrow)&&tier.gkg<7)tier={id:"match",label:matchToday?"Match day":"Day before match",gkg:7,range:"6–8",color:"#ef4444"};
+  return{sessions,counted,load,tier,matchToday,matchTomorrow};
+}
 function calcDailyMacros(profile,tasks,date){
-  const tdee=calcTDEE(profile);
-  const strain=calcStrain(tasks,date);
-  const trainingBonus=Math.round(strain*40);
-  const targetCal=tdee+trainingBonus-300;
-  const weight=profile?.weight||75;
-  const protein=Math.round(weight*2.0);
-  const fat=Math.round(weight*0.9);
-  const highIntensity=tasks.some(t=>t.date===date&&["football","game","run"].includes(t.category));
-  const carbsBase=Math.round((targetCal-protein*4-fat*9)/4);
-  const carbs=highIntensity?Math.round(carbsBase*1.15):carbsBase;
-  return{
-    cal:Math.max(1500,targetCal),
-    protein:Math.max(100,protein),
-    carbs:Math.max(50,carbs),
-    fat:Math.max(30,fat),
-    tdee,trainingBonus,isHighIntensity:highIntensity,
-  };
+  const w=profile?.weight||75;
+  const day=computeDayLoad(tasks,date);
+  const protein=Math.round(w*1.8),fat=Math.round(w*1.0),carbs=Math.round(w*day.tier.gkg);
+  return{cal:protein*4+carbs*4+fat*9,protein,carbs,fat,day,weight:w};
 }
 
 // ── Binaural / sleep audio ──────────────────────────────────────
@@ -1606,9 +1645,9 @@ function DailyPodcast(){
 }
 
 // ── Body Fuel & Journal Panel ─────────────────────────────────
-function BodyFuelPanel({tasks,healthLog,onUpsertLog,dateStr}){
+function BodyFuelPanel({tasks,healthLog,onUpsertLog,dateStr,profile}){
   const ENERGY_EMOJIS=["😴","😑","😐","💪","🔥"];
-  const suggestions=getFuelSuggestions(healthLog,tasks,dateStr);
+  const suggestions=getFuelSuggestions(healthLog,tasks,dateStr,profile);
   const herbs=getHerbSuggestions(healthLog,tasks,dateStr);
   const upcoming=tasks.filter(t=>t.date===dateStr&&!t.completed&&t.time&&new Set(["game","football","run","bike","gym","swim","pilates","recovery","sauna"]).has(t.category)).sort((a,b)=>a.time.localeCompare(b.time))[0];
   // Countdown to upcoming workout
@@ -2193,7 +2232,7 @@ function BodyView({bodyMap,onUpdateBodyMap}){
 }
 
 // ── Journal View ──────────────────────────────────────────────
-function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEditTasks}){
+function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEditTasks,profile}){
   const today=todayISO();
   const weekDates=getWeekDates();
   const todayLog=healthLogs[today]||{};
@@ -2202,7 +2241,7 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
   });
   const missedWorkouts=useMemo(()=>getMissedWorkouts(tasks).filter(t=>!dismissedReschedule[t.id]),[tasks,dismissedReschedule]);
   const herbs=getHerbSuggestions(todayLog,tasks,today);
-  const fuelSuggestions=getFuelSuggestions(todayLog,tasks,today);
+  const fuelSuggestions=getFuelSuggestions(todayLog,tasks,today,profile);
   const ENERGY_EMOJIS=["😴","😑","😐","💪","🔥"];
   const ENERGY_LABELS=["Drained","Low","Decent","Good","Top form"];
   const isSick=todayLog.sickMode;
@@ -2324,7 +2363,8 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
             <span style=${{fontSize:12,fontWeight:800,color:T.text}}>${s.label}</span>
           </div>
           <div style=${{display:"flex",flexDirection:"column",gap:1}}>
-            ${s.foods.slice(0,3).map((f,j)=>html`<div key=${j} style=${{fontSize:11,color:T.textSoft,paddingLeft:4}}>· ${f}</div>`)}
+            ${s.foods.slice(0,5).map((f,j)=>html`<div key=${j} style=${{fontSize:11,color:T.textSoft,paddingLeft:4}}>· ${f}</div>`)}
+          ${s.hint?html`<div style=${{fontSize:10,color:T.muted,marginTop:3,fontStyle:"italic",lineHeight:1.45}}>${s.hint}</div>`:""}
           </div>
         </div>`)}
       </div>
@@ -2413,7 +2453,7 @@ function DisciplineStreakBadge({days}){
 }
 
 // ── Today View ────────────────────────────────────────────────
-function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenJournal,healthLog={},onUpsertLog,retentionDays:rdDays=0}){
+function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit,onOpenJournal,healthLog={},onUpsertLog,retentionDays:rdDays=0,profile}){
   const[sleepMode,setSleepMode]=useState(null);
   const[confetti,setConfetti]=useState(null);
   const handleTaskToggle=(id,e)=>{
@@ -2539,7 +2579,7 @@ function TodayView({tasks,habits,habitLogs,onToggleTask,onEditTask,onToggleHabit
         })}
       </div>`:""}
 
-    <${BodyFuelPanel} tasks=${tasks} healthLog=${healthLog} onUpsertLog=${onUpsertLog} dateStr=${todayStr}/>
+    <${BodyFuelPanel} tasks=${tasks} healthLog=${healthLog} onUpsertLog=${onUpsertLog} dateStr=${todayStr} profile=${profile}/>
 
     <!-- Nap / Wind-down buttons -->
     ${sleepMode?html`<${SleepModePanel} onClose=${()=>setSleepMode(null)}/>`:null}
@@ -3717,10 +3757,10 @@ const FUEL_PLANS={
     post:{label:"Post-Game Recovery",foods:["Protein shake + banana (within 30min)","Then: Salmon + sweet potato + spinach","Or: Chicken breast + rice + broccoli"],hint:"Protein + carbs immediately after — repair window is open"},
   },
   football:{
-    meal_3h:{label:"Pre-Match Meal",foods:["Brown rice or sweet potato","Chicken breast or beef mince","Broccoli + carrots","Small avocado"],hint:"High carb, moderate protein — fuel the full 90 minutes"},
-    snack_1h:{label:"Pre-Match Top-Up",foods:["Banana","White bread + honey","Small handful dates"],hint:"Fast carbs — nothing heavy"},
-    intra:{label:"At Half Time",foods:["Banana","Dates or raisins","Water or electrolytes"],hint:"Quick carbs — you need the second half fuel"},
-    post:{label:"Post-Match Recovery",foods:["Protein shake + banana within 30min","Then: Salmon + sweet potato + greens within 2h"],hint:"Start repair fast — protein + carbs now"},
+    meal_3h:{label:"Pre-Training Meal",foods:["Brown rice or sweet potato","Chicken breast or beef mince","Broccoli + carrots","Small avocado"],hint:"High carb, moderate protein — fuel the whole session"},
+    snack_1h:{label:"Pre-Training Top-Up",foods:["Banana","White bread + honey","Small handful dates"],hint:"Fast carbs — nothing heavy"},
+    intra:{label:"During Training",foods:["Water or electrolytes","Banana or dates if it runs past 60 min"],hint:"Stay hydrated — quick carbs for long, intense sessions"},
+    post:{label:"Post-Training Recovery",foods:["Protein shake + banana within 30min","Then: Salmon + sweet potato + greens within 2h"],hint:"Start repair fast — protein + carbs now"},
   },
   run:{
     meal_3h:{label:"Pre-Run Meal",foods:["Porridge with banana and honey","2 eggs on brown toast","Or: Brown rice + chicken + veg"],hint:"Moderate carb + protein, easily digestible"},
@@ -3753,53 +3793,67 @@ const FUEL_PLANS={
     any:{label:"Sauna Day Nutrition",foods:["Plenty of water (2–3L today)","Watermelon or cucumber (hydration)","Light meal: eggs + salad + olive oil","Electrolytes if sweating heavily"],hint:"Hydration is the priority — avoid heavy food before heat exposure"},
   },
 };
-// Returns fuel suggestion cards based on today's workout and body state
-function getFuelSuggestions(log,tasks,dateStr){
-  const now=new Date();
-  const curHHMM=`${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-  const curDecHrs=now.getHours()+now.getMinutes()/60;
-  const WORKOUT_CATS=new Set(["game","football","run","bike","gym","swim","pilates","recovery","sauna"]);
-  // Next uncompleted workout with a time set
-  const upcoming=tasks
-    .filter(t=>t.date===dateStr&&!t.completed&&t.time&&WORKOUT_CATS.has(t.category)&&t.time>curHHMM)
-    .sort((a,b)=>a.time.localeCompare(b.time))[0];
-  // Most recently completed workout (within last 2h)
-  const recent=tasks
-    .filter(t=>{
-      if(!t.completed||t.date!==dateStr||!t.time||!WORKOUT_CATS.has(t.category))return false;
-      const[h,m]=t.time.split(":").map(Number);const wHrs=h+m/60;
-      return curDecHrs-wHrs>=0&&curDecHrs-wHrs<=2;
-    })
-    .sort((a,b)=>b.time.localeCompare(a.time))[0];
-  const suggestions=[];
-  if(upcoming){
-    const[uh,um]=upcoming.time.split(":").map(Number);
-    const hoursUntil=(uh+um/60)-curDecHrs;
-    const plan=FUEL_PLANS[upcoming.category]||FUEL_PLANS.run;
-    if(hoursUntil>=2&&plan.meal_3h)
-      suggestions.push({...plan.meal_3h,timing:`Now — ${Math.round(hoursUntil)}h before`,color:"#34d399"});
-    if(hoursUntil>=0.5&&hoursUntil<2.5&&plan.snack_1h)
-      suggestions.push({...plan.snack_1h,timing:`${Math.round(hoursUntil*60)}min before`,color:"#f59e0b"});
-    if(hoursUntil<0.5&&hoursUntil>=0)
-      suggestions.push({label:"Almost Time — Hydrate",foods:["Sip water steadily","Electrolytes if available","No solid food now"],hint:"Save your energy — fuel is already in the tank",timing:"Now",color:"#38bdf8"});
-    if((upcoming.category==="game"||upcoming.category==="football")&&hoursUntil<=0.75&&hoursUntil>=0&&plan.intra)
-      suggestions.push({...plan.intra,timing:"During",color:"#34d399"});
-    if(plan.post) suggestions.push({...plan.post,timing:"Post-workout",color:"#34d399"});
-    else if(plan.any) suggestions.push({...plan.any,timing:"Today",color:"#34d399"});
-  } else if(recent){
-    const plan=FUEL_PLANS[recent.category]||FUEL_PLANS.run;
-    if(plan.post) suggestions.push({...plan.post,timing:"Recovery window",color:"#34d399"});
-    else if(plan.any) suggestions.push({...plan.any,timing:"Recovery",color:"#34d399"});
-  } else {
-    // Rest day or no workout logged
-    suggestions.push({label:"Rest Day Fuelling",foods:["Salmon or mackerel (omega-3)","Dark leafy greens + berries","Almonds or walnuts","Eggs + avocado","Keep meals balanced — no need to overload"],hint:"Eat for recovery and energy balance — this rest is part of the training",timing:"Today",color:"#34d399"});
+// Returns fuel cards built from today's actual sessions — what you've done (ticked) and what's still planned
+function getFuelSuggestions(log,tasks,dateStr,profile){
+  const now=new Date(),nowMins=now.getHours()*60+now.getMinutes();
+  const w=profile?.weight||75;
+  const day=computeDayLoad(tasks,dateStr,now);
+  const out=[];
+  const lab=s=>`${CATS[s.cat]?.label||s.cat} ${s.min}min${s.t.time?` · ${fmtTime(s.t.time)}`:""}`;
+  const sessLines=day.sessions.map(s=>`${s.status==="done"?"✓ Done":s.status==="missed"?"✕ Not ticked":"○ Planned"} — ${lab(s)}`);
+  // 1) Day target from the real load
+  if(day.sessions.length){
+    const c=Math.round(day.tier.gkg*w);
+    out.push({label:`${day.tier.label} · ~${c}g carbs`,timing:"Today",color:day.tier.color,
+      foods:[...sessLines.slice(0,4),`Carbs ${day.tier.range} g/kg · protein ~${Math.round(1.8*w)}g spread over 4–5 meals`],
+      hint:day.matchTomorrow&&!day.matchToday?"Match tomorrow — carb up today and tomorrow (6–8 g/kg).":
+        day.sessions.some(s=>s.status==="missed")?"Not-ticked sessions aren't counted — tick them if you did them and this updates.":
+        "Based on the sessions you've done and still have planned today."});
   }
-  // Body-state extra cards
+  // 2) Recovery after the most recent completed session
+  const done=day.sessions.filter(s=>s.status==="done"&&s.cat!=="sauna");
+  const last=done.map(s=>{const end=s.t.completedAt?(()=>{const d=new Date(s.t.completedAt);return isoDate(d)===dateStr?d.getHours()*60+d.getMinutes():null;})():null;
+    return{...s,end:end??(s.start!=null?s.start+s.min:null)};}).filter(s=>s.end!=null&&nowMins>=s.end&&nowMins-s.end<=150).sort((a,b)=>b.end-a.end)[0];
+  const nextUp=day.sessions.filter(s=>s.status==="planned"&&s.start!=null&&s.start>nowMins&&s.cat!=="sauna")[0];
+  if(last){
+    const plan=FUEL_PLANS[last.cat]||FUEL_PLANS.run;const p=Math.round(0.3*w);
+    const hard=last.load>=30,cb=Math.round((hard?1.0:0.5)*w);
+    const twoADay=hard&&nextUp&&nextUp.start-last.end<8*60;
+    out.push({label:hard?`Recovery after ${CATS[last.cat]?.label||last.cat}`:`After your easy ${(CATS[last.cat]?.label||last.cat).toLowerCase()}`,timing:nowMins-last.end<=45?"Now":"Recovery window",color:"#34d399",
+      foods:[`~${p}g protein + ~${cb}g carbs`,...(hard?(plan.post?.foods||plan.any?.foods||[]):["Normal balanced meal — e.g. eggs, oats or yogurt + fruit"]).slice(0,2)],
+      hint:twoADay?`Another session at ${fmtTime(nextUp.t.time)} — refuel fast: ~${cb}g carbs per hour for the next few hours.`:hard?"Protein + carbs within ~2h to repair and refill glycogen.":"Light session — no special recovery fuelling needed, just get protein in."});
+  }
+  // 3) Pre-session fuel for the next planned session, timed from its start
+  if(nextUp){
+    const plan=FUEL_PLANS[nextUp.cat]||FUEL_PLANS.run;const until=nextUp.start-nowMins;const big=nextUp.min>=60||nextUp.int>=0.8;
+    const name=CATS[nextUp.cat]?.label||nextUp.cat;
+    if(until>=180&&plan.meal_3h){
+      out.push({...plan.meal_3h,timing:`Eat by ${fmtTime(minsToHHMM(nextUp.start-(big?180:120)))}`,color:"#38bdf8",
+        foods:[big?`~${Math.round(1.5*w)}g carbs (1–2 g/kg)`:`Light meal, ~${Math.round(1*w)}g carbs`,...plan.meal_3h.foods.slice(0,3)],
+        hint:`For ${name} at ${fmtTime(nextUp.t.time)} — ${plan.meal_3h.hint}`});
+    }else if(until>=45){
+      const snack=plan.snack_1h||plan.meal_3h;
+      if(snack)out.push({...snack,timing:`${until>=90?Math.round(until/60)+"h":until+"min"} before`,color:"#f59e0b",
+        foods:[`~${Math.round(0.5*w)}g fast carbs`,...snack.foods.slice(0,2)],hint:`${name} at ${fmtTime(nextUp.t.time)} — ${snack.hint}`});
+    }else if(until>0){
+      out.push({label:"Almost time — hydrate",foods:["Sip 300–500ml water","Electrolytes if it's hot","No solid food now"],hint:`${name} at ${fmtTime(nextUp.t.time)} — fuel is already in the tank`,timing:"Now",color:"#38bdf8"});
+    }
+    if((nextUp.cat==="game"||nextUp.cat==="football"||nextUp.min>=75)&&plan.intra&&until<180)
+      out.push({...plan.intra,timing:"During",color:"#34d399"});
+  }
+  // 4) Rest day / everything done
+  if(!day.sessions.length&&day.matchTomorrow)
+    out.push({label:`Day before match · ~${Math.round(7*w)}g carbs`,foods:[`Carbs 6–8 g/kg · protein ~${Math.round(1.8*w)}g`,"Rice, pasta, potatoes or oats at every meal","Lower-fibre choices this evening","Plenty of fluids"],hint:"Fill your glycogen for tomorrow's match (UEFA guidance).",timing:"Today",color:"#ef4444"});
+  else if(!day.sessions.length)
+    out.push({label:"Rest day fuelling",foods:[`Carbs ~${Math.round(3*w)}g (3–5 g/kg) · protein ~${Math.round(1.8*w)}g`,"Salmon or mackerel (omega-3)","Dark leafy greens + berries","Eggs + avocado"],hint:"No sessions planned or done today — eat for recovery.",timing:"Today",color:"#34d399"});
+  else if(!last&&!nextUp&&!day.sessions.some(s=>s.status==="planned"))
+    out.push({label:"Training done — normal meals",foods:[`Protein ~${Math.round(0.3*w)}g per meal`,"Carbs with each meal to finish refilling glycogen"],hint:"Spread protein across the rest of the day.",timing:"Rest of day",color:"#34d399"});
+  // 5) Body-state notes
   if(log?.energy<=2)
-    suggestions.push({label:"Low Energy Support",foods:["Porridge with banana (slow carbs)","Eggs (B vitamins + iron)","Spinach + pumpkin seeds (magnesium)"],hint:"Slow-release energy — avoid sugar spikes that crash you later",timing:"Note",color:"#f87171"});
+    out.push({label:"Low energy support",foods:["Porridge with banana (slow carbs)","Eggs (B vitamins + iron)","Spinach + pumpkin seeds (magnesium)"],hint:"Slow-release energy — avoid sugar spikes that crash you later",timing:"Note",color:"#f87171"});
   if(log?.stress>=4)
-    suggestions.push({label:"High Stress — Recovery Foods",foods:["Almonds + dark leafy greens (magnesium)","Salmon or mackerel (omega-3 fights cortisol)","Chamomile or green tea","Dark berries (antioxidants)"],hint:"Magnesium and omega-3 regulate cortisol — eat these today",timing:"Note",color:"#fb923c"});
-  return suggestions;
+    out.push({label:"High stress — recovery foods",foods:["Almonds + dark leafy greens (magnesium)","Salmon or mackerel (omega-3)","Chamomile or green tea"],hint:"Magnesium and omega-3 support recovery under stress",timing:"Note",color:"#fb923c"});
+  return out;
 }
 
 const WORKOUT_CATS=["game","football","run","bike","gym","swim","pilates","recovery","sauna"];
@@ -4602,19 +4656,22 @@ function NutritionView({foodLogs,macroTargets,onUpsertFoodLog,tasks,settings,onU
     <!-- Recommended macros banner -->
     ${settings?.profile?.weight?html`<div style=${{
       ...S.card,marginBottom:10,
-      background:rec.isHighIntensity?"linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.04))":"linear-gradient(135deg,rgba(52,211,153,0.08),rgba(52,211,153,0.03))",
-      border:`1px solid ${rec.isHighIntensity?"rgba(245,158,11,0.22)":T.greenBorder}`,
+      background:`linear-gradient(135deg,${rec.day.tier.color}14,${rec.day.tier.color}08)`,
+      border:`1px solid ${rec.day.tier.color}38`,
     }}>
       <div style=${{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
         <div>
-          <div style=${{fontSize:11,fontWeight:900,color:rec.isHighIntensity?"#f59e0b":T.green,letterSpacing:0.5}}>${rec.isHighIntensity?"⚡ Hard training day":"◎ Rest / recovery day"}</div>
-          <div style=${{fontSize:10,color:T.muted,marginTop:2}}>TDEE ${rec.tdee}${rec.trainingBonus>0?` + ${rec.trainingBonus} training`:""} − 300 deficit</div>
+          <div style=${{fontSize:11,fontWeight:900,color:rec.day.tier.color,letterSpacing:0.5}}>${rec.day.tier.label} · carbs ${rec.day.tier.range} g/kg</div>
+          <div style=${{fontSize:10,color:T.muted,marginTop:2,lineHeight:1.45}}>${rec.day.sessions.length
+            ?rec.day.sessions.map(s=>`${s.status==="done"?"✓":s.status==="missed"?"✕":"○"} ${CATS[s.cat]?.label||s.cat} ${s.min}min`).join(" · ")
+            :"No sessions planned or done"}${rec.day.matchTomorrow&&!rec.day.matchToday?" · match tomorrow":""}</div>
+          <div style=${{fontSize:9.5,color:T.muted,marginTop:2}}>For ${rec.weight}kg · ✓ done ○ planned ✕ not ticked (not counted)</div>
         </div>
         <button onClick=${()=>onUpdateSettings&&onUpdateSettings({macroTargets:{cal:rec.cal,protein:rec.protein,carbs:rec.carbs,fat:rec.fat}})} style=${{
           fontSize:10,fontWeight:800,padding:"5px 10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",
-          background:rec.isHighIntensity?"rgba(245,158,11,0.13)":T.greenGlow,
-          border:`1px solid ${rec.isHighIntensity?"rgba(245,158,11,0.28)":T.greenBorder}`,
-          color:rec.isHighIntensity?"#f59e0b":T.green,
+          background:`${rec.day.tier.color}22`,
+          border:`1px solid ${rec.day.tier.color}48`,
+          color:rec.day.tier.color,
         }}>Use</button>
       </div>
       <div style=${{display:"flex",gap:6}}>
@@ -5602,13 +5659,13 @@ function App(){
       </header>
 
       <div key=${view} ref=${swipeRef} style=${{animation:`slide${slideDir==="right"?"InRight":"InLeft"} 0.22s var(--ease-out) backwards`}}>
-        ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)} retentionDays=${retentionDays(state?.retentionStartDate)}/>`:""}
+        ${view==="today"?html`<${TodayView} profile=${state.settings?.profile} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)} retentionDays=${retentionDays(state?.retentionStartDate)}/>`:""}
         ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} weeklyReviews=${state.weeklyReviews||{}} onSaveReview=${upsertWeeklyReview} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
         ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})} retentionStartDate=${state?.retentionStartDate||null} onStartRetention=${startRetention} onResetRetention=${resetRetention}
           chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} onToggleChore=${toggleChore}
           onAddChore=${c=>{addChore(c);showToast("Chore added ✅");}} onDeleteChore=${id=>{deleteChore(id);showToast("Deleted");}}/>`:""}
         ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog} onUpdateSettings=${changes=>mut(s=>({settings:{...s.settings,...changes}}))} workouts=${state.workouts||[]} lastWorkoutSync=${state.lastWorkoutSync} onOpenWatchSetup=${()=>setWatchSheet(true)}/>`:""}
-        ${view==="journal"?html`<${JournalView} tasks=${state.tasks} notes=${state.notes||{}} onUpsertNote=${upsertNote} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} onBulkEditTasks=${bulkEditTasks}/>`:""}
+        ${view==="journal"?html`<${JournalView} profile=${state.settings?.profile} tasks=${state.tasks} notes=${state.notes||{}} onUpsertNote=${upsertNote} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} onBulkEditTasks=${bulkEditTasks}/>`:""}
         ${view==="body"?html`<${BodyView} bodyMap=${state.healthLogs?.[todayISO()]?.bodyMap||{}} onUpdateBodyMap=${zones=>upsertHealthLog(todayISO(),{bodyMap:{zones}})}/>`:""}
         ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus} lastWorkoutSync=${state.lastWorkoutSync} onOpenWatchSetup=${()=>setWatchSheet(true)}
           trainingPlans=${state.trainingPlans||[]} tasks=${state.tasks}
