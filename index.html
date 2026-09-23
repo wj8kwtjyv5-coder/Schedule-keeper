@@ -26,6 +26,9 @@ html,body{
   font-family:ui-rounded,ui-sans-serif,system-ui,-apple-system,sans-serif;
 }
 input,textarea,select,button{font-family:inherit}
+html{overflow-x:hidden}
+@media (max-width:379px){.sk-rank{display:none}.sk-rankbar{width:24px!important}}
+body{overflow-x:clip}
 ::-webkit-scrollbar{width:3px;height:3px}
 ::-webkit-scrollbar-thumb{background:linear-gradient(180deg,rgba(245,158,11,0.40),rgba(45,212,191,0.28));border-radius:99px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -484,15 +487,28 @@ async function loadState(){
   return null;
 }
 const _saveBuf={timer:null};
-function saveState(state){
-  const j=JSON.stringify(state);
+// Local writes are batched (typing no longer re-serialises everything per keystroke)
+// and always flushed when the app is hidden or closed.
+function flushLocalSave(){
+  if(!_saveBuf.pending) return;
+  const j=JSON.stringify(_saveBuf.pending); _saveBuf.pending=null; clearTimeout(_saveBuf.localTimer);
   try{ window.storage?.set(SK_KEY,j); }catch{}
   try{ localStorage.setItem(SK_KEY,j); }catch{}
-  // Debounced sync to Netlify (for widget)
+  return j;
+}
+function saveState(state){
+  _saveBuf.pending=state;
+  clearTimeout(_saveBuf.localTimer);
+  _saveBuf.localTimer=setTimeout(flushLocalSave,300);
+  // Debounced sync to the server (for widget/watch)
   clearTimeout(_saveBuf.timer);
   _saveBuf.timer=setTimeout(()=>{
-    fetch(SYNC_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:j}).catch(()=>{});
+    fetch(SYNC_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(state)}).catch(()=>{});
   },1500);
+}
+if(typeof window!=="undefined"){
+  window.addEventListener("pagehide",flushLocalSave);
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden") flushLocalSave(); });
 }
 
 // ── Seed data ────────────────────────────────────────────────
@@ -989,7 +1005,7 @@ function Ring({pct=0,size=48,stroke=3,color=T.accent,glow=false}){
     </defs>`:""}
     <circle cx=${size/2} cy=${size/2} r=${r} stroke="rgba(255,255,255,0.05)" stroke-width=${stroke} fill="none"/>
     <circle cx=${size/2} cy=${size/2} r=${r} stroke=${color} stroke-width=${stroke} fill="none"
-      stroke-dasharray="${dash} ${circ}" stroke-linecap="round"
+      stroke-dasharray="${dash} ${circ}" stroke-linecap=${dash>0.5?"round":"butt"}
       filter=${glow?`url(#${glowId})`:"none"}
       style="transition:stroke-dasharray 0.6s var(--spring)"/>
   </svg>`;
@@ -1109,18 +1125,11 @@ function IslandGlyph({size=44}){
 
 // ── HorizonDivider — slim island flourish for section headers ──
 function HorizonDivider(){
-  return html`<svg width="100%" height="14" viewBox="0 0 360 14" preserveAspectRatio="none" aria-hidden="true" style=${{display:"block",margin:"2px 0 10px"}}>
-    <line x1="0" y1="9" x2="360" y2="9" stroke="url(#fd-hz)" stroke-width="1"/>
-    <defs>
-      <linearGradient id="fd-hz" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stop-color="rgba(45,212,191,0)"/>
-        <stop offset="50%" stop-color="rgba(45,212,191,0.35)"/>
-        <stop offset="100%" stop-color="rgba(45,212,191,0)"/>
-      </linearGradient>
-    </defs>
-    <circle cx="223" cy="9" r="4.5" fill="rgba(245,158,11,0.15)"/>
-    <circle cx="223" cy="9" r="2.2" fill="#f59e0b"/>
-  </svg>`;
+  return html`<div aria-hidden="true" style=${{position:"relative",height:14,margin:"2px 0 10px"}}>
+    <div style=${{position:"absolute",left:0,right:0,top:7,height:1,background:"linear-gradient(90deg,rgba(45,212,191,0),rgba(45,212,191,0.35),rgba(45,212,191,0))"}}/>
+    <div style=${{position:"absolute",left:"50%",top:3,width:9,height:9,marginLeft:-4.5,borderRadius:"50%",background:"rgba(245,158,11,0.15)"}}/>
+    <div style=${{position:"absolute",left:"50%",top:5.3,width:4.4,height:4.4,marginLeft:-2.2,borderRadius:"50%",background:"#f59e0b"}}/>
+  </div>`;
 }
 
 const S={
@@ -1240,12 +1249,12 @@ function XPToast({onReady}){
 
 function LevelBadge({xp=0}){
   const info=getLevelInfo(xp);
-  return html`<div style=${{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+  return html`<div style=${{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3,margin:"0 8px",flexShrink:0}}>
     <div style=${{display:"flex",alignItems:"center",gap:5}}>
       <div style=${{width:24,height:24,borderRadius:8,fontWeight:900,fontSize:10,display:"grid",placeItems:"center",flexShrink:0,background:`${info.color}18`,border:`1px solid ${info.color}55`,color:info.color}}>${info.lvl}</div>
-      <div style=${{fontSize:10,fontWeight:800,color:info.color,whiteSpace:"nowrap"}}>${info.rank}</div>
+      <div className="sk-rank" style=${{fontSize:10,fontWeight:800,color:info.color,whiteSpace:"nowrap"}}>${info.rank}</div>
     </div>
-    <div style=${{width:64,height:3,borderRadius:99,background:"rgba(255,255,255,0.08)",overflow:"hidden"}}>
+    <div className="sk-rankbar" style=${{width:64,height:3,borderRadius:99,background:"rgba(255,255,255,0.08)",overflow:"hidden"}}>
       <div style=${{width:`${info.pct}%`,height:"100%",borderRadius:99,background:info.color,transition:"width 0.5s ease"}}/>
     </div>
   </div>`;
@@ -1386,7 +1395,7 @@ function CoachPanel({isOpen,onClose,tasks,habits,habitLogs,settings,onApplyActio
         }}>${c.l}</button>`)}
       </div>
       <div style=${{display:"flex",gap:8,padding:"10px 16px 14px",flexShrink:0}}>
-        <textarea ref=${inputRef} value=${input} onInput=${e=>setInput(e.target.value)} onKeyDown=${e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);} }} placeholder="Ask Coach anything… (Enter to send)" rows=${1}
+        <textarea ref=${inputRef} value=${input} onInput=${e=>setInput(e.target.value)} onKeyDown=${e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);} }} placeholder="Ask Coach anything…" rows=${1}
           style=${{flex:1,padding:"10px 12px",borderRadius:14,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.04)",color:T.text,fontSize:15,fontFamily:"inherit",outline:"none",resize:"none",minHeight:46,lineHeight:1.4,maxHeight:120}}/>
         <button onClick=${()=>send(input)} disabled=${!input.trim()||busy} style=${{
           height:46,padding:"0 18px",borderRadius:13,border:"1px solid rgba(245,158,11,0.32)",
@@ -2588,7 +2597,9 @@ function DayStrip({tasks,habits,habitLogs,selectedDay,onSelectDay}){
   const containerRef=useRef(null);
   useEffect(()=>{
     const el=containerRef.current?.querySelector("[data-today]");
-    if(el) el.scrollIntoView({inline:"center",block:"nearest",behavior:"smooth"});
+    const c=containerRef.current;
+    // Scroll only the strip itself (scrollIntoView also scrolled the page sideways)
+    if(el&&c) c.scrollTo({left:el.offsetLeft-c.clientWidth/2+el.offsetWidth/2,behavior:"smooth"});
   },[]);
   return html`<div ref=${containerRef} style=${{
     display:"flex",gap:5,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",
@@ -3733,7 +3744,7 @@ const BODY_SUGGESTIONS={
     tightness:{chain:"Thoracolumbar fascia tension — connected to lats and glutes. Check lat flexibility.",actions:["Thoracic rotation in 90/90 x10 each","Lat overhead stretch 45s each side","Child's pose with arms reaching wide"],avoid:[]},
   },
   upper_back:{
-    pain:{chain:"SBL runs through the entire posterior chain here. Rounded shoulders (chest tightness via SFL) and forward head drive upper back pain. Arm Lines connect through shoulder blades.",actions:["Thoracic foam roll x10 passes mid-back","Thoracic rotation side-lying x10 each","Wall angels x10","Face pulls with band x15","Chin tucks x15"],avoid:["Heavy rowing without matching thoracic mobility","Prolonged forward flexion at desk/phone"]},
+    pain:{chain:"SBL (erector spinae) runs through here, the Spiral Line crosses via the rhomboids, and the Back Arm Lines anchor on the shoulder blades. Rounded shoulders from a tight chest (Front Arm Lines: pec major/minor) and a forward head load this area.",actions:["Thoracic foam roll x10 passes mid-back","Thoracic rotation side-lying x10 each","Wall angels x10","Face pulls with band x15","Chin tucks x15"],avoid:["Heavy rowing without matching thoracic mobility","Prolonged forward flexion at desk/phone"]},
     tightness:{chain:"Common after game — thoracic kyphosis loading and Arm Line tension.",actions:["Thread the needle x8 each side","Thoracic extension over foam roller","Open book x10 each side"],avoid:[]},
   },
   mid_back:{
@@ -3741,19 +3752,19 @@ const BODY_SUGGESTIONS={
     tightness:{chain:"TLF tightness — lats and glutes connected. Check lat flexibility.",actions:["Lat doorway stretch 60s","Child's pose reaching each side 45s","Foam roll below shoulder blades"],avoid:[]},
   },
   neck:{
-    pain:{chain:"Central hub: SBL (skull→upper back), SFL (sternum→jaw), Arm Lines. Neck pain almost always originates in the thoracic spine or shoulder.",actions:["Thoracic foam roll x10 passes","Upper trap stretch — pull head gently to side 45s each","Wall angels x10","Chin tucks x15"],avoid:["Forward head on devices","Sleeping on stomach","Loaded overhead without neck warmup"]},
+    pain:{chain:"Central hub: SBL (suboccipitals, erectors), SFL & Lateral Line (SCM, splenius), Deep Front Line (scalenes, deep neck flexors) and the trapezius (Superficial Back Arm). Neck pain often involves the upper back and shoulders.",actions:["Thoracic foam roll x10 passes","Upper trap stretch — pull head gently to side 45s each","Wall angels x10","Chin tucks x15"],avoid:["Forward head on devices","Sleeping on stomach","Loaded overhead without neck warmup"]},
     tightness:{chain:"Upper trap and levator scapulae — check chest tightness via Arm Lines.",actions:["Foam roll upper back","Doorway chest stretch 60s","Shoulder roll circles x10 each direction","Levator scapulae stretch — head down rotated 45°"],avoid:["Prolonged one-sided head position"]},
   },
   l_shoulder:{
-    pain:{chain:"Arm Lines + Lateral Line + Spiral Line to R hip. Shoulder sits at the crossroads of multiple chains — thoracic rotation is almost always involved.",actions:["Rotator cuff: band external rotation x15","Wall slide x10 (arms on wall, slide overhead)","Cross-body shoulder stretch 45s","Thoracic rotation side-lying x10 each"],avoid:["Overhead press through pain","Sleeping on affected shoulder"]},
+    pain:{chain:"All four Arm Lines plus the Functional Lines (pec major and lat attach here). Through the shoulder blade the Spiral Line links to the R hip. Thoracic rotation is usually involved.",actions:["Rotator cuff: band external rotation x15","Wall slide x10 (arms on wall, slide overhead)","Cross-body shoulder stretch 45s","Thoracic rotation side-lying x10 each"],avoid:["Overhead press through pain","Sleeping on affected shoulder"]},
     fatigue:{chain:"Serratus anterior + lower trap not firing — upper trap overworking.",actions:["Serratus wall push-up plus x15","Lower trap Y-raise x12","Dead hang 20s if comfortable"],avoid:[]},
   },
   r_shoulder:{
-    pain:{chain:"Mirror of L shoulder — Spiral Line connects to L hip.",actions:["Band external rotation x15","Wall slide x10","Cross-body stretch 45s","Thoracic rotation side-lying x10"],avoid:["Overhead press through pain","Sleeping on affected shoulder"]},
+    pain:{chain:"Mirror of L shoulder — via the shoulder blade the Spiral Line links to the L hip.",actions:["Band external rotation x15","Wall slide x10","Cross-body stretch 45s","Thoracic rotation side-lying x10"],avoid:["Overhead press through pain","Sleeping on affected shoulder"]},
     fatigue:{chain:"Serratus + lower trap stability issue.",actions:["Wall push-up plus x15","Y-raise x12","Dead hang 20s"],avoid:[]},
   },
   chest:{
-    pain:{chain:"SFL: tight pec minor rounds the shoulder, driving neck strain and headaches. Everything upstream suffers.",actions:["Doorway chest stretch — high/mid/low 45s each","Thoracic extension over foam roller","Shoulder external rotation stretch","Diaphragmatic breathing x10 deep"],avoid:["Excessive bench press without row balance","Forward head posture"]},
+    pain:{chain:"Deep Front Arm Line: a tight pec minor pulls the shoulder forward; with pec major (Superficial Front Arm) this rounds the shoulders and can strain the neck.",actions:["Doorway chest stretch — high/mid/low 45s each","Thoracic extension over foam roller","Shoulder external rotation stretch","Diaphragmatic breathing x10 deep"],avoid:["Excessive bench press without row balance","Forward head posture"]},
     tightness:{chain:"Pec minor restriction affects shoulder mechanics via Arm Line.",actions:["Pec minor stretch — arm at 90° on wall","Prone cobra extension x10","Face pulls x15"],avoid:[]},
   },
   core:{
@@ -3761,11 +3772,11 @@ const BODY_SUGGESTIONS={
     tightness:{chain:"Hip flexors (DFL) often pull through core — check hip and lower back.",actions:["Couch stretch 90s each","Half-kneeling reach x8 each","Supine twist x5 each side"],avoid:[]},
   },
   l_hip:{
-    pain:{chain:"Junction of SFL, SBL, LL, DFL, Spiral Line. L hip pain often connects to R shoulder via Spiral. Check psoas (DFL) and TFL (LL).",actions:["90/90 hip stretch 90s each position","Pigeon pose 2min","Hip flexor kneeling stretch 90s","Side-lying clamshell x15"],avoid:["Running with hip impingement","Sitting with hip flexed >90° for long"]},
+    pain:{chain:"Junction of the Deep Front (psoas, adductors), Lateral (TFL), Spiral (ASIS/TFL) and Front Functional (adductor longus) lines. Via the Spiral Line the L hip links to the R shoulder blade. Check psoas (DFL) and TFL (LL).",actions:["90/90 hip stretch 90s each position","Pigeon pose 2min","Hip flexor kneeling stretch 90s","Side-lying clamshell x15"],avoid:["Running with hip impingement","Sitting with hip flexed >90° for long"]},
     fatigue:{chain:"Glute medius and hip stability fatigue — very common in football/running.",actions:["Side-lying hip abduction x15","Monster walks 20 steps","Single-leg balance 30s","Electrolytes + protein"],avoid:[]},
   },
   r_hip:{
-    pain:{chain:"Mirror of L hip — Spiral Line connects to L shoulder. LL connects to lateral knee.",actions:["90/90 hip stretch 90s","Pigeon pose 2min","Hip flexor stretch 90s","Clamshell x15"],avoid:["Running through hip impingement"]},
+    pain:{chain:"Mirror of L hip — Spiral Line links to the L shoulder blade; the Lateral Line continues to the outer knee.",actions:["90/90 hip stretch 90s","Pigeon pose 2min","Hip flexor stretch 90s","Clamshell x15"],avoid:["Running through hip impingement"]},
     fatigue:{chain:"Glute stability fatigue — check running mechanics.",actions:["Hip abduction x15","Monster walks 20 steps","Single-leg balance 30s"],avoid:[]},
   },
   l_quad:{
@@ -3777,23 +3788,23 @@ const BODY_SUGGESTIONS={
     tightness:{chain:"SFL pre-training tightness.",actions:["Foam roll quads 2min","Couch stretch 90s","Leg swings x15"],avoid:[]},
   },
   l_knee:{
-    pain:{chain:"Convergence of SFL (quad), SBL (hamstring), LL (ITB). Knee pain is almost never isolated — tight quads, IT band, or weak glutes are the root cause.",actions:["VMO: terminal knee extension x15","IT band foam roll hip-to-knee x10","Hamstring stretch 45s","Step-down eccentric quad x10 slow","Ice 10min if swollen"],avoid:["Running through pain","Deep squats with knee past toe","Twisting under load"]},
+    pain:{chain:"Convergence of SFL (quad), SBL (hamstring/calf), LL (ITB), DFL (popliteus) and Spiral lines. Knee pain is often driven from above or below — check quads, IT band, hip strength and ankle mobility.",actions:["VMO: terminal knee extension x15","IT band foam roll hip-to-knee x10","Hamstring stretch 45s","Step-down eccentric quad x10 slow","Ice 10min if swollen"],avoid:["Running through pain","Deep squats with knee past toe","Twisting under load"]},
     fatigue:{chain:"Stability fatigue — check hip stability upstream (LL).",actions:["Quad and hamstring compression wrap","Cold water immersion or ice bag","Leg elevation 15min"],avoid:[]},
   },
   r_knee:{
-    pain:{chain:"Same as L knee — SFL/SBL/LL convergence. Almost always proximal cause.",actions:["VMO x15","IT band foam roll x10","Hamstring stretch 45s","Step-down eccentric x10","Ice 10min"],avoid:["Running through pain","Deep squats past toe"]},
+    pain:{chain:"Same as L knee — check the hip above and the ankle below.",actions:["VMO x15","IT band foam roll x10","Hamstring stretch 45s","Step-down eccentric x10","Ice 10min"],avoid:["Running through pain","Deep squats past toe"]},
     fatigue:{chain:"Hip stability fatigue.",actions:["Compression wrap","Cold immersion","Elevation 15min"],avoid:[]},
   },
   l_shin:{
-    pain:{chain:"SFL: anterior tibialis overload from running or direction changes. LL: IT band tightness. Ankle mobility deficits stress the shin.",actions:["Shin self-massage 2min","Ankle circles x20 each direction","Seated toe raises x20","Eccentric calf raise x10","Check footwear"],avoid:["Running through shin splint pain","Sudden mileage increase","Barefoot on hard surfaces"]},
+    pain:{chain:"SFL & Spiral Line: tibialis anterior overload from running or direction changes. Lateral Line: peroneals on the outer shin. Ankle mobility deficits stress the shin.",actions:["Shin self-massage 2min","Ankle circles x20 each direction","Seated toe raises x20","Eccentric calf raise x10","Check footwear"],avoid:["Running through shin splint pain","Sudden mileage increase","Barefoot on hard surfaces"]},
     tightness:{chain:"Common after pitch sport — mobilise the ankle.",actions:["Ankle dorsiflexion mobility x10","Shin stretch — kneel sit back on heels","Foam roll calf x10"],avoid:[]},
   },
   r_shin:{
-    pain:{chain:"Same as L shin — SFL and LL.",actions:["Shin massage 2min","Ankle circles x20","Toe raises x20","Eccentric calf raise x10"],avoid:["Running through pain"]},
+    pain:{chain:"Same as L shin — SFL, Spiral and Lateral lines.",actions:["Shin massage 2min","Ankle circles x20","Toe raises x20","Eccentric calf raise x10"],avoid:["Running through pain"]},
     tightness:{chain:"Ankle and shin mobility.",actions:["Ankle dorsiflexion x10","Shin stretch","Foam roll calf"],avoid:[]},
   },
   l_foot:{
-    pain:{chain:"SBL starts at the plantar fascia — foot pain connects all the way to the skull. Tight calves are the most common driver.",actions:["Plantar fascia stretch: pull toes back 45s","Spiky ball rolling under foot 2min","Towel scrunches x20","Calf stretch straight-knee + bent-knee 45s each"],avoid:["Barefoot on hard floors when painful","Worn-out footwear","Tight socks cutting off circulation"]},
+    pain:{chain:"SBL starts at the plantar fascia — foot tension connects up the whole back line. Tight calves are a common driver.",actions:["Plantar fascia stretch: pull toes back 45s","Spiky ball rolling under foot 2min","Towel scrunches x20","Calf stretch straight-knee + bent-knee 45s each"],avoid:["Barefoot on hard floors when painful","Worn-out footwear","Tight socks cutting off circulation"]},
     fatigue:{chain:"Ground-reaction fatigue — load distribution issue.",actions:["Foot elevation 15min","Cold water soak 5min","Short foot exercise x15"],avoid:[]},
   },
   r_foot:{
@@ -3801,12 +3812,12 @@ const BODY_SUGGESTIONS={
     fatigue:{chain:"Ground fatigue.",actions:["Elevation 15min","Cold soak","Short foot exercise x15"],avoid:[]},
   },
   l_glute:{
-    pain:{chain:"SBL + Spiral Line. Piriformis tension can mimic or trigger sciatic-type referral. Spiral Line connects L glute to R shoulder.",actions:["Figure 4 stretch (supine) 90s","Pigeon pose 2min","Foam roll glute + tennis ball for piriformis depth","Glute bridge x10","Clamshell x15"],avoid:["Running until glute function restored","Sitting directly on tender point","Deep hip external rotation if sciatic referral"]},
-    tightness:{chain:"Spiral Line pre-game tightness.",actions:["Figure 4 stretch","Foam roll glutes 2min","Lateral band walk 20 steps"],avoid:[]},
+    pain:{chain:"The Back Functional Line links glute max to the opposite lat (R shoulder) — one of the best-verified connections. SBL and Spiral Line pass via the sacrotuberous ligament. Piriformis tension can mimic sciatic-type pain.",actions:["Figure 4 stretch (supine) 90s","Pigeon pose 2min","Foam roll glute + tennis ball for piriformis depth","Glute bridge x10","Clamshell x15"],avoid:["Running until glute function restored","Sitting directly on tender point","Deep hip external rotation if sciatic referral"]},
+    tightness:{chain:"Glute tightness — activate before training.",actions:["Figure 4 stretch","Foam roll glutes 2min","Lateral band walk 20 steps"],avoid:[]},
   },
   r_glute:{
-    pain:{chain:"Same as L glute — Spiral Line to L shoulder.",actions:["Figure 4 stretch 90s","Pigeon pose 2min","Foam roll + tennis ball piriformis","Glute bridge x10"],avoid:["Running through pain","Sitting on tender point"]},
-    tightness:{chain:"Spiral Line tightness.",actions:["Figure 4 stretch","Foam roll 2min","Lateral band walk"],avoid:[]},
+    pain:{chain:"Same as L glute — Back Functional Line to the L lat/shoulder.",actions:["Figure 4 stretch 90s","Pigeon pose 2min","Foam roll + tennis ball piriformis","Glute bridge x10"],avoid:["Running through pain","Sitting on tender point"]},
+    tightness:{chain:"Glute tightness.",actions:["Figure 4 stretch","Foam roll 2min","Lateral band walk"],avoid:[]},
   },
   l_ham:{
     pain:{chain:"Core of SBL: hamstring traces down to calf/heel and up to lower back. Proximal hamstring strain (high up) is a serious injury — needs assessment.",actions:["Neural floss: sit upright, straighten knee 10 slow reps","Foam roll hamstring x10 (NOT over ischial tuberosity if proximal)","Nordic eccentric x5 very slow","Hip hinge bodyweight — Romanian deadlift pattern"],avoid:["Sprinting through acute pain","Deep forward fold with loaded spine","Seated stretch if proximal tendon involved"]},
@@ -3817,7 +3828,7 @@ const BODY_SUGGESTIONS={
     fatigue:{chain:"SBL post-match fatigue.",actions:["Cold immersion 15min","Compression","Protein 30min","Gentle walking"],avoid:["Static stretch while fatigued"]},
   },
   l_calf:{
-    pain:{chain:"SBL: calf connects to hamstring above and heel/plantar below. Tight calves are a leading cause of plantar fasciitis.",actions:["Calf stretch straight-leg 45s (gastrocnemius)","Calf stretch bent-knee 45s (soleus)","Foam roll calf x10","Eccentric calf raise x10 slow (step edge)","Cold compress if acutely sore"],avoid:["Sprinting through tightness — high strain risk","Sudden barefoot running","Hard surfaces in worn footwear"]},
+    pain:{chain:"SBL: calf connects to hamstring above and heel/plantar fascia below. Tight calves are a common contributor to plantar fasciitis.",actions:["Calf stretch straight-leg 45s (gastrocnemius)","Calf stretch bent-knee 45s (soleus)","Foam roll calf x10","Eccentric calf raise x10 slow (step edge)","Cold compress if acutely sore"],avoid:["Sprinting through tightness — high strain risk","Sudden barefoot running","Hard surfaces in worn footwear"]},
     tightness:{chain:"SBL pre-game — dynamic warm-up essential.",actions:["Foam roll calf","Ankle circles x20","Heel drops x15","Dynamic calf raise x15"],avoid:[]},
   },
   r_calf:{
@@ -3825,7 +3836,7 @@ const BODY_SUGGESTIONS={
     tightness:{chain:"SBL tightness.",actions:["Foam roll","Ankle circles","Heel drops x15"],avoid:[]},
   },
   l_heel:{
-    pain:{chain:"SBL anchor point — Achilles/plantar fascia. Achilles tendinopathy is a load-management issue. Tight calves are almost always the root cause.",actions:["Eccentric heel drop: two feet up, one foot down x10 slow","Calf stretch both positions 45s each","Achilles self-massage 2min","Reduce running load 50% for 1 week","Check footwear heel-to-toe drop"],avoid:["Barefoot on hard floors","Sudden load increase","Aggressive Achilles stretching in active tendinopathy"]},
+    pain:{chain:"SBL anchor point — Achilles/plantar fascia. Achilles tendinopathy is mainly a load-management issue; calf tightness or weakness is a common driver.",actions:["Eccentric heel drop: two feet up, one foot down x10 slow","Calf stretch both positions 45s each","Achilles self-massage 2min","Reduce running load 50% for 1 week","Check footwear heel-to-toe drop"],avoid:["Barefoot on hard floors","Sudden load increase","Aggressive Achilles stretching in active tendinopathy"]},
     fatigue:{chain:"Tendon load tolerance exceeded.",actions:["Cold compress 10min","Heel raise/pad in footwear","Rest from impact 48h"],avoid:["Continued impact loading"]},
   },
   r_heel:{
@@ -3839,7 +3850,7 @@ const BODY_SUGGESTIONS={
     pain:{chain:"Arm Line — check chest and shoulder.",actions:["Bicep stretch 45s","Forearm circles","Cross-body stretch","Thoracic rotation x10"],avoid:["Loaded curling through pain"]},
   },
   l_forearm:{
-    pain:{chain:"Deep Front Arm Line: forearm → bicep → chest → neck. Grip overuse extremely common in sport.",actions:["Wrist flexor stretch — arm out palm up pull fingers back 45s","Wrist extensor stretch — arm out palm down 45s","Forearm self-massage 2min","Contrast soak warm then cold"],avoid:["Heavy grip work until resolved","Phone scrolling with wrist flexed"]},
+    pain:{chain:"Front Arm Lines: forearm flexors → inner arm → chest (Superficial Front Arm); radius → biceps → pec minor (Deep Front Arm). Grip overuse is common in sport.",actions:["Wrist flexor stretch — arm out palm up pull fingers back 45s","Wrist extensor stretch — arm out palm down 45s","Forearm self-massage 2min","Contrast soak warm then cold"],avoid:["Heavy grip work until resolved","Phone scrolling with wrist flexed"]},
     tightness:{chain:"Grip overuse.",actions:["Prayer stretch 30s","Reverse prayer 30s","Tennis ball squeeze and release x15"],avoid:[]},
   },
   r_forearm:{
@@ -3847,7 +3858,7 @@ const BODY_SUGGESTIONS={
     tightness:{chain:"Grip overuse.",actions:["Prayer stretch","Reverse prayer","Tennis ball x15"],avoid:[]},
   },
   head:{
-    pain:{chain:"SBL: suboccipital tightness and upper cervical restriction. Tension headaches almost always originate in the neck and upper back.",actions:["Suboccipital release: interlace fingers behind head gentle traction 2min","Chin tucks x15","Scalp massage circles","Neck side stretch ear to shoulder 30s each"],avoid:["Screen time without breaks","Heavy overhead loading"]},
+    pain:{chain:"SBL: suboccipital tightness and upper-neck restriction. Tension headaches are often linked with neck and upper-back tightness.",actions:["Suboccipital release: interlace fingers behind head gentle traction 2min","Chin tucks x15","Scalp massage circles","Neck side stretch ear to shoulder 30s each"],avoid:["Screen time without breaks","Heavy overhead loading"]},
     fatigue:{chain:"CNS load + dehydration are primary drivers.",actions:["Hydrate 500ml now","Box breathing 4-4-4-4 x5 rounds","Eyes closed no screens 10min"],avoid:["Caffeine after 2pm"]},
   },
 };
@@ -4523,17 +4534,17 @@ function HealthView({tasks,healthLogs,onUpsertLog,foodLogs,settings,onUpsertFood
     <div style=${{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
       <div className="sk-card" style=${{...S.card,background:`rgba(${rCol==="green"?"16,185,129":rCol==="amber"?"245,158,11":"239,68,68"},0.07)`,border:`1px solid ${rCol==="green"?T.greenBorder:rCol==="amber"?"rgba(245,158,11,0.28)":T.redBorder}`,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.3s ease"}}>
         <${Ring} pct=${recovery??0} size=${58} stroke=${3.5} color=${recoveryColor(recovery)}/>
-        <div style=${{fontWeight:900,fontSize:recovery!=null?22:16,color:recoveryColor(recovery),marginTop:6,lineHeight:1,...TYPE.num}}>${recovery!=null?recovery:"-"}</div>
+        <div style=${{fontWeight:900,fontSize:recovery!=null?22:16,color:recoveryColor(recovery),marginTop:6,lineHeight:1,height:22,display:"flex",alignItems:"center",justifyContent:"center",...TYPE.num}}>${recovery!=null?recovery:"-"}</div>
         <div style=${{fontSize:9,color:T.muted,fontWeight:800,marginTop:3,letterSpacing:1.2}}>RECOVERY</div>
       </div>
       <div className="sk-card" style=${{...S.card,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.35s ease"}}>
         <${Ring} pct=${sleepMins!=null?Math.min(100,sleepMins/(8*60)*100):0} size=${58} stroke=${3.5} color=${T.blue}/>
-        <div style=${{fontWeight:900,fontSize:sleepHrs?13:16,color:T.blue,marginTop:6,lineHeight:1}}>${sleepHrs||"-"}</div>
+        <div style=${{fontWeight:900,fontSize:sleepHrs?15:16,color:T.blue,marginTop:6,lineHeight:1,height:22,display:"flex",alignItems:"center",justifyContent:"center"}}>${sleepHrs||"-"}</div>
         <div style=${{fontSize:9,color:T.muted,fontWeight:800,marginTop:3,letterSpacing:1.2}}>SLEEP</div>
       </div>
       <div className="sk-card" style=${{...S.card,padding:"16px 8px",textAlign:"center",animation:"fadeUp 0.4s ease"}}>
         <${Ring} pct=${Math.min(100,strain/21*100)} size=${58} stroke=${3.5} color=${sCol}/>
-        <div style=${{fontWeight:900,fontSize:22,color:sCol,marginTop:6,lineHeight:1,...TYPE.num}}>${strain.toFixed(1)}</div>
+        <div style=${{fontWeight:900,fontSize:22,color:sCol,marginTop:6,lineHeight:1,height:22,display:"flex",alignItems:"center",justifyContent:"center",...TYPE.num}}>${strain.toFixed(1)}</div>
         <div style=${{fontSize:9,color:T.muted,fontWeight:800,marginTop:3,letterSpacing:1.2}}>STRAIN</div>
       </div>
     </div>
@@ -5208,12 +5219,12 @@ function App(){
         background:"radial-gradient(ellipse,rgba(13,148,136,0.05) 0%,transparent 65%)",
         animation:"emberShift 10s ease-in-out infinite 4s"}}/>
       <!-- Fading cross — faith symbol -->
-      <div className="fd-orb" style=${{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-55%)",width:520,height:520,pointerEvents:"none",animation:"emberShift 22s ease-in-out infinite 6s"}}>
-        <div style=${{position:"absolute",left:"50%",top:"6%",transform:"translateX(-50%)",width:22,height:"88%",
-          background:"linear-gradient(180deg,transparent 0%,rgba(255,255,255,0.045) 15%,rgba(255,255,255,0.065) 50%,rgba(255,255,255,0.045) 85%,transparent 100%)",
+      <div className="fd-orb" style=${{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-55%)",width:"min(360px,70vw)",height:"min(520px,100vw)",pointerEvents:"none",animation:"emberShift 22s ease-in-out infinite 6s"}}>
+        <div style=${{position:"absolute",left:"50%",top:"6%",transform:"translateX(-50%)",width:16,height:"88%",
+          background:"linear-gradient(180deg,transparent 0%,rgba(255,255,255,0.035) 15%,rgba(255,255,255,0.05) 50%,rgba(255,255,255,0.035) 85%,transparent 100%)",
           borderRadius:11}}/>
-        <div style=${{position:"absolute",top:"29%",left:"10%",width:"80%",height:22,
-          background:"linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.045) 15%,rgba(255,255,255,0.065) 50%,rgba(255,255,255,0.045) 85%,transparent 100%)",
+        <div style=${{position:"absolute",top:"29%",left:"10%",width:"80%",height:16,
+          background:"linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.035) 15%,rgba(255,255,255,0.05) 50%,rgba(255,255,255,0.035) 85%,transparent 100%)",
           borderRadius:11}}/>
       </div>
       <!-- Corner palm silhouette -->
@@ -5280,7 +5291,7 @@ function App(){
         </div>
       </header>
 
-      <div key=${view} ref=${swipeRef} style=${{animation:`slide${slideDir==="right"?"InRight":"InLeft"} 0.22s var(--ease-out) both`}}>
+      <div key=${view} ref=${swipeRef} style=${{animation:`slide${slideDir==="right"?"InRight":"InLeft"} 0.22s var(--ease-out) backwards`}}>
         ${view==="today"?html`<${TodayView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)} retentionDays=${retentionDays(state?.retentionStartDate)}/>`:""}
         ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
         ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})} retentionStartDate=${state?.retentionStartDate||null} onStartRetention=${startRetention} onResetRetention=${resetRetention}
@@ -5320,8 +5331,8 @@ function App(){
           zIndex:0,
         }}/>
         ${NAV.map(v=>html`<button key=${v.id} onClick=${()=>v.isCoach?setCoachOpen(true):navigateTo(v.id)} style=${{
-          flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
-          padding:"8px 4px 7px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+          flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+          padding:"8px 0 7px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
           border:"1px solid transparent",
           background:"transparent",
           color:(v.isCoach?coachOpen:view===v.id)?T.accent:T.muted,
@@ -5333,7 +5344,7 @@ function App(){
             filter:(v.isCoach?coachOpen:view===v.id)?`drop-shadow(0 0 6px ${T.accent}88)`:"none",
             transition:"filter 0.2s",
           }}>${v.icon}</span>
-          <span style=${{fontSize:8,fontWeight:900,letterSpacing:0.8,textTransform:"uppercase"}}>${v.label}</span>
+          <span style=${{fontSize:"clamp(6.5px,2vw,8px)",fontWeight:900,letterSpacing:0,textTransform:"uppercase",maxWidth:"100%",overflow:"hidden",whiteSpace:"nowrap"}}>${v.label}</span>
         </button>`)}
       </nav>
     </div>
