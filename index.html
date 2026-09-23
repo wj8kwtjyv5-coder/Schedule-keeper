@@ -3163,7 +3163,7 @@ function SettingsView({settings,onUpdate,onExport,onReset,syncStatus,trainingPla
         Your schedule syncs automatically to the Scriptable lock screen widget whenever you make a change.
         ${syncStatus?html`<br/><span style=${{color:syncStatus==="ok"?T.green:T.red}}>${syncStatus==="ok"?"◉ Synced":"○ Sync unavailable (local mode)"}</span>`:""}
       </div>
-      <${Btn} onClick=${()=>{fetch(SYNC_URL).then(r=>r.json()).then(()=>showToast("Widget sync working")).catch(()=>showToast("Not syncing — deploy to Netlify first"));}} variant="ghost" style=${{fontSize:12}}>
+      <${Btn} onClick=${()=>{fetch(SYNC_URL).then(r=>r.json()).then(()=>showToast("Widget sync working")).catch(()=>showToast("Not syncing — deploy to Vercel first"));}} variant="ghost" style=${{fontSize:12}}>
         Test widget sync
       <//>
     </div>
