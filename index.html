@@ -2232,7 +2232,94 @@ function BodyView({bodyMap,onUpdateBodyMap}){
 }
 
 // ── Journal View ──────────────────────────────────────────────
-function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEditTasks,profile}){
+// ── Weekly goal + daily steps (Journal) ───────────────────────
+// One goal per week (keyed by Monday) broken into small steps planned per day.
+// Unfinished steps from earlier days can be rolled into today (daily-planning pattern from Super Productivity).
+function goalStats(g,todayStr=todayISO()){
+  const steps=g?.steps||[];const done=steps.filter(x=>x.done).length;
+  return{total:steps.length,done,pct:steps.length?Math.round(done/steps.length*100):0,
+    overdue:steps.filter(x=>!x.done&&x.date<todayStr),today:steps.filter(x=>x.date===todayStr)};
+}
+function WeeklyGoalCard({weeklyGoals={},weeklyReviews={},onSaveGoal}){
+  const today=todayISO();const week=getWeekDates();const wk=week[0];
+  const g=weeklyGoals[wk];
+  const prevFocus=weeklyReviews[isoDate(addDays(parseDate(wk),-7))]?.focus||"";
+  const [editing,setEditing]=useState(!g?.goal);
+  const [goalText,setGoalText]=useState(g?.goal||"");
+  const [day,setDay]=useState(today);
+  const [stepText,setStepText]=useState("");
+  const st=goalStats(g,today);
+  const save=patch=>onSaveGoal(wk,{steps:[],createdAt:Date.now(),...(g||{}),...patch});
+  const steps=(g?.steps||[]);
+  const daySteps=steps.filter(x=>x.date===day);
+  const addStep=()=>{const t=stepText.trim();if(!t)return;save({steps:[...steps,{id:uid(),text:t,date:day,done:false}]});setStepText("");};
+  const toggle=id=>save({steps:steps.map(x=>x.id===id?{...x,done:!x.done,doneAt:!x.done?Date.now():null}:x)});
+  const remove=id=>save({steps:steps.filter(x=>x.id!==id)});
+  const rollover=()=>{save({steps:steps.map(x=>!x.done&&x.date<today?{...x,date:today,movedFrom:x.movedFrom||x.date}:x)});setDay(today);showToast("Moved to today");};
+  const fmtRange=`${parseDate(week[0]).toLocaleDateString("en-GB",{day:"numeric",month:"short"})} – ${parseDate(week[6]).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}`;
+  const label={fontSize:9,fontWeight:900,letterSpacing:2,textTransform:"uppercase"};
+
+  return html`<div className="sk-card" style=${{...S.card,marginBottom:14,padding:"14px 16px",border:`1px solid ${g?.goal?"rgba(245,158,11,0.18)":T.accentBorder}`}}>
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <div style=${{...label,color:T.accent}}>Weekly goal · ${fmtRange}</div>
+      ${g?.goal&&!editing?html`<button onClick=${()=>{setGoalText(g.goal);setEditing(true);}} style=${{background:"transparent",border:"none",color:T.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Edit</button>`:""}
+    </div>
+
+    ${editing?html`<div>
+      <textarea style=${{...S.input,minHeight:56,resize:"none",fontSize:14,lineHeight:1.45}} value=${goalText} onInput=${e=>setGoalText(e.target.value)}
+        placeholder="What do you want to achieve this week? e.g. 3 bike sessions and in bed by 9pm every night"/>
+      ${prevFocus&&!goalText?html`<button onClick=${()=>setGoalText(prevFocus)} style=${{marginTop:6,padding:"5px 10px",borderRadius:999,cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:700,
+        border:`1px solid ${T.accentBorder}`,background:"rgba(245,158,11,0.08)",color:T.accent,textAlign:"left"}}>↺ Use last week's focus: ${prevFocus}</button>`:""}
+      <div style=${{display:"flex",gap:8,marginTop:10,justifyContent:"flex-end"}}>
+        ${g?.goal?html`<${Btn} onClick=${()=>setEditing(false)} variant="ghost" style=${{padding:"7px 14px",fontSize:12}}>Cancel<//>`:""}
+        <${Btn} onClick=${()=>{if(!goalText.trim())return;save({goal:goalText.trim()});setEditing(false);showToast("Weekly goal set");}} variant="primary" style=${{padding:"7px 14px",fontSize:12}}>Set goal<//>
+      </div>
+    </div>`:html`<div>
+      <div style=${{fontSize:16,fontWeight:900,color:T.text,lineHeight:1.35}}>${g.goal}</div>
+      <div style=${{display:"flex",alignItems:"center",gap:10,marginTop:10}}>
+        <div style=${{flex:1,height:6,borderRadius:99,background:"rgba(255,255,255,0.06)",overflow:"hidden"}}>
+          <div style=${{height:"100%",width:st.pct+"%",borderRadius:99,background:st.pct>=100?T.green:`linear-gradient(90deg,${T.accent},${T.green})`,transition:"width 0.4s var(--ease-out)"}}/></div>
+        <span style=${{fontSize:12,fontWeight:800,color:T.text,...TYPE.num}}>${st.done}/${st.total} steps</span>
+      </div>
+
+      <!-- Day picker -->
+      <div style=${{display:"flex",gap:4,marginTop:12}}>
+        ${week.map((d,i)=>{const ds=steps.filter(x=>x.date===d);const dn=ds.filter(x=>x.done).length;const sel=d===day;const isT=d===today;
+          return html`<button key=${d} onClick=${()=>setDay(d)} style=${{flex:1,padding:"6px 0 5px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+            border:`1px solid ${sel?T.accentBorder:isT?"rgba(255,255,255,0.14)":T.border}`,background:sel?"rgba(245,158,11,0.13)":"rgba(255,255,255,0.02)"}}>
+            <div style=${{fontSize:9.5,fontWeight:900,color:sel?T.accent:isT?T.text:T.muted}}>${"MTWTFSS"[i]}</div>
+            <div style=${{display:"flex",justifyContent:"center",gap:2,marginTop:4,height:5}}>
+              ${ds.length?ds.slice(0,4).map((x,j)=>html`<span key=${j} style=${{width:5,height:5,borderRadius:"50%",background:x.done?T.green:"rgba(255,255,255,0.22)"}}/>`):""}
+            </div>
+          </button>`;})}
+      </div>
+
+      <!-- Steps for the selected day -->
+      <div style=${{...label,color:T.muted,margin:"14px 0 8px"}}>${day===today?"Today's steps":`Steps · ${fmtDayLong(day)}`}</div>
+      ${st.overdue.length&&day===today?html`<button onClick=${rollover} style=${{width:"100%",marginBottom:8,padding:"8px 10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+        fontSize:11.5,fontWeight:700,border:"1px solid rgba(251,191,36,0.25)",background:"rgba(251,191,36,0.07)",color:T.amber}}>
+        ↪ ${st.overdue.length} unfinished step${st.overdue.length>1?"s":""} from earlier this week — move to today</button>`:""}
+      <div style=${{display:"flex",flexDirection:"column",gap:6}}>
+        ${daySteps.map((x,i)=>html`<div key=${x.id} onClick=${()=>toggle(x.id)} style=${{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:11,cursor:"pointer",
+          border:`1px solid ${x.done?T.greenBorder:T.border}`,background:x.done?T.greenGlow:"rgba(255,255,255,0.02)",...stagger(i,20)}}>
+          <div style=${{width:20,height:20,borderRadius:6,border:`1.5px solid ${x.done?T.green:"rgba(255,255,255,0.2)"}`,background:x.done?"rgba(52,211,153,0.18)":"transparent",
+            display:"grid",placeItems:"center",fontSize:10,color:T.green,fontWeight:900,flexShrink:0}}>${x.done?"✓":""}</div>
+          <span style=${{flex:1,fontSize:13,fontWeight:700,color:T.text,textDecoration:x.done?"line-through":"none",opacity:x.done?0.55:1}}>${x.text}
+            ${x.movedFrom?html`<span style=${{fontSize:9.5,color:T.muted,fontWeight:600,marginLeft:6}}>↪ from ${fmtDayShort(x.movedFrom)}</span>`:""}</span>
+          <button aria-label="Remove step" onClick=${e=>{e.stopPropagation();remove(x.id);}} style=${{width:24,height:24,borderRadius:7,border:`1px solid ${T.border}`,background:"transparent",color:T.muted,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>✕</button>
+        </div>`)}
+      </div>
+      ${!daySteps.length?html`<div style=${{fontSize:11.5,color:T.muted,marginBottom:6}}>${day<today?"No steps were planned for this day.":"What's one small step you can take toward your goal?"}</div>`:""}
+      ${day>=today?html`<div style=${{display:"flex",gap:8,marginTop:8}}>
+        <input style=${{...S.input,padding:"9px 12px",fontSize:14}} value=${stepText} onInput=${e=>setStepText(e.target.value)} onKeyDown=${e=>{if(e.key==="Enter")addStep();}}
+          placeholder=${day===today?"Add a step for today":"Plan a step for this day"} enterkeyhint="done"/>
+        <${Btn} onClick=${addStep} variant="primary" style=${{fontSize:12,padding:"7px 14px",flexShrink:0}}>Add<//>
+      </div>`:""}
+    </div>`}
+  </div>`;
+}
+
+function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEditTasks,profile,weeklyGoals={},weeklyReviews={},onSaveGoal}){
   const today=todayISO();
   const weekDates=getWeekDates();
   const todayLog=healthLogs[today]||{};
@@ -2282,6 +2369,9 @@ function JournalView({tasks,notes,onUpsertNote,healthLogs,onUpsertLog,onBulkEdit
         background:"transparent",border:"none",color:T.muted,cursor:"pointer",fontSize:18,padding:4,
       }}>×</button>
     </div>`:""}
+
+    <!-- Weekly goal + daily steps -->
+    <${WeeklyGoalCard} weeklyGoals=${weeklyGoals} weeklyReviews=${weeklyReviews} onSaveGoal=${onSaveGoal}/>
 
     <!-- Energy check-in -->
     <div style=${{...S.card,marginBottom:14,padding:"14px 16px"}}>
@@ -2850,10 +2940,19 @@ function computePeriodStats({dates,tasks,habits,habitLogs,chores,choreLogs,healt
     return{h,sched:sched.length,done,pct:pctOf(done,sched.length)};
   }).filter(r=>r.sched>0);
   const hSched=habitRows.reduce((a,r)=>a+r.sched,0),hDone=habitRows.reduce((a,r)=>a+r.done,0);
-  // Chores (only count days after the chore was created)
-  let cSched=0,cDone=0;
-  (chores||[]).forEach(c=>{const from=c.createdAt?isoDate(new Date(c.createdAt)):"0000";
-    elapsed.forEach(d=>{if(d>=from){cSched++;if(choreLogs?.[`${c.id}_${d}`])cDone++;}});});
+  // Chores — daily: every day since created · weekly: once per week · one-off: counts on the day it's done
+  // (an open one-off counts as pending in the current period)
+  let cSched=0,cDone=0;const choreDay={};
+  const addCD=(d,t,n)=>{const o=choreDay[d]||(choreDay[d]={t:0,n:0});o.t+=t;o.n+=n;};
+  const todayInPeriod=dates.includes(todayStr);
+  (chores||[]).forEach(c=>{const from=c.createdAt?isoDate(new Date(c.createdAt)):"0000";const rep=choreRepeat(c);
+    if(rep==="daily")elapsed.forEach(d=>{if(d>=from){const ok=!!choreLogs?.[`${c.id}_${d}`];cSched++;if(ok)cDone++;addCD(d,1,ok?1:0);}});
+    else if(rep==="weekly"){const weeks={};elapsed.forEach(d=>{if(d>=from){const wk=getWeekDates(parseDate(d))[0];(weeks[wk]=weeks[wk]||[]).push(d);}});
+      Object.keys(weeks).forEach(wk=>{cSched++;const doneDay=getWeekDates(parseDate(wk)).find(x=>choreLogs?.[`${c.id}_${x}`]);
+        if(doneDay&&dateSet.has(doneDay)){cDone++;addCD(doneDay,1,1);}});}
+    else{if(c.doneDate&&dateSet.has(c.doneDate)){cSched++;cDone++;addCD(c.doneDate,1,1);}
+      else if(!c.doneDate&&todayInPeriod&&from<=todayStr)cSched++;}
+  });
   // Sleep / recovery / energy
   const sleepMins=[],beds=[],recs=[],energy=[];
   elapsed.forEach(d=>{const l=healthLogs[d];if(!l)return;
@@ -2871,9 +2970,9 @@ function computePeriodStats({dates,tasks,habits,habitLogs,chores,choreLogs,healt
     const dow=parseDate(d).getDay();
     const t=tasks.filter(x=>x.date===d&&x.category!=="work");
     const hs=habits.filter(h=>h.days.includes(dow));
-    const cs=(chores||[]).filter(c=>!c.createdAt||isoDate(new Date(c.createdAt))<=d);
-    const tot=t.length+hs.length+cs.length;
-    const dn=t.filter(x=>x.completed).length+hs.filter(h=>habitLogs[`${h.id}_${d}`]).length+cs.filter(c=>choreLogs?.[`${c.id}_${d}`]).length;
+    const cd=choreDay[d]||{t:0,n:0};
+    const tot=t.length+hs.length+cd.t;
+    const dn=t.filter(x=>x.completed).length+hs.filter(h=>habitLogs[`${h.id}_${d}`]).length+cd.n;
     return{d,tot,dn,pct:tot?Math.round(dn/tot*100):null,tDone:t.filter(x=>x.completed).length,tTot:t.length,hDone:hs.filter(h=>habitLogs[`${h.id}_${d}`]).length,hTot:hs.length};
   });
   const plan=pctOf(planDone,pTasks.length),habitsPct=pctOf(hDone,hSched),choresPct=pctOf(cDone,cSched);
@@ -2916,7 +3015,7 @@ function buildInsights(cur,prev,mode,settings,likeForLike=false){
   }
   if(cur.cSched>=3){
     if(cur.choresPct>=90)pos.push({icon:"🧹",title:`Chores on lock: ${cur.choresPct}%`,detail:`${cur.cDone}/${cur.cSched} done.`});
-    else if(cur.choresPct<60)neg.push({icon:"🧹",title:`Chores falling behind: ${cur.choresPct}%`,detail:`${cur.cDone}/${cur.cSched} done.`,fix:"Pick a 10-minute chore slot each day."});
+    else if(cur.choresPct<60)neg.push({icon:"🧹",title:`Chores falling behind: ${cur.choresPct}%`,detail:`${cur.cDone}/${cur.cSched} done${cur.cSched-cur.cDone>0?` · ${cur.cSched-cur.cDone} still open`:""}.`,fix:"Pick a 10-minute chore slot each day."});
   }
   if(cur.sleepNights>=3){
     const h=cur.sleepAvg/60,hs=h.toFixed(1);
@@ -2957,7 +3056,7 @@ function DeltaChip({d,unit="pts",invert=false}){
   return html`<span style=${{fontSize:10,fontWeight:800,color:c,whiteSpace:"nowrap"}}>${flat?"● same":`${d>0?"▲":"▼"} ${Math.abs(d)}${unit==="pts"?" pts":unit}`}</span>`;
 }
 
-function PerformanceReport({tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings,mode,setMode,offset,setOffset,weeklyReviews={},onSaveReview}){
+function PerformanceReport({tasks,habits,habitLogs,chores,choreLogs,healthLogs,settings,mode,setMode,offset,setOffset,weeklyReviews={},weeklyGoals={},onSaveReview}){
   const [checkInOpen,setCheckInOpen]=useState(false);
   const dates=useMemo(()=>periodDates(mode,offset),[mode,offset]);
   // Like-for-like: while a period is in progress, compare with the same number of days of the previous one
@@ -2975,7 +3074,21 @@ function PerformanceReport({tasks,habits,habitLogs,chores,choreLogs,healthLogs,s
   const prevWeekKey=isoDate(addDays(parseDate(dates[0]),-7));
   const prevWeekReview=mode==="week"?weeklyReviews[prevWeekKey]:null;
   const mine=useMemo(()=>checkInInsights(mode==="week"?(thisReview?[thisReview]:[]):reviewsIn(dates),mode==="week"?(prevWeekReview?[prevWeekReview]:[]):reviewsIn(periodDates("month",offset-1))),[weeklyReviews,dates,mode,offset]);
-  const pos=[...mine.pos,...auto.pos.map(x=>({...x,src:"log"}))],neg=[...mine.neg,...auto.neg.map(x=>({...x,src:"log"}))];
+  // Weekly goal(s) for this period
+  const goalIns=useMemo(()=>{const p=[],n=[];const todayStr=todayISO();
+    const keys=mode==="week"?[dates[0]]:dates.filter(x=>parseDate(x).getDay()===1);
+    keys.forEach(k=>{const g=weeklyGoals[k];if(!g?.goal)return;const st=goalStats(g,todayStr);const past=getWeekDates(parseDate(k))[6]<todayStr;
+      const elapsedDays=getWeekDates(parseDate(k)).filter(x=>x<=todayStr).length;
+      if(st.total&&st.done===st.total&&(past||st.total>=3))p.push({icon:"◎",src:"you",title:`Weekly goal${mode==="month"?` (wk of ${fmtDateNum(k)})`:""}: all ${st.total} steps done`,detail:g.goal});
+      else if(st.total&&past&&st.done<st.total)(st.pct>=60?p:n).push({icon:"◎",src:"you",title:`Weekly goal finished at ${st.done}/${st.total} steps`,detail:g.goal,...(st.pct<60?{fix:"Carry the open steps into next week's goal, or make them smaller."}:{})});
+      else if(st.total&&st.pct>=60)p.push({icon:"◎",src:"you",title:`Weekly goal on track: ${st.done}/${st.total} steps`,detail:g.goal});
+      else if(st.total&&st.pct>=40)p.push({icon:"◎",src:"you",title:`Weekly goal in progress: ${st.done}/${st.total} steps`,detail:g.goal});
+      else if(st.total&&elapsedDays>=3&&st.pct<40)n.push({icon:"◎",src:"you",title:`Weekly goal behind: ${st.done}/${st.total} steps`,detail:g.goal,fix:st.overdue.length&&!past?`${st.overdue.length} unfinished — move them to today in Journal.`:"Break it into smaller daily steps next week."});
+      else if(!st.total&&elapsedDays>=2)n.push({icon:"◎",src:"you",title:"Weekly goal has no steps yet",detail:g.goal,fix:"Add one small step for today in Journal → Weekly goal."});
+    });
+    if(mode==="week"&&!weeklyGoals[dates[0]]?.goal&&offset===0)n.push({icon:"◎",src:"you",title:"No weekly goal set",detail:"Pick one thing to achieve this week.",fix:"Set it in Journal → Weekly goal."});
+    return{p,n};},[weeklyGoals,dates,mode,offset]);
+  const pos=[...goalIns.p,...mine.pos,...auto.pos.map(x=>({...x,src:"log"}))],neg=[...goalIns.n,...mine.neg,...auto.neg.map(x=>({...x,src:"log"}))];
   const loggedCount=cur.days.reduce((a,x)=>a+(x.dn||0),0)+cur.sleepNights;
   const [tip,setTip]=useState(null);
   const per=mode==="week"?"week":"month";
@@ -3188,7 +3301,7 @@ function MonthCalendar({tasks,habits,habitLogs,notes,month,onPrevMonth,onNextMon
 }
 
 // ── Review View ───────────────────────────────────────────────
-function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,chores=[],choreLogs={},weeklyReviews={},onSaveReview,onUpsertNote,onToggleTask,onEditTask,onAddForDate}){
+function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,chores=[],choreLogs={},weeklyReviews={},weeklyGoals={},onSaveReview,onUpsertNote,onToggleTask,onEditTask,onAddForDate}){
   const [selectedDay,setSelectedDay]=useState(null);
   const [mode,setMode]=useState("week");
   const [offset,setOffset]=useState(0);
@@ -3217,7 +3330,7 @@ function ReviewView({tasks,habits,habitLogs,healthLogs,notes,settings,chores=[],
     <!-- Weekly / monthly performance report -->
     <${PerformanceReport} tasks=${tasks} habits=${habits} habitLogs=${habitLogs} chores=${chores} choreLogs=${choreLogs}
       healthLogs=${healthLogs} settings=${settings} mode=${mode} setMode=${setMode} offset=${offset} setOffset=${setOffset}
-      weeklyReviews=${weeklyReviews} onSaveReview=${onSaveReview}/>
+      weeklyReviews=${weeklyReviews} weeklyGoals=${weeklyGoals} onSaveReview=${onSaveReview}/>
 
     <!-- Month calendar -->
     ${mode==="month"?html`<${MonthCalendar} tasks=${tasks} habits=${habits} habitLogs=${habitLogs} notes=${notes||{}} month=${reviewMonth} onPrevMonth=${prevMonth} onNextMonth=${nextMonth}/>`:""}
@@ -3276,69 +3389,112 @@ function DisciplineStreakCard({retentionStartDate,onStart,onReset}){
   </div>`;
 }
 
-// ── Daily Chores ──────────────────────────────────────────────
-function ChoresCard({chores,choreLogs,onToggleChore,onAddChore,onDeleteChore}){
-  const todayStr=todayISO();
-  const [date,setDate]=useState(todayStr);
+// ── Chores ────────────────────────────────────────────────────
+// One-off chores disappear once done; daily/weekly ones come back.
+// (Repeat modes modelled on Super Productivity's repeating tasks.)
+const choreRepeat=c=>c.repeat||"once";
+const REPEAT_LABEL={once:"Once",daily:"Daily",weekly:"Weekly"};
+function choreWeekDoneDay(c,date,choreLogs){return getWeekDates(parseDate(date)).find(d=>choreLogs?.[`${c.id}_${d}`])||null;}
+function choreState(c,date,choreLogs){
+  const rep=choreRepeat(c);
+  if(rep==="once")return c.doneDate?(c.doneDate===date?"doneToday":"gone"):"todo";
+  if(rep==="daily")return choreLogs?.[`${c.id}_${date}`]?"doneToday":"todo";
+  const dd=choreWeekDoneDay(c,date,choreLogs);return dd?(dd===date?"doneToday":"doneWeek"):"todo";
+}
+// "Hoover the stairs every week" → {title:"Hoover the stairs", repeat:"weekly"} (Todoist-style quick add)
+function parseChoreInput(text,fallback){
+  let t=text.trim(),repeat=fallback;
+  if(/\b(every\s*day|daily|each\s*day)\b/i.test(t)){repeat="daily";t=t.replace(/\b(every\s*day|daily|each\s*day)\b/ig,"");}
+  else if(/\b(every\s*week|weekly|each\s*week)\b/i.test(t)){repeat="weekly";t=t.replace(/\b(every\s*week|weekly|each\s*week)\b/ig,"");}
+  return{title:t.replace(/\s{2,}/g," ").replace(/[\s,-]+$/,"").trim(),repeat};
+}
+function ChoresCard({chores,choreLogs,onToggleChore,onAddChore,onDeleteChore,onUpdateChore}){
+  const today=todayISO();
   const [title,setTitle]=useState("");
+  const [repeat,setRepeat]=useState("once");
   const [confirmId,setConfirmId]=useState(null);
-  const done=chores.filter(c=>choreLogs[`${c.id}_${date}`]).length,total=chores.length;
-  const pct=total>0?Math.round((done/total)*100):0;
-  const isToday=date===todayStr;
-  const shift=n=>{setDate(isoDate(addDays(parseDate(date),n)));setConfirmId(null);};
-  const add=()=>{ const t=title.trim(); if(!t)return; onAddChore({id:uid(),title:t,createdAt:Date.now()}); setTitle(""); };
-  const navBtn={width:28,height:28,borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,fontWeight:900,fontFamily:"inherit"};
+  const [showHistory,setShowHistory]=useState(false);
+  const withState=chores.map(c=>({c,st:choreState(c,today,choreLogs)}));
+  const todo=withState.filter(x=>x.st==="todo");
+  const doneNow=withState.filter(x=>x.st==="doneToday"||x.st==="doneWeek");
+  const history=chores.filter(c=>choreRepeat(c)==="once"&&c.doneDate&&c.doneDate<today).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0)).slice(0,15);
+  const total=todo.length+doneNow.length,pct=total?Math.round(doneNow.length/total*100):0;
+  const add=()=>{const r=parseChoreInput(title,repeat);if(!r.title)return;
+    onAddChore({id:uid(),title:r.title,repeat:r.repeat,createdAt:Date.now()});setTitle("");};
+  const cycle=c=>{const order=["once","daily","weekly"];const n=order[(order.indexOf(choreRepeat(c))+1)%3];
+    onUpdateChore(c.id,{repeat:n,doneDate:null,doneAt:null});showToast(`"${c.title}" → ${REPEAT_LABEL[n]}`);};
+  const pill=(v)=>html`<button key=${v} onClick=${()=>setRepeat(v)} style=${{padding:"4px 10px",borderRadius:999,cursor:"pointer",fontFamily:"inherit",fontSize:10.5,fontWeight:800,
+    border:`1px solid ${repeat===v?T.accentBorder:T.border}`,background:repeat===v?"rgba(245,158,11,0.14)":"transparent",color:repeat===v?T.accent:T.muted}}>${REPEAT_LABEL[v]}</button>`;
+  const row=({c,st},i)=>{const d=st!=="todo";const rep=choreRepeat(c);
+    return html`<div key=${c.id} onClick=${()=>onToggleChore(c.id,today)} style=${{
+      display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:12,cursor:"pointer",
+      border:`1px solid ${d?T.greenBorder:T.border}`,background:d?T.greenGlow:"rgba(255,255,255,0.02)",transition:"all 0.18s",...stagger(i,20)}}>
+      <div style=${{width:22,height:22,borderRadius:7,border:`1.5px solid ${d?T.green:"rgba(255,255,255,0.18)"}`,
+        background:d?"rgba(52,211,153,0.18)":"transparent",display:"grid",placeItems:"center",fontSize:11,color:T.green,fontWeight:900,flexShrink:0}}>
+        ${d?html`<span style=${{animation:"popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)"}}>✓</span>`:""}
+      </div>
+      <span style=${{flex:1,minWidth:0,fontWeight:700,fontSize:13,color:T.text,textDecoration:d?"line-through":"none",opacity:d?0.55:1}}>${c.title}</span>
+      <button title="Change repeat" onClick=${e=>{e.stopPropagation();cycle(c);}} style=${{fontSize:9,fontWeight:900,letterSpacing:0.6,textTransform:"uppercase",padding:"3px 7px",borderRadius:6,cursor:"pointer",fontFamily:"inherit",
+        border:"none",background:rep==="once"?"rgba(255,255,255,0.05)":"rgba(56,189,248,0.12)",color:rep==="once"?T.muted:T.blue}}>${rep==="once"?"Once":rep==="daily"?"↻ Daily":"↻ Weekly"}</button>
+      ${confirmId===c.id
+        ?html`<${Btn} onClick=${e=>{e.stopPropagation();onDeleteChore(c.id);setConfirmId(null);}} variant="danger" style=${{padding:"4px 10px",fontSize:11}}>Delete<//>`
+        :html`<button aria-label="Delete chore" onClick=${e=>{e.stopPropagation();setConfirmId(c.id);}} style=${{
+          width:26,height:26,borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.muted,cursor:"pointer",fontSize:12,flexShrink:0,fontFamily:"inherit"}}>✕</button>`}
+    </div>`;};
   return html`<div className="sk-card" style=${{...S.card,marginBottom:16}}>
-    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10}}>
-      <div>
-        <div style=${{...S.section,marginBottom:2}}>DAILY CHORES</div>
-        <div style=${{fontSize:12,color:T.muted,fontWeight:700}}>${isToday?"Today":fmtDayLong(date)} · ${done}/${total} done</div>
-      </div>
-      <div style=${{display:"flex",gap:5,alignItems:"center"}}>
-        ${!isToday?html`<button onClick=${()=>{setDate(todayStr);setConfirmId(null);}} style=${{...navBtn,width:"auto",padding:"0 8px",fontSize:10}}>Today</button>`:""}
-        <button onClick=${()=>shift(-1)} style=${navBtn}>‹</button>
-        <button onClick=${()=>shift(1)} disabled=${isToday} style=${{...navBtn,opacity:isToday?0.3:1,cursor:isToday?"default":"pointer"}}>›</button>
-      </div>
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}>
+      <div style=${{...S.section,marginBottom:0}}>CHORES</div>
+      <div style=${{fontSize:12,color:T.muted,fontWeight:700}}>${todo.length?`${todo.length} to do`:total?"All done ✓":""}${(()=>{const t=doneNow.filter(x=>x.st==="doneToday").length,w=doneNow.length-t;return `${t?` · ${t} done today`:""}${w?` · ${w} done this week`:""}`;})()}</div>
     </div>
-    <div style=${{height:4,borderRadius:99,background:"rgba(255,255,255,0.06)",overflow:"hidden",marginBottom:12}}>
-      <div style=${{height:"100%",width:pct+"%",borderRadius:99,background:pct>=100?T.green:`linear-gradient(90deg,${T.accent},${T.green})`,transition:"width 0.4s var(--ease-out)"}}/>
-    </div>
-    <div style=${{display:"flex",gap:8,marginBottom:total?10:0}}>
+    ${total?html`<div style=${{height:4,borderRadius:99,background:"rgba(255,255,255,0.06)",overflow:"hidden",marginBottom:12}}>
+      <div style=${{height:"100%",width:pct+"%",borderRadius:99,background:pct>=100?T.green:`linear-gradient(90deg,${T.accent},${T.green})`,transition:"width 0.4s var(--ease-out)"}}/></div>`:""}
+    <div style=${{display:"flex",gap:8,marginBottom:8}}>
       <input style=${{...S.input,padding:"9px 12px",fontSize:14}} value=${title} onInput=${e=>setTitle(e.target.value)}
-        onKeyDown=${e=>{if(e.key==="Enter")add();}} placeholder="Add a daily chore (e.g. Wash dishes)" enterkeyhint="done"/>
+        onKeyDown=${e=>{if(e.key==="Enter")add();}} placeholder="Add a chore (e.g. Clean the car)" enterkeyhint="done"/>
       <${Btn} onClick=${add} variant="primary" style=${{fontSize:12,padding:"7px 14px",flexShrink:0}}>Add<//>
     </div>
-    ${total===0?html`<div style=${{fontSize:11,color:T.muted,marginTop:8}}>Chores repeat every day and reset each morning.</div>`
-    :html`<div key=${date} style=${{display:"flex",flexDirection:"column",gap:6}}>
-      ${chores.map((c,i)=>{
-        const d=!!choreLogs[`${c.id}_${date}`];
-        return html`<div key=${c.id} onClick=${()=>onToggleChore(c.id,date)} style=${{
-          display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:12,cursor:"pointer",
-          border:`1px solid ${d?T.greenBorder:T.border}`,background:d?T.greenGlow:"rgba(255,255,255,0.02)",
-          transition:"all 0.18s",...stagger(i,20)}}>
-          <div style=${{width:22,height:22,borderRadius:7,border:`1.5px solid ${d?T.green:"rgba(255,255,255,0.18)"}`,
-            background:d?"rgba(52,211,153,0.18)":"transparent",display:"grid",placeItems:"center",
-            fontSize:11,color:T.green,fontWeight:900,flexShrink:0}}>
-            ${d?html`<span style=${{animation:"popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)"}}>✓</span>`:""}
-          </div>
-          <span style=${{flex:1,minWidth:0,fontWeight:700,fontSize:13,color:T.text,textDecoration:d?"line-through":"none",opacity:d?0.55:1}}>${c.title}</span>
-          ${confirmId===c.id
-            ?html`<${Btn} onClick=${e=>{e.stopPropagation();onDeleteChore(c.id);setConfirmId(null);}} variant="danger" style=${{padding:"4px 10px",fontSize:11}}>Delete<//>`
-            :html`<button onClick=${e=>{e.stopPropagation();setConfirmId(c.id);}} style=${{
-              width:26,height:26,borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",
-              color:T.muted,cursor:"pointer",fontSize:12,flexShrink:0,fontFamily:"inherit"}}>✕</button>`}
-        </div>`;
-      })}
-    </div>`}
+    <div style=${{display:"flex",alignItems:"center",gap:6,marginBottom:total?12:0}}>
+      <span style=${{fontSize:10,color:T.muted,fontWeight:700}}>Repeat:</span>${["once","daily","weekly"].map(pill)}
+      <span style=${{fontSize:9.5,color:T.muted,marginLeft:"auto",whiteSpace:"nowrap"}}>or type "daily"</span>
+    </div>
+    ${!total?html`<div style=${{fontSize:11,color:T.muted}}>One-off chores disappear once you tick them. Choose Daily or Weekly for ones that come back.</div>`:""}
+    <div style=${{display:"flex",flexDirection:"column",gap:6}}>${todo.map(row)}</div>
+    ${doneNow.length?html`<div style=${{fontSize:9,fontWeight:900,color:T.muted,letterSpacing:2,textTransform:"uppercase",margin:"12px 0 6px"}}>Done${doneNow.some(x=>x.st==="doneWeek")?" · today & this week":" today"} — tap to undo</div>
+      <div style=${{display:"flex",flexDirection:"column",gap:6}}>${doneNow.map(row)}</div>`:""}
+    ${history.length?html`<button onClick=${()=>setShowHistory(v=>!v)} style=${{marginTop:10,background:"transparent",border:"none",color:T.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>
+      ${showHistory?"▾":"▸"} Completed one-offs (${history.length})</button>
+      ${showHistory?html`<div style=${{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>
+        ${history.map(c=>html`<div key=${c.id} style=${{display:"flex",gap:8,fontSize:11.5,color:T.muted}}>
+          <span style=${{color:T.green}}>✓</span><span style=${{flex:1,textDecoration:"line-through"}}>${c.title}</span><span>${fmtDayShort(c.doneDate)} ${fmtDateNum(c.doneDate)}</span></div>`)}
+      </div>`:""}`:""}
   </div>`;
 }
 
-function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit,retentionStartDate,onStartRetention,onResetRetention,chores=[],choreLogs={},onToggleChore,onAddChore,onDeleteChore}){
+// Habit strength — the scoring idea from Loop Habit Tracker (github.com/iSoron/uhabits, Score.compute):
+//   score = previous·m + done·(1−m),  m = 0.5^(√frequency / 13)
+// Applied on each scheduled day (frequency 1 per scheduled day), so a missed day dents the score
+// instead of wiping out a streak, and consistency over weeks is what builds it.
+function habitStrength(h,habitLogs,upto=todayISO()){
+  const prefix=h.id+"_";const keys=Object.keys(habitLogs||{}).filter(k=>k.startsWith(prefix)&&habitLogs[k]).map(k=>k.slice(-10)).sort();
+  const start=h.createdAt?isoDate(new Date(h.createdAt)):keys[0];
+  if(!start)return{now:0,weekAgo:0};
+  const m=Math.pow(0.5,1/13),wkAgo=isoDate(addDays(parseDate(upto),-7));
+  let sc=0,weekAgo=0;
+  for(let d=parseDate(start);isoDate(d)<=upto;d=addDays(d,1)){
+    const ds=isoDate(d);if(!h.days.includes(d.getDay()))continue;
+    const done=!!habitLogs[`${prefix}${ds}`];
+    if(!(ds===upto&&!done))sc=sc*m+(done?1:0)*(1-m); // today only counts once it's ticked
+    if(ds<=wkAgo)weekAgo=sc;
+  }
+  return{now:Math.round(sc*100),weekAgo:Math.round(weekAgo*100)};
+}
+
+function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit,retentionStartDate,onStartRetention,onResetRetention,chores=[],choreLogs={},onToggleChore,onAddChore,onDeleteChore,onUpdateChore}){
   const weekDates=getWeekDates(),todayStr=todayISO();
   const DAY_LABELS=["M","T","W","T","F","S","S"];
   const[streakPop,setStreakPop]=useState(null);
   return html`<div style=${{padding:"14px 14px 100px",maxWidth:820,margin:"0 auto"}}>
-    <${ChoresCard} chores=${chores} choreLogs=${choreLogs} onToggleChore=${onToggleChore} onAddChore=${onAddChore} onDeleteChore=${onDeleteChore}/>
+    <${ChoresCard} chores=${chores} choreLogs=${choreLogs} onToggleChore=${onToggleChore} onAddChore=${onAddChore} onDeleteChore=${onDeleteChore} onUpdateChore=${onUpdateChore}/>
     <${DisciplineStreakCard} retentionStartDate=${retentionStartDate} onStart=${onStartRetention} onReset=${onResetRetention}/>
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div style=${{...S.section,marginBottom:0}}>HABITS</div>
@@ -3368,7 +3524,9 @@ function HabitsView({habits,habitLogs,onToggleHabit,onEditHabit,onAddHabit,reten
               <div style=${{...TYPE.headline,fontSize:14}}>${h.title}</div>
               <div style=${{fontSize:11,color:T.muted,marginTop:2,display:"flex",gap:8}}>
                 <span style=${{color:weekDone>0?T.green:T.muted}}>${weekDone}/7 this week</span>
-                ${streak>0?html`<span style=${{color:T.amber,fontWeight:700}}>◆ ${streak}d streak</span>`:""}
+                ${(()=>{const hs=habitStrength(h,habitLogs);const dd=hs.now-hs.weekAgo;
+                  return html`<span title="Habit strength — builds with consistency, dips gently when you miss" style=${{color:hs.now>=70?T.green:hs.now>=40?T.amber:T.muted,fontWeight:700}}>Strength ${hs.now}%${dd?html`<span style=${{marginLeft:3,color:dd>0?T.green:T.red}}>${dd>0?"▲":"▼"}${Math.abs(dd)}</span>`:""}</span>`;})()}
+                ${streak>1?html`<span style=${{color:T.amber,fontWeight:700}}>◆ ${streak}d</span>`:""}
               </div>
             </div>
           </div>
@@ -5462,6 +5620,10 @@ function App(){
   },[state?.tasks, state?.settings?.notifEnabled, state?.settings?.constraints?.bed]);
 
   const mut=useCallback(fn=>setState(p=>({...p,...fn(p)})),[]);
+  // One-time migration: chores created before repeat modes existed become one-off chores
+  // (that's what stops the same chores showing up every day); one ticked today counts as done.
+  useEffect(()=>{if(!ready)return;mut(s=>{const cs=s.chores||[];if(!cs.some(c=>!c.repeat))return{};const td=todayISO();
+    return{chores:cs.map(c=>c.repeat?c:{...c,repeat:"once",doneDate:s.choreLogs?.[`${c.id}_${td}`]?td:null,doneAt:s.choreLogs?.[`${c.id}_${td}`]?Date.now():null})};});},[ready]);
   const toggleTask=useCallback(id=>mut(s=>{
     const task=s.tasks.find(t=>t.id===id);
     const completing=task&&!task.completed;
@@ -5478,9 +5640,17 @@ function App(){
     if(completing){const oldLvl=getLevelInfo(s.xp||0).lvl;const newInfo=getLevelInfo(newXp);showXPToast(XP_HABIT,newInfo.lvl>oldLvl?newInfo:null);}
     return{habitLogs:{...s.habitLogs,[key]:completing},xp:completing?newXp:s.xp||0};
   }),[mut]);
-  const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,h]};}),[mut]);
+  const upsertHabit=useCallback(h=>mut(s=>{const i=s.habits.findIndex(x=>x.id===h.id);if(i>=0){const habits=[...s.habits];habits[i]={...habits[i],...h};return{habits};}return{habits:[...s.habits,{createdAt:Date.now(),...h}]};}),[mut]);
   const deleteHabit=useCallback(id=>mut(s=>({habits:s.habits.filter(h=>h.id!==id)})),[mut]);
-  const toggleChore=useCallback((cid,date)=>mut(s=>{const logs=s.choreLogs||{};const key=`${cid}_${date}`;return{choreLogs:{...logs,[key]:!logs[key]}};}),[mut]);
+  const toggleChore=useCallback((cid,date)=>mut(s=>{
+    const logs={...(s.choreLogs||{})};const c=(s.chores||[]).find(x=>x.id===cid);if(!c)return{};
+    const rep=choreRepeat(c);
+    if(rep==="once"){const undo=c.doneDate===date;if(undo)delete logs[`${cid}_${date}`];else logs[`${cid}_${date}`]=true;
+      return{choreLogs:logs,chores:s.chores.map(x=>x.id===cid?{...x,doneDate:undo?null:date,doneAt:undo?null:Date.now()}:x)};}
+    if(rep==="weekly"){const dd=choreWeekDoneDay(c,date,logs);if(dd)delete logs[`${cid}_${dd}`];else logs[`${cid}_${date}`]=true;return{choreLogs:logs};}
+    const key=`${cid}_${date}`;if(logs[key])delete logs[key];else logs[key]=true;return{choreLogs:logs};
+  }),[mut]);
+  const updateChore=useCallback((cid,patch)=>mut(s=>({chores:(s.chores||[]).map(c=>c.id===cid?{...c,...patch}:c)})),[mut]);
   const addChore=useCallback(c=>mut(s=>({chores:[...(s.chores||[]),c]})),[mut]);
   const deleteChore=useCallback(id=>mut(s=>({chores:(s.chores||[]).filter(c=>c.id!==id),
     choreLogs:Object.fromEntries(Object.entries(s.choreLogs||{}).filter(([k])=>!k.startsWith(id+"_")))})),[mut]);
@@ -5489,6 +5659,7 @@ function App(){
   const upsertHealthLog=useCallback((date,patch)=>mut(s=>({healthLogs:{...s.healthLogs,[date]:{...s.healthLogs[date],...patch}}})),[mut]);
   const upsertFoodLog=useCallback((date,meals)=>mut(s=>({foodLogs:{...s.foodLogs,[date]:{meals}}})),[mut]);
   const upsertNote=useCallback((date,text)=>mut(s=>({notes:{...s.notes,[date]:text}})),[mut]);
+  const upsertWeeklyGoal=useCallback((weekStart,goal)=>mut(s=>({weeklyGoals:{...(s.weeklyGoals||{}),[weekStart]:goal}})),[mut]);
   const upsertWeeklyReview=useCallback((weekStart,review)=>mut(s=>({weeklyReviews:{...(s.weeklyReviews||{}),[weekStart]:review}})),[mut]);
   const bulkEditTasks=useCallback(moves=>mut(s=>({tasks:s.tasks.map(t=>{const mv=moves.find(m=>m.task.id===t.id);return mv?{...t,date:mv.toDate}:t;})})),[mut]);
   const upsertPlan=useCallback((plan,newTasks)=>mut(s=>({trainingPlans:[...(s.trainingPlans||[]).filter(p=>p.id!==plan.id),plan],tasks:[...s.tasks,...(newTasks||[])]})),[mut]);
@@ -5660,12 +5831,12 @@ function App(){
 
       <div key=${view} ref=${swipeRef} style=${{animation:`slide${slideDir==="right"?"InRight":"InLeft"} 0.22s var(--ease-out) backwards`}}>
         ${view==="today"?html`<${TodayView} profile=${state.settings?.profile} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onToggleHabit=${toggleHabit} onOpenJournal=${()=>setView("journal")} healthLog=${state.healthLogs?.[todayISO()]||{}} onUpsertLog=${(patch)=>upsertHealthLog(todayISO(),patch)} retentionDays=${retentionDays(state?.retentionStartDate)}/>`:""}
-        ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} weeklyReviews=${state.weeklyReviews||{}} onSaveReview=${upsertWeeklyReview} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
+        ${view==="week"?html`<${ReviewView} tasks=${state.tasks} habits=${state.habits} habitLogs=${state.habitLogs} healthLogs=${state.healthLogs||{}} notes=${state.notes||{}} settings=${state.settings} chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} weeklyReviews=${state.weeklyReviews||{}} weeklyGoals=${state.weeklyGoals||{}} onSaveReview=${upsertWeeklyReview} onUpsertNote=${upsertNote} onToggleTask=${toggleTask} onEditTask=${t=>setTaskModal({task:t,date:null})} onAddForDate=${date=>setTaskModal({task:null,date})}/>`:""}
         ${view==="habits"?html`<${HabitsView} habits=${state.habits} habitLogs=${state.habitLogs} onToggleHabit=${toggleHabit} onEditHabit=${h=>setHabitModal(h)} onAddHabit=${()=>setHabitModal({isNew:true})} retentionStartDate=${state?.retentionStartDate||null} onStartRetention=${startRetention} onResetRetention=${resetRetention}
           chores=${state.chores||[]} choreLogs=${state.choreLogs||{}} onToggleChore=${toggleChore}
-          onAddChore=${c=>{addChore(c);showToast("Chore added ✅");}} onDeleteChore=${id=>{deleteChore(id);showToast("Deleted");}}/>`:""}
+          onAddChore=${c=>{addChore(c);showToast(c.repeat==="once"?"Chore added":`Chore added · repeats ${c.repeat}`);}} onDeleteChore=${id=>{deleteChore(id);showToast("Deleted");}} onUpdateChore=${updateChore}/>`:""}
         ${view==="health"?html`<${HealthView} tasks=${state.tasks} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} foodLogs=${state.foodLogs||{}} settings=${state.settings} onUpsertFoodLog=${upsertFoodLog} onUpdateSettings=${changes=>mut(s=>({settings:{...s.settings,...changes}}))} workouts=${state.workouts||[]} lastWorkoutSync=${state.lastWorkoutSync} onOpenWatchSetup=${()=>setWatchSheet(true)}/>`:""}
-        ${view==="journal"?html`<${JournalView} profile=${state.settings?.profile} tasks=${state.tasks} notes=${state.notes||{}} onUpsertNote=${upsertNote} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} onBulkEditTasks=${bulkEditTasks}/>`:""}
+        ${view==="journal"?html`<${JournalView} profile=${state.settings?.profile} weeklyGoals=${state.weeklyGoals||{}} weeklyReviews=${state.weeklyReviews||{}} onSaveGoal=${upsertWeeklyGoal} tasks=${state.tasks} notes=${state.notes||{}} onUpsertNote=${upsertNote} healthLogs=${state.healthLogs||{}} onUpsertLog=${upsertHealthLog} onBulkEditTasks=${bulkEditTasks}/>`:""}
         ${view==="body"?html`<${BodyView} bodyMap=${state.healthLogs?.[todayISO()]?.bodyMap||{}} onUpdateBodyMap=${zones=>upsertHealthLog(todayISO(),{bodyMap:{zones}})}/>`:""}
         ${view==="settings"?html`<${SettingsView} settings=${state.settings} syncStatus=${syncStatus} lastWorkoutSync=${state.lastWorkoutSync} onOpenWatchSetup=${()=>setWatchSheet(true)}
           trainingPlans=${state.trainingPlans||[]} tasks=${state.tasks}
