@@ -1,5 +1,5 @@
-const CACHE = "sk-v6";
-const ASSETS = ["/", "/index.html", "/manifest.json"];
+const CACHE = "sk-v7";
+const ASSETS = ["/", "/index.html", "/manifest.json", "/vendor/preact.module.js", "/vendor/hooks.module.js", "/vendor/htm.module.js", "/vendor/htm-preact.module.js"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
